@@ -1,0 +1,131 @@
+id: emissions-road-type-parity-2026-11-26
+date: '2026-11-26'
+repository:
+  commit: f9b96016
+  branch: feature/i688-emissions
+  notes: 'The port under test is braunschweig/emissions/road_types.py with osm_hbefa_road_classes.csv
+    and view.py, extracted from commit f9b960167607b42806bb4f832adcaf188424d078 with git archive (no
+    line-ending conversion; sha256 of the three files in parity_prod100_20260925.json). The original
+    is org.matsim.contrib.emissions.OsmHbefaMapping of the emissions contrib 2026.0-2026w12 inside
+    the pipeline jar braunschweig-2.3.1.jar from the cache of the production run prod100_20261031,
+    sha256 3a03142be2d5b7755de42903a5e98b29bef956c2b2157652ad2523db91938e35. Nothing was built: the
+    Java program is a single source file run with java -cp <jar>. Everything ran below
+    felix:~/felix_emissions/parity_2026-11-26 and wrote nowhere else.'
+configuration:
+  notes: 'No pipeline config. Network: felix:~/prod100_20260925/output/matsim_output/output_network.xml.gz
+    (sha256 158c9b901ae4388c775573714bf2289307f9c39021470e8f3f0aed08199145ca). Emitting network
+    modes car and truck. Java side: osm:way:highway copied into the link attribute type in memory
+    (the step eqasim''s RunComputeEmissionsEvents performs), then OsmHbefaMapping.determineHbefaType
+    per link; no _link rewriting, no default for unknown classes. Port side: RoadTypeTagger, the
+    object the stages use, with a sentinel as fallback road type. Class defaults for the second
+    measurement: wayDefaultParams of the pt2matsim converter config
+    felix:~/eqasim-bs/eqasim-data/cache_shared/matsim.scenario.supply.osm__e5a6270e322d2630b0905a0beabc8b01.cache/config.xml
+    (sha256 7d66581303b32090a0c5946691b927b2467b2f2f4a724f2342d7a12ca72c958a).'
+sampling:
+  rate: not applicable (a network, no demand)
+  scope: 'All 220,980 links of the network of the 100 % production archive prod100_20260925.'
+  notes: 'No simulation output and no emission value is involved.'
+pipeline:
+  targets: []
+  notes: 'No stage was executed. The road-type code of the stages was called directly.'
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: 'An equality proof of an implementation against its original, on one network and one
+    contrib version. It says nothing about whether these road types are RIGHT for the roads: the
+    original itself maps every road to an urban type and every motorway to MW-Nat. (ADR-0209). It
+    is not a validation.'
+environment: 'server (felix, Linux), JDK 25.0.3 (java -Xmx8g; 10 s wall, 1.0 GB peak resident
+  memory), conda eqasim (Python 3.10.10)'
+validation:
+- metric: road type of the port against OsmHbefaMapping, per link, links usable by car or truck
+  reference: 'org.matsim.contrib.emissions.OsmHbefaMapping in the pipeline jar (sha256 of the class file
+    9d6c5281af7c6b297295917134f67840a80acece33662fd28cef2ecc10513ab4; of
+    org/matsim/core/network/NetworkUtils.class, which it reads the class and the speed through,
+    cc613a65e18d5a787bd59197c4efe83f196ad1202ee7f22619fb916f4407698e)'
+  result: '214,807 of 214,807 links (27,619.4 km) carry the same road type on both sides; 0 differ.
+    The original throws on none of them and the port takes its fallback on none of them. 20 road
+    types occur; the port''s counts per road type equal the earlier measurement
+    (road_types_prod100_20260925.json of manifest emissions-wiring-1pct-2026-11-26). Speed raised to
+    the class minimum on 61,073 links, lowered to the class maximum on 15,397.'
+  artifact: 'docs/runs/artifacts/emissions-road-type-parity-2026-11-26/parity_prod100_20260925.json,
+    docs/runs/artifacts/emissions-road-type-parity-2026-11-26/OsmHbefaParityDump.java,
+    docs/runs/artifacts/emissions-road-type-parity-2026-11-26/compare_osm_hbefa_parity.py'
+  notes: 'Covered: the class and speed combinations that occur on this network. NOT covered: the
+    allowed_speed attribute (no link carries it, so both sides used the freespeed everywhere), and
+    any OSM class or speed this network does not hold.'
+- metric: the same comparison on the links no car or truck may use
+  reference: 'as above'
+  result: '6,173 links. 599 (43.1 km) same road type. 73 (12.9 km) refused by both: the original throws
+    "not in hbefa map" (construction 26, pedestrian 21, track 18, busway 8), the port takes its
+    fallback. 5,501 (1,887.9 km) DIFFER: the link has no osm:way:highway (rail and other
+    transit-only links); the original still returns a road type, the port takes its fallback. All
+    49 difference patterns are of this one kind; 7 of these links have an infinite freespeed.'
+  artifact: 'docs/runs/artifacts/emissions-road-type-parity-2026-11-26/parity_prod100_20260925.json'
+  notes: 'The road types the original returns for these links are consistent with treating a missing
+    class as unclassified and re-classing by speed (160 km/h -> MW-Nat./130, 72 km/h -> Distr/70);
+    the source of NetworkUtils.getHighwayType in the pinned version was not read. These links
+    cannot influence a result: no emitting vehicle drives on them, and the stages count them apart
+    (not_drivable_links).'
+- metric: does the proof hold for the other pipeline jars on the run server
+  reference: 'none -- class file digests'
+  result: 'All 13 files braunschweig-2.3.1.jar found on the server (built 2026-10-23 to 2026-11-26,
+    among them the caches of prod100_20261031 and popsim100_20261120) contain byte-identical
+    OsmHbefaMapping.class and NetworkUtils.class and name the emissions contrib 2026.0-2026w12.'
+  notes: 'The jar that produced the archive prod100_20260925 is no longer in its folder, and the 1 % run
+    jar braunschweig_1pct_pv3_v3_run.jar was not found at the path of the earlier wiring run; neither
+    was looked for further. The digests are printed by a shell loop (unzip -p <jar> <class> |
+    sha256sum), not by a committed script. The stage check that binds the proof to the jar
+    (braunschweig/emissions/road_type_proof.py, ADR-0209 A7) was run with the committed record
+    against 14 jars on the server (the 13 above and braunschweig-2.2.0.jar of 2026-07-17): all 14
+    match, so no real jar was refused; the refusal is covered by a test with a changed class file.'
+- metric: distinct cases of the proof, committed as the regression test of the port
+  reference: 'the per-link table of the Java side (sha256 under notes)'
+  result: '114 combinations of OSM class, freespeed and road type of the original cover the 214,807
+    usable links (13 OSM classes). Committed as braunschweig/emissions/osm_hbefa_parity_cases.csv
+    (sha256 f6f1973e84320d791f2611701e579c5b90e8dc3dd6cf02144cf9ed387a93346e);
+    tests/test_emissions_road_types.py runs the port against every row.'
+  artifact: 'docs/runs/artifacts/emissions-road-type-parity-2026-11-26/extract_parity_cases.py'
+  notes: 'The class digest of OsmHbefaMapping$Hbefa.class in the proof record
+    (b0b8901eca5dfadb4c652cb0dab98962a1b19b934f7b53245fe7742c702dcc58) was read from the same jar.'
+- metric: links whose freespeed equals the pt2matsim default of their OSM class (model input, not a result)
+  reference: 'none -- a description of the network; the defaults are the wayDefaultParams of the converter
+    config named under configuration'
+  result: 'Of 214,807 links usable by car or truck (27,619.4 km): 52,964 links (24.7 %), 7,407.3 km
+    (26.8 %) sit on a default that cannot be a signed limit: residential 15 km/h 38,709 of 115,892
+    (33.4 %), tertiary 25 km/h 8,534 of 34,736 (24.6 %), unclassified 25 km/h 5,581 of 10,252
+    (54.4 %), tertiary_link 25 km/h 140 of 268. A further 13,027 links (6.1 %), 1,595.5 km (5.8 %)
+    equal a default that can also be a signed limit (secondary 30, living_street 10, primary and
+    trunk 80, motorway 120, the link classes): an UPPER bound for those.'
+  artifact: 'docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed_prod100_20260925.json,
+    docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed.py'
+  notes: 'ASSUMPTION: a default that is a multiple of 10 km/h can be a signed limit, any other cannot.
+    pt2matsim uses the default when the way has no maxspeed tag it can parse and does not keep the
+    tag, so this is the only trace in the network; the exact count needs the tag per way id from
+    the OSM extract. That this cached config is the one the archive''s network was built with is
+    not recorded in the archive; matsim/scenario/supply/osm.py always starts from the converter''s
+    default config and changes no wayDefaultParams, and the second cached config differs only in
+    the path of the OSM file.'
+features:
+- post_run_emissions
+artifacts:
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/OsmHbefaParityDump.java
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/compare_osm_hbefa_parity.py
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed.py
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/extract_parity_cases.py
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/parity_prod100_20260925.json
+- docs/runs/artifacts/emissions-road-type-parity-2026-11-26/class_default_freespeed_prod100_20260925.json
+issues:
+- '#688'
+decisions:
+- ADR-0209
+notes: 'Server-only: felix:~/felix_emissions/parity_2026-11-26/ (scripts, port, out). The per-link
+  table of the Java side, out/java_road_types_prod100_20260925.tsv (19.8 MB, sha256
+  9b083991f6a9f3a353a0ede837c3f426a4e25b6acebfce3c88bc942cd9aaef5d), is not committed. Both Python
+  scripts were first run on a five-link synthetic network with one planted wrong value, which the
+  comparison reported.'
+source: 'java -Xmx8g -cp <jar> OsmHbefaParityDump.java <network> <table>; then, from the extracted port
+  folder with PYTHONPATH set to it, python compare_osm_hbefa_parity.py --network <network>
+  --java-table <table> --jar <jar> --port-commit <commit> --out <json>; python
+  class_default_freespeed.py --network <network> --osm-config <config.xml> --out <json>.'

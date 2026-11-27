@@ -1,0 +1,56 @@
+stage: braunschweig.emissions.inputs
+title: Emissions view of the run archive and lookup pre-check
+layer: analysis
+description: >-
+  Reads the MATSim run archive <output_path>/matsim_output (read-only, ADR-0101; ordering after
+  matsim.output only, ADR-0177) and the key index of braunschweig.data.hbefa, and writes into its own stage
+  directory. view/ is the folder the emissions tool loads: the vehicle types with their HBEFA keys from the
+  committed tables vehicle_type_rules.csv and technology_names.csv, every link with an HBEFA road type from
+  a port of MATSim's OsmHbefaMapping (osm_hbefa_road_classes.csv), the archive config with the emissions
+  module added, events and schedule linked; the archive stays byte-identical. The pre-check replays the
+  tool's lookup order per vehicle type, road type and component on the key index, and
+  emissions_inputs_report.json records what was mapped, replaced and excluded, the road-type fallback and
+  the table level that answers each type. The stage stops BEFORE the Java run when a lookup has no answer
+  in any table, when more drivable link length than allowed has no HBEFA road class, or when more fleet
+  types than allowed are answered below the detailed table; both bounds default to 0. A missing archive
+  raises. Returns the view path, the report path, the archive, the sample size the archive was simulated
+  with, the pre-check and the settings.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    The road-type method is a port of org.matsim.contrib.emissions.OsmHbefaMapping (matsim-libs), which
+    cannot run on this network because it reads the link attribute type; the lookup replay is ported from
+    the contrib's HbefaTables, EmissionUtils and the warm and cold analysis modules. Maintainer rule on a
+    MATSim version change: docs/codebase/notes/post-run-emissions.md.
+code:
+- braunschweig/emissions/inputs.py
+- braunschweig/emissions/view.py
+- braunschweig/emissions/vehicle_types.py
+- braunschweig/emissions/road_types.py
+- braunschweig/emissions/table_keys.py
+- braunschweig/analysis/matsim_archive.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+inputs: []
+features:
+- post_run_emissions
+decisions:
+- ADR-0209
+- ADR-0101
+- ADR-0177
+notes: >-
+  Not in any run list (see braunschweig.data.hbefa). Reads output_path. Config keys with their defaults:
+  emissions_computation_method (StopAndGoFraction or AverageSpeed; NO default, the owner choice is open,
+  issue #688); emissions_lookup_behavior (tryDetailedThenTechnologyAverageThenAverageTable);
+  emissions_table_consistency_check (consistent); emissions_handle_high_average_speeds (false);
+  emissions_emitting_network_modes ([car, truck]); emissions_fallback_road_type (URB/Local/50);
+  emissions_max_road_type_fallback_length_share (0.0, share of drivable link length);
+  emissions_max_detailed_fallback_type_share (0.0, share of fleet types); emissions_coordinate_system
+  (EPSG:25832). The validate() token holds the three committed tables and the archive identity
+  (ARCHIVE_INFO.json digest and events size), so a new simulation under the same output_path re-runs the
+  chain; in an invocation that also runs the simulation the archive does not exist at validation time and
+  the next invocation re-runs the chain once.

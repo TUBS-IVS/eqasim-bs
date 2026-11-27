@@ -1,0 +1,40 @@
+stage: braunschweig.data.hbefa
+title: HBEFA emission-factor tables, checked and indexed
+layer: analysis
+description: >-
+  Takes the four HBEFA emission-factor tables (cold and warm, average and detailed) from four config keys
+  that have NO default, so a run without licensed tables stops at configuration time (ADR-0209). Refuses a
+  missing, empty or wrong-kind table, the MATSim sample tables (by file name and by content hash: they ship
+  inside the run jar and hold deliberately altered values), and a table whose rows repeat a lookup key (the
+  emissions tool ignores the columns Year, Gradient and Case and would silently keep the later row). Reads
+  only the KEY columns and returns the key index that braunschweig.emissions.inputs checks the vehicle types
+  and road types against. Writes hbefa_report.json (per table: path, sha256, size, rows, Case value; the
+  counts of the key index). No emission factor is read into the report or the result. The validate() token
+  holds the sha256 of each table, so replacing a table re-runs the whole emissions chain.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    eqasim-org/eqasim-france has a stage data.hbefa.raw that downloads the MATSim sample tables; nothing of
+    it is used here (ADR-0209, rejected alternatives).
+code:
+- braunschweig/data/hbefa.py
+- braunschweig/emissions/hbefa_tables.py
+- braunschweig/emissions/table_keys.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+inputs:
+- hbefa_emission_factors
+features:
+- post_run_emissions
+decisions:
+- ADR-0209
+notes: >-
+  Not in any run list and therefore in no DAG snapshot: the emissions chain is requested explicitly
+  (run: [braunschweig.emissions.summary]); the registry expresses that as production false and not_used
+  for every workflow (ADR-0209). Config keys, none with a default: hbefa_cold_average_path,
+  hbefa_warm_average_path, hbefa_cold_detailed_path, hbefa_warm_detailed_path. They are not in
+  configs/base_bs.yml; set them in the run's own overlay.

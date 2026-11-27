@@ -1,0 +1,39 @@
+stage: braunschweig.emissions.events
+title: Emission calculation (MATSim AirPollutionAnalysis on the view)
+layer: analysis
+description: >-
+  Runs MATSim's org.matsim.application.analysis.emissions.AirPollutionAnalysis from the pipeline jar
+  (matsim.runtime.eqasim) on the view of braunschweig.emissions.inputs; no Java code of this project is
+  involved. The tool multiplies every output by 1 / sample size, so the stage passes sampling_rate and stops
+  before the call when the archive was simulated with another rate or does not name its rate. It also stops
+  before the call when the jar's OsmHbefaMapping class files are not the ones the road-type port was proven
+  equal to (braunschweig/emissions/road_type_proof.py, ADR-0209 A7). Writes the
+  tool's outputs into its own stage directory (emissions_total.csv in kg; emissions_per_vehicle_type.csv and
+  emissions_per_network_mode.csv in g; per-link files and grids) and emissions_events_report.json (tool
+  class, arguments, sample size, grid size, runtime, output sizes). Raises when the tool finishes without
+  one of the three files the summary reads.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: >-
+    eqasim-org/eqasim-france runs eqasim's RunComputeEmissionsEvents instead; why the MATSim tool was chosen
+    is in ADR-0209.
+code:
+- braunschweig/emissions/events.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+inputs: []
+features:
+- post_run_emissions
+decisions:
+- ADR-0209
+notes: >-
+  Not in any run list (see braunschweig.data.hbefa). Needs Java 25 (java_binary) like the simulation.
+  Config keys: sampling_rate (the pipeline's own); emissions_grid_size_meters (default 1000.0, edge length
+  of the tool's raster cells; the raster cannot be switched off and the tool's own default of 100 m ran
+  out of an 8 GB heap on a 1 % archive, run manifest emissions-wiring-1pct-2026-11-26); the heap is
+  java_memory. emissions_total.csv, the per-link files and the grids drop every emission from 24:00 on;
+  the per-vehicle-type and per-network-mode files do not.

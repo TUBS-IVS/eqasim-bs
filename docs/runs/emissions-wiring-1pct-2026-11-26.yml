@@ -1,0 +1,157 @@
+id: emissions-wiring-1pct-2026-11-26
+date: '2026-11-26'
+repository:
+  commit: fa47c607
+  branch: feature/i688-emissions
+  notes: 'Three things ran on the run server on 2026-11-26, all below felix:~/felix_emissions and nowhere
+    else. (1) A hand-built view plus a direct call of the tool, before any stage existed (helper
+    prepare_view.py). (2) Measurements of vehicle-km by vehicle type and of the road-type mapping on
+    existing archives (helpers vkm_by_type.py, net_stats.py). (3) The stage chain: a driver
+    (chain_wiring_driver.py) called execute() of the four stages on a copy of the working tree whose
+    content is commit fa47c607. The archive under test was produced by eqasim-bs
+    69fc8fc462374215067d68be17ea45cabcdc626d (its *_meta.json); the tool ran from that run''s jar
+    braunschweig_1pct_pv3_v3_run.jar, sha256
+    dd540a454fb901ea0c3e28db79a5a1f938561708998e1a7af370d1f36a49f596.'
+configuration:
+  notes: 'No config file: the driver passes the configuration to the stages. output_path
+    felix:~/eqasim-bs/eqasim-data/output_bs_1pct_pv3_v3, sampling_rate 0.01, java_binary
+    ~/tools/jdk-25.0.3+9/bin/java, java_memory 8G, emissions_computation_method StopAndGoFraction,
+    emissions_max_detailed_fallback_type_share 1.0, every other emissions_* key at its default
+    (consistency check consistent, grid 1000 m, EPSG:25832). The four hbefa_*_path keys point at the
+    MATSim SAMPLE tables sample_41_EFA_{ColdStart_vehcat_2020average,HOT_vehcat_2020average,
+    ColdStart_SubSegm_2020detailed,HOT_SubSegm_2020detailed}.csv, extracted from the run jar. The
+    pipeline refuses these tables; the refusal is switched off in the driver only. In the second pass
+    the driver also empties the road-class table in memory and sets
+    emissions_max_road_type_fallback_length_share to 1.0, so that every link gets the one road-type
+    family the sample tables hold.'
+sampling:
+  rate: 1% (sampling_rate 0.01)
+  scope: 'Archive output_bs_1pct_pv3_v3/matsim_output: a parking test run of 2026-10-15, full region,
+    not a production run. The vehicle-km measurement also read a 25 % test archive and the 100 %
+    archive prod100_20260925.'
+  notes: 'Every count below is a sample count of its archive, never expanded.'
+pipeline:
+  targets:
+  - braunschweig.emissions.summary
+  notes: 'The stages were executed by a driver that calls their execute() functions with a context
+    double, not by synpp: validate() tokens and synpp caching were not exercised (they are covered by
+    tests/test_emissions_stages.py and the contract tests).'
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: 'A wiring proof, nothing else. The MATSim sample tables hold deliberately altered values, so
+    EVERY emission number these runs wrote is meaningless; none is quoted here, in the issue or
+    anywhere else, and the server folders carry a note saying so. What the runs establish is that the
+    chain runs on a real archive and how the tool behaves.'
+environment: 'server (felix, Linux, 64 cores, 94 GB), conda eqasim (Python 3.10.10), JDK 25.0.3 (the
+  default java on the host is 21 and cannot load the tool: class file version 69)'
+validation:
+- metric: tool call and behaviour (hand-built view, before the stages existed)
+  reference: 'none -- implementation facts of the pinned jar'
+  result: 'Call: java -cp <run jar> org.matsim.application.analysis.emissions.AirPollutionAnalysis
+    --input <view> --config <view>/output_config.xml --sample-size 0.01 --grid-size <m> --output
+    emissions_total.csv. Table paths and settings are read from the config module emissions only.
+    With the tool''s default grid of 100 m and -Xmx8g all CSV outputs were written, then the hourly
+    raster ran out of memory (exit 1). With --grid-size 1000: exit 0, 4 min wall, 5.3 GB peak
+    resident memory. Total, per-link and per-vehicle-type files are byte-identical between the two
+    runs. The raster cannot be switched off. emissions_total.csv, the per-link files and the grids
+    stop at 24:00 (EmissionsOnLinkEventHandler(3600, 86400) in the bytecode); the per-vehicle-type and
+    per-network-mode files do not; 36,081 of 2,154,178 link entries (1.7 %) are after 24:00. Units:
+    total file kg, the other files g; all already multiplied by 1 / sample size. No transit vehicle
+    and no default_car_passenger vehicle has a link event. The tool has no lookup counter.'
+  artifact: docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/prepare_view.py
+  notes: 'Server-only outputs: felix:~/felix_emissions/wiring_1pct/{view_run1,out_run1,out_run2}.'
+- metric: stage chain, pass A (real road-type mapping, sample tables)
+  reference: 'none -- expected behaviour: the sample tables hold one road-type family, so the pre-check
+    must stop the chain before the Java run'
+  result: 'braunschweig.data.hbefa accepted the four tables (refusal off in the driver);
+    braunschweig.emissions.inputs built the view in 13 s (84 vehicle types, 6 transit vehicle types,
+    219,097 links) and read the archive''s sample size as 0.01. Road types: 212,924 of 212,924 drivable
+    links have an HBEFA road class (fallback 0), 20 distinct road types, 6,173 links not drivable by
+    car or truck. Seven types excluded (Bus, Ferry, Funicular, Rail, Subway, Tram,
+    default_car_passenger). Pre-check: 83 emitting types, 81 of them fleet types, 0 answered by the
+    sample detailed table; all 83 have a lookup no sample table answers (the road types other than
+    the sample family), and the stage raised before the Java run with the report on disk.'
+  artifact: docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/chain_wiring_driver.py
+  notes: 'The 100 % share of fleet types below the detailed table describes the SAMPLE detailed table
+    (a handful of sub-segments), not the fleet mapping; it says nothing about real tables.'
+- metric: stage chain, pass B (every link on the fallback road type, sample tables)
+  reference: 'felix:~/felix_emissions/wiring_1pct/out_run2 (the hand-built run above) and
+    vkm_1pct_pv3_v3.json (the earlier vehicle-km measurement)'
+  result: 'All four stages ran: hbefa under 1 s, inputs 16 s, events 266 s (the tool, exit 0, with
+    hbefaTableConsistencyCheckingLevel consistent, which the hand-built run had not tested), summary
+    15 s. Tool arguments as built by the stage: --input <view> --config <view>/output_config.xml
+    --sample-size 0.01 --grid-size 1000.0 --output emissions_total.csv, with absolute view paths. All
+    ten tool outputs were written. Pre-check: 0 of 83 emitting types would abort. Summary: 23
+    pollutants, each present in both tool files; no vehicle outside the vehicles files; no emitting
+    type that drives without emissions; excluded types drive 0 vehicle-km. Vehicle-km of the summary
+    against the earlier measurement: 4,865,097 event lines in both; fleet types 257,316.72 km and
+    average-by-choice types (default_car, heavy_truck) 71,240.80 km, largest relative difference
+    2e-12; 2.3 % of all vehicle-km after 24:00. Against the hand-built run: the emissions module of
+    the two views differs only in the consistency level; 5 of 84 vehicle types differ in their HBEFA
+    technology, exactly the five the committed table translates; emissions_per_vehicle_type.csv has
+    the same 1,794 rows in the same order, and the rows of 75 of 78 types are identical. The three
+    types that differ are the petrol hybrids (22 of 23 rows each): the hand-built view passed the
+    technology name petrol (hybrid), which the contrib does not know, the stage view translates it to
+    petrol (4S), and the tool then answers them from another table level.'
+  artifact: 'docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/chain_wiring_driver.py,
+    docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/compare_wiring.py'
+  notes: 'A first attempt of this pass stopped in the tool with "No authority was defined for code
+    ATLANTIS": the view named EPSG:25832 in the config while the network and the schedule of the
+    archive carry MATSim''s placeholder label Atlantis. Fixed in commit fa47c607 (the view puts one
+    name on all three; coordinates unchanged); the result above is the rerun. The hybrid difference
+    shows that the translation petrol (hybrid) -> petrol (4S) changes which factors the hybrids get;
+    it is marked ASSUMPTION_unverified in braunschweig/emissions/technology_names.csv and stays open
+    until real tables show what they hold for hybrids. With every link on one road type and every
+    fleet type below the detailed table, this pass exercises the fallback accounting at 100 %, not
+    the primary path; the primary paths are covered by pass A (road classes) and by the tests.'
+- metric: vehicle-km by vehicle type on three archives (model output, sample values, unscaled)
+  reference: 'none -- a description of the model runs; needed to judge how much driving the
+    average passenger car answers'
+  result: 'Full link length per entered-link event. prod100_20260925 (100 %): 28,476,855 car
+    vehicle-km, 13.9 % of them on default_car; 493,812 of 1,190,592 car vehicles (41.5 %) are
+    default_car; heavy_truck 10.0 % of all vehicle-km; 447,197,784 event lines.
+    output_bs_pv3_v3_25pct (25 % test archive): 7,337,273 car vehicle-km, 13.7 % on default_car;
+    122,962 of 298,166 car vehicles (41.2 %); heavy_truck 9.7 %; 114,252,324 event lines.
+    output_bs_1pct_pv3_v3 (1 %): 299,344 car vehicle-km, 14.0 % on default_car; 4,921 of 11,953
+    (41.2 %); heavy_truck 8.9 %; 4,865,097 event lines. No transit and no default_car_passenger
+    vehicle has a link event in any of the three.'
+  artifact: 'docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_by_type.py,
+    docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_prod100_20260925_output_matsim_output.json,
+    docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_eqasim-bs_eqasim-data_output_bs_pv3_v3_25pct_matsim_output.json,
+    docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_1pct_pv3_v3.json'
+  notes: 'The body of issue #688 says "89 % of cars on default_car"; that figure used a wrong car count
+    and is corrected by the issue''s comment of 2026-11-26 (41.2 % of car vehicles).'
+- metric: HBEFA road class per link on the 100 % model network (prod100_20260925)
+  reference: 'none -- coverage of the mapping, not its correctness'
+  result: '220,980 links; 214,807 drivable by car or truck (27,619 km), all of them mapped by the port
+    of OsmHbefaMapping, fallback 0; 6,173 not drivable. The speed was raised to the class minimum on
+    61,073 links and lowered to the class maximum on 15,397: the network''s free speeds are not legal
+    limits everywhere (for example residential links at 15 km/h).'
+  artifact: 'docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/road_types_prod100_20260925.json,
+    docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/net_stats.py'
+  notes: 'Measured with the road-type module of commit ae15bc46; the fallback road type in that file
+    (URB/Access/30) was the value passed for the measurement, the stage default is URB/Local/50.'
+features:
+- post_run_emissions
+artifacts:
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/chain_wiring_driver.py
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/compare_wiring.py
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/prepare_view.py
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_by_type.py
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/net_stats.py
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/road_types_prod100_20260925.json
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_prod100_20260925_output_matsim_output.json
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_eqasim-bs_eqasim-data_output_bs_pv3_v3_25pct_matsim_output.json
+- docs/runs/artifacts/emissions-wiring-1pct-2026-11-26/vkm_1pct_pv3_v3.json
+issues:
+- '#688'
+decisions:
+- ADR-0209
+notes: 'Server-only outputs of the stage chain: felix:~/felix_emissions/chain_wiring_1pct/
+  (pass_a_real_road_types, pass_b_all_links_on_fallback, stages.log, wiring_result.json,
+  WIRING_PROOF_README.txt). Not tested: real HBEFA tables, AverageSpeed, a 100 % archive through the
+  tool, the stages under synpp.'
+source: 'python chain_wiring_driver.py on felix:~/felix_emissions (prints a result block without any
+  emission value); python vkm_by_type.py <archive>; the hand-built run as in the first validation entry.'

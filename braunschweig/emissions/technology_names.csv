@@ -1,0 +1,16 @@
+archive_technology,contrib_technology,status
+petrol (4S),petrol (4S),identity
+diesel,diesel,identity
+electricity,electricity,identity
+bifuel CNG/petrol,bifuel CNG/petrol,identity
+bifuel LPG/petrol,bifuel LPG/petrol,identity
+flex-fuel E85,flex-fuel E85,identity
+petrol (2S),petrol (2S),identity
+LCV,LCV,identity
+FuelCell,FuelCell,identity
+Plug-in Hybrid diesel/electric,Plug-in Hybrid diesel/electric,identity
+Plug-in Hybrid petrol/electric,Plug-in Hybrid petrol/electric,identity
+average,average,identity
+plug-in hybrid petrol/electricity,Plug-in Hybrid petrol/electric,renamed
+Fuel Cell,FuelCell,renamed
+petrol (hybrid),petrol (4S),ASSUMPTION_unverified

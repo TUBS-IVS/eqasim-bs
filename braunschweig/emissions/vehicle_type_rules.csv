@@ -1,0 +1,10 @@
+type_id,action,hbefa_category,hbefa_technology,hbefa_size_class,hbefa_emissions_concept,assumption
+default_car,keep,,,,,"Fleet-average passenger car as written by the vehicle stage; the archive already carries PASSENGER_CAR / average"
+default_car_passenger,exclude,,,,,"ASSUMPTION (owner decision 2026-11-26): passenger seats do not emit; the archive carries PASSENGER_CAR / average, so an explicit override is needed"
+heavy_truck,set,HEAVY_GOODS_VEHICLE,average,average,average,"ASSUMPTION (owner decision 2026-11-26): HBEFA heavy-goods-vehicle average without cold start"
+Bus,exclude,,,,,"ASSUMPTION (owner decision 2026-11-26): public transport is not simulated on the network and counts as zero"
+Ferry,exclude,,,,,"same as Bus"
+Funicular,exclude,,,,,"same as Bus"
+Rail,exclude,,,,,"same as Bus"
+Subway,exclude,,,,,"same as Bus"
+Tram,exclude,,,,,"same as Bus"
