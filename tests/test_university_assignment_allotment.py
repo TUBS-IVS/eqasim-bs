@@ -5,8 +5,9 @@ student), a matching that is not the minimum (the plan rule degrades to an arbit
 observed leg that is treated as primary or not counted, a leg of 0.0 read as missing, a fallback that ignores the
 held-back places or the decay, the home-distance rule sending neighbours of a site across, a result that depends on
 the input row order or ignores its generator, an observed leg that differs from the commute-distance stage's
-selection, a building drawn for the wrong destination or not by capacity, a diagnostic that counts the wrong
-persons, and a solver too slow for the real Kreis size.
+selection, a building drawn for the wrong destination, not by capacity or depending on the row order, a minimality
+check that misses a cheaper cycle, a diagnostic that counts the wrong persons, and a solver too slow for the real
+Kreis size.
 """
 from __future__ import annotations
 
@@ -22,8 +23,8 @@ from shapely.geometry import Point
 
 from braunschweig.popsim import commute_distance
 from braunschweig.synthesis.locations.university_assignment import (
-    allot_within_kreis, allotment_diagnostics, destination_centres, draw_buildings, observed_education_leg_km,
-    random_allotment_mean_distance,
+    _certify_minimum, allot_within_kreis, allotment_diagnostics, destination_centres, draw_buildings,
+    observed_education_leg_km, random_allotment_mean_distance,
 )
 
 #: Today's production university decay (``education_university_slope``), per km.
@@ -192,12 +193,27 @@ def test_the_allotment_refuses_input_it_cannot_honour(persons, totals, centres, 
         allot_within_kreis(persons, totals, centres, rule, _SLOPE, np.random.default_rng(0))
 
 
-def test_a_real_size_kreis_is_allotted_within_seconds():
-    """Braunschweig at 100 % holds about 4,500 present students and 19 destinations; this run is larger.
+@pytest.mark.parametrize("cost, minimal, not_minimal", [
+    # Two persons: the exchange saves 9 m.
+    ([[0, 10], [0, 1]], [0, 1], [1, 0]),
+    # Three persons: no exchange of two helps, only the cycle of all three (6 m -> 0 m).
+    ([[2, 0, 9], [9, 2, 0], [0, 9, 2]], [1, 2, 0], [0, 1, 2]),
+], ids=["exchange_of_two", "cycle_of_three"])
+def test_the_minimality_check_refuses_an_allotment_with_a_cheaper_cycle(cost, minimal, not_minimal):
+    """The solver's last line of defence; the error path cannot be reached through a correct solver."""
+    cost = np.array(cost, dtype=np.int64)
+    _certify_minimum(cost, np.array(minimal))
+    with pytest.raises(RuntimeError, match="not minimal"):
+        _certify_minimum(cost, np.array(not_minimal))
 
-    Measured on the development laptop (2026-11-28): 1.2-1.3 s per rule here, 0.7-0.8 s for 4,500 x 19. The
-    bound of 15 s per rule leaves a tenfold margin for a slower CI runner and still fails a general LP solver (the
-    module docstring gives its measured times). It cannot be cheaper: the size itself is what the test checks.
+
+def test_a_real_size_kreis_is_allotted_within_seconds():
+    """A Kreis larger than the largest real one (the module docstring states that size as an ASSUMPTION).
+
+    ASSUMPTION (a dated single measurement on the development laptop, 2026-11-28; other machines differ): 1.2-1.3 s
+    per rule here, 0.7-0.8 s for 4,500 x 19. The bound of 15 s per rule leaves a tenfold margin for a slower CI
+    runner and still fails a general LP solver (the module docstring gives its measured times). It cannot be
+    cheaper: the size itself is what the test checks.
     """
     generator = np.random.default_rng(5000)
     n, m = 5000, 35
@@ -266,29 +282,46 @@ def test_centres_are_capacity_weighted_and_buildings_are_drawn_by_capacity():
     assert (drawn[destinations == "B"] == "uni_sur_b").all() and (drawn[destinations == "C"] == "uni_loc_c_0").all()
     # Capacity 3 of 4: the share of building 1 is 0.75 (standard error 0.007 at 4,000 draws).
     assert abs((drawn[destinations == "A"] == "uni_loc_a_1").mean() - 0.75) < 0.03
+    # The same persons in another row order get the same buildings, returned in their own row order.
+    shuffled = destinations.sample(frac=1.0, random_state=9)
+    drawn_shuffled = draw_buildings(shuffled, facilities, np.random.default_rng(2))
+    assert drawn_shuffled.index.equals(shuffled.index)
+    pd.testing.assert_series_equal(drawn_shuffled.loc[drawn.index], drawn)
     with pytest.raises(ValueError, match="no facility"):
         draw_buildings(pd.Series(["A", "Z"]), facilities, np.random.default_rng(2))
 
 
 # ------------------------------------------------------------------------------------------------ diagnostics
 def test_the_diagnostics_count_the_neighbours_of_a_site_sent_elsewhere():
-    # S1 and S2 share a centre (two sites of one commune), S3 is a surrounding institution, S4 a local site 10 km off.
-    centres = pd.concat([_centres({"S1": (0, 0), "S2": (0, 0), "S4": (10, 0)}),
+    # S1 and S2 share a centre (two sites of one commune), S3 is a surrounding institution, S4 a local site 10 km off,
+    # S5 a local site 30 km off that receives nobody (no place for the Kreis).
+    centres = pd.concat([_centres({"S1": (0, 0), "S2": (0, 0), "S4": (10, 0), "S5": (30, 0)}),
                          _centres({"S3": (50, 0)}, scope="surrounding")], ignore_index=True)
-    persons = _persons([(1, 0), (0.5, 0), (1.5, 0), (5, 0), (9, 0)], [1.0, np.nan, 40.0, 3.0, np.nan])
-    assigned = pd.DataFrame({"person_id": persons["person_id"], "destination_id": ["S1", "S2", "S3", "S4", "S1"],
+    persons = _persons([(1, 0), (0.5, 0), (1.5, 0), (5, 0), (9, 0), (30.5, 0)],
+                       [1.0, np.nan, 40.0, 3.0, np.nan, np.nan])
+    assigned = pd.DataFrame({"person_id": persons["person_id"],
+                             "destination_id": ["S1", "S2", "S3", "S4", "S1", "S3"],
                              "path": ["plan_length", "fallback_decay", "plan_length", "plan_length",
-                                      "fallback_decay"]})
+                                      "fallback_decay", "fallback_decay"],
+                             "home_ars5": ["K1", "K1", "K1", "K1", "K2", "K2"]})
 
     diagnostics = allotment_diagnostics(assigned.iloc[::-1], persons, centres)
 
-    assert diagnostics["n_persons"] == 5
-    assert diagnostics["n_by_path"] == {"fallback_decay": 2, "plan_length": 3}
+    assert diagnostics["n_persons"] == 6
+    assert diagnostics["n_by_path"] == {"fallback_decay": 3, "plan_length": 3}
     assert diagnostics["n_with_observed_leg"] == 3
-    assert diagnostics["n_near_local_site"] == 4  # persons 1, 2, 3 (S1/S2) and 5 (S4), within 2 km
-    assert diagnostics["n_near_local_site_sent_elsewhere"] == 2  # person 3 (to S3) and person 5 (to S1, not S4)
+    assert diagnostics["n_near_local_site"] == 5  # persons 1, 2, 3 (S1/S2), 5 (S4) and 6 (S5), within 2 km
+    assert diagnostics["n_near_local_site_sent_elsewhere"] == 3  # 3 (to S3), 5 (to S1, not S4), 6 (to S3, not S5)
+    assert diagnostics["n_near_local_site_with_place"] == 4  # as above without person 6: S5 has no place
+    assert diagnostics["n_near_local_site_with_place_sent_elsewhere"] == 2  # persons 3 and 5
     assert diagnostics["mean_abs_leg_gap_km"] == pytest.approx((0.0 + 8.5 + 2.0) / 3)
-    assert diagnostics["mean_distance_km"] == pytest.approx((1.0 + 0.5 + 48.5 + 5.0 + 9.0) / 5)
+    assert diagnostics["mean_distance_km"] == pytest.approx((1.0 + 0.5 + 48.5 + 5.0 + 9.0 + 19.5) / 6)
+
+    # Persons 5 and 6 form a second Kreis whose places are S1 and S3 only: S4 has no place for person 5 any more.
+    per_kreis = allotment_diagnostics(assigned, persons, centres, kreis_column="home_ars5")
+    assert (per_kreis["n_near_local_site"], per_kreis["n_near_local_site_sent_elsewhere"]) == (5, 3)
+    assert per_kreis["n_near_local_site_with_place"] == 3  # persons 1, 2, 3
+    assert per_kreis["n_near_local_site_with_place_sent_elsewhere"] == 1  # person 3
 
     # One home, places at 3 km (one) and 6 km (three): every random allotment has the mean (3 + 18) / 4.
     one_home = _persons([(0, 0)] * 4, [np.nan] * 4)

@@ -29,10 +29,11 @@ Inside a home Kreis (B5 "Inside a home Kreis the persons are matched to the dest
 
 Import boundary (Phase 4 global constraints): numpy and pandas only. The module is a hashed helper of the
 location stage; keeping it free of project imports keeps that hash closure small. The transport problem of the
-allotment is solved here (successive shortest paths, :func:`_min_cost_allotment`), not by a general solver:
-``scipy.optimize.linprog`` (HiGHS, scipy 1.10.1) took about 4 s for 1,000 persons and 40 s for 2,000 persons with
-19 destinations on the development laptop (measured 2026-11-28), while a home Kreis holds up to about 4,500
-present students.
+allotment is solved here (successive shortest paths, :func:`_min_cost_allotment`), not by a general solver.
+ASSUMPTION (a dated single measurement on the development laptop, 2026-11-28, synthetic random input; other
+machines differ): ``scipy.optimize.linprog`` (HiGHS, scipy 1.10.1) took about 4 s for 1,000 persons and 40 s for
+2,000 persons with 19 destinations. ASSUMPTION (the size the Phase 4 plan names, not measured on a population): the
+largest home Kreis, Braunschweig at 100 %, holds about 4,500 present students.
 """
 from __future__ import annotations
 
@@ -769,16 +770,17 @@ def _min_cost_allotment(cost: np.ndarray, capacities: np.ndarray, rng: np.random
     """An exact minimum-cost allotment of persons to cells with fixed whole capacities.
 
     The transport problem (unit supply per person, ``capacities.sum() == n`` places) is solved by successive
-    shortest paths (Ahuja, Magnanti and Orlin 1993, "Network Flows", ch. 9), exploiting that the cells are few
-    (about 20) while the persons are many: the persons enter one at a time in a seeded order, and each enters along
-    a cheapest chain "the new person takes a place in cell j1, a person of j1 moves to j2, ..., a person moves to a
-    cell with a free place". A move ``j -> l`` costs the smallest ``cost[p, l] - cost[p, j]`` over the persons ``p``
-    in ``j``, kept per pair of cells and refreshed for the cells a chain touched; the cheapest chain is found by
-    Bellman-Ford on the cells. Why this is exact: if the persons entered so far are allotted at minimum cost (no
+    shortest paths (Ahuja, Magnanti and Orlin 1993, "Network Flows", ch. 9), exploiting that the cells (the
+    destinations of T) are few while the persons are many: the persons enter one at a time in a seeded order, and
+    each enters along a cheapest chain "the new person takes a place in cell j1, a person of j1 moves to j2, ..., a
+    person moves to a cell with a free place". A move ``j -> l`` costs the smallest ``cost[p, l] - cost[p, j]``
+    over the persons ``p`` in ``j``, kept per pair of cells and refreshed for the cells a chain touched; the
+    cheapest chain is found by Bellman-Ford on the cells. Why this is exact: if the persons entered so far are allotted at minimum cost (no
     cycle of moves has a negative cost), adding a person along a cheapest chain gives a minimum-cost allotment of
     one person more (the difference to any other allotment splits into the new person's chain, at least as
     expensive, and cycles, none negative). At the end every cell is full and the absence of a negative cycle,
-    which is exactly the optimality condition, is checked again (:func:`_certify_minimum`).
+    which is exactly the optimality condition, is checked again on a move table rebuilt from the final allotment
+    (:func:`_certify_minimum`).
 
     Ties: the persons enter in the seeded order; among chains of equal cost the cell with the lower position wins,
     and among persons of a cell with an equal move cost the one that entered first moves. The seeded order thus
@@ -821,7 +823,7 @@ def _min_cost_allotment(cost: np.ndarray, capacities: np.ndarray, rng: np.random
             _refresh_moves(ranked, cell_of, cell, move_cost, mover)
     if not np.array_equal(count, capacities):
         raise RuntimeError(f"{_LOG_TAG} the transport problem ended at {count.tolist()} for {capacities.tolist()}")
-    _certify_minimum(move_cost)
+    _certify_minimum(ranked, cell_of)
     result = np.empty(n_persons, dtype=np.int64)
     result[order] = cell_of
     return result
@@ -866,9 +868,29 @@ def _refresh_moves(ranked: np.ndarray, cell_of: np.ndarray, cell: int, move_cost
     mover[cell, cell] = -1
 
 
-def _certify_minimum(move_cost: np.ndarray) -> None:
-    """Raise unless no cycle of moves has a negative cost, the optimality condition of a full allotment."""
-    n_cells = len(move_cost)
+def _certify_minimum(cost: np.ndarray, cell_of: np.ndarray) -> None:
+    """Raise unless the full allotment ``cell_of`` has the minimum total ``cost``.
+
+    With every cell full, an allotment is minimal exactly when no cycle of moves (a person of ``j1`` to ``j2``, a
+    person of ``j2`` to ``j3``, ..., back to ``j1``) has a negative cost: the optimality condition of a minimum-cost
+    flow. The table of cheapest moves is rebuilt here from ``cost`` and the final ``cell_of`` alone, in O(n x m), and
+    not taken from the solver's incrementally kept table, so a fault in that bookkeeping cannot pass the check. The
+    cycles are then searched by Bellman-Ford over the cells.
+
+    Args:
+        cost: ``(n, m)`` whole costs.
+        cell_of: ``(n,)`` the cell of each person, every person placed.
+    """
+    n_persons, n_cells = cost.shape
+    if len(cell_of) != n_persons or (cell_of < 0).any() or (cell_of >= n_cells).any():
+        raise RuntimeError(f"{_LOG_TAG} the allotment to check leaves a person without a cell")
+    delta = cost - cost[np.arange(n_persons), cell_of][:, np.newaxis]
+    move_cost = np.full((n_cells, n_cells), _NO_MOVE, dtype=np.int64)
+    for cell in range(n_cells):
+        leaving = delta[cell_of == cell]
+        if len(leaving):
+            move_cost[cell] = leaving.min(axis=0)
+    np.fill_diagonal(move_cost, _NO_MOVE)
     potential = np.zeros(n_cells, dtype=np.int64)
     for _ in range(n_cells + 1):
         relaxed = np.minimum(potential, (potential[:, np.newaxis] + move_cost).min(axis=0))
@@ -882,25 +904,38 @@ def _certify_minimum(move_cost: np.ndarray) -> None:
 def draw_buildings(destination_ids: pd.Series, facilities: pd.DataFrame, rng: np.random.Generator) -> pd.Series:
     """Draw a building of each person's destination with probability proportional to its capacity.
 
+    The draw does not depend on the row order of ``destination_ids``, as the allotment does not: the persons are
+    drawn in the order of the sorted index (the stage passes the person ids as the index), destination by
+    destination in sorted order, and each building of a destination in the row order of ``facilities``.
+
     Args:
-        destination_ids: the destination of each person (the ``destination_id`` of :func:`allot_within_kreis`).
+        destination_ids: the destination of each person (the ``destination_id`` of :func:`allot_within_kreis`),
+            with a unique index of one comparable type that identifies the person.
         facilities: ``[location_id, capacity, destination_id]`` (``university_facilities``), capacities >= 0.
-        rng: the seeded generator; the destinations are drawn in sorted order, the facilities in their row order.
+        rng: the seeded generator.
 
     Returns:
-        ``location_id`` per person, with the index of ``destination_ids``.
+        ``location_id`` per person, with the index and row order of ``destination_ids``.
 
     Raises:
-        ValueError: on a missing destination, a destination without a facility or without capacity, or an invalid
-            capacity.
+        ValueError: on a repeated or unsortable index, a missing destination, a destination without a facility or
+            without capacity, or an invalid capacity.
     """
     _require_columns(facilities, ["location_id", "capacity", "destination_id"], "facilities")
     if destination_ids.isna().any():
         raise ValueError(f"{_LOG_TAG} a person has no destination to draw a building for")
+    if not destination_ids.index.is_unique:
+        raise ValueError(f"{_LOG_TAG} the index of the destinations names a person more than once; pass one row per "
+                         f"person, indexed by person id")
+    try:
+        ordered = destination_ids.sort_index(kind="mergesort")
+    except TypeError as error:
+        raise ValueError(f"{_LOG_TAG} the index of the destinations must be of one comparable type: {error}") \
+            from error
     capacity = pd.to_numeric(facilities["capacity"], errors="raise").to_numpy(dtype=float)
     if not np.isfinite(capacity).all() or (capacity < 0).any():
         raise ValueError(f"{_LOG_TAG} the facility capacities must be finite and >= 0")
-    wanted = destination_ids.to_numpy()
+    wanted = ordered.to_numpy()
     known = set(facilities["destination_id"])
     unknown = sorted(str(destination) for destination in set(wanted) - known)
     if unknown:
@@ -915,42 +950,61 @@ def draw_buildings(destination_ids: pd.Series, facilities: pd.DataFrame, rng: np
             raise ValueError(f"{_LOG_TAG} destination {destination!r} has no facility with capacity")
         persons = np.flatnonzero(wanted == destination)
         drawn[persons] = location_ids[rows[rng.choice(len(rows), size=len(persons), p=weight / weight.sum())]]
-    return pd.Series(drawn, index=destination_ids.index, name="location_id")
+    return pd.Series(drawn, index=ordered.index, name="location_id").loc[destination_ids.index]
 
 
 # ------------------------------------------------------------------------------------------------ diagnostics
 def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres: pd.DataFrame,
-                          radius_km: float = 2.0) -> dict:
+                          radius_km: float = 2.0, *, kreis_column: str | None = None) -> dict:
     """The figures of design B5 for the comparison of the two rules, from the frames of one allotment.
 
     Args:
-        assigned: ``[person_id, destination_id, path]`` (:func:`allot_within_kreis`, one or several Kreise).
+        assigned: ``[person_id, destination_id, path]`` (:func:`allot_within_kreis`): whole allotments, i.e. every
+            person of each allotted home Kreis (the places of a Kreis are read off them, see below).
         persons: ``[person_id, x, y, leg_km]`` of the same persons.
         centres: ``[destination_id, x, y, scope]`` (:func:`destination_centres`).
         radius_km: a person living within this straight-line distance of a local site's centre lives "next to" the
             site. The default 2 km is the design's reporting radius (B5); it enters no allotment.
+        kreis_column: the column of ``assigned`` naming each person's home Kreis when ``assigned`` holds several
+            allotments; None: ``assigned`` is the allotment of one Kreis.
 
     Returns:
         A dict: ``n_persons``; ``n_by_path`` (path -> persons, sorted); ``n_with_observed_leg``;
         ``mean_abs_leg_gap_km``, the mean of ``|d(home, assigned centre) - leg_km|`` over the persons with an
         observed leg (under the plan rule exactly its primary persons; under the home-distance rule the same persons,
         for comparison; NaN without any); ``mean_distance_km``, the mean ``d(home, assigned centre)`` (NaN without
-        persons); ``radius_km``; ``n_near_local_site``, the persons within the radius of at least one local site's
-        centre; ``n_near_local_site_sent_elsewhere``, those of them whose destination is none of the local sites
-        within the radius (two sites of one commune share a centre, so going to the other is not "elsewhere").
+        persons); ``radius_km``; and two pairs of counts of persons living next to a local site (two sites of one
+        commune share a centre, so going to the other is not "elsewhere"):
+
+        - ``n_near_local_site``: the persons within the radius of at least one local site's centre, whatever their
+          Kreis's places; ``n_near_local_site_sent_elsewhere``: those of them whose destination is none of the local
+          sites within the radius. This counts also persons next to a site their Kreis has no place at (cell total
+          0), whom no rule could send there.
+        - ``n_near_local_site_with_place``: the persons within the radius of at least one local site that has a
+          place for their home Kreis (cell total > 0); ``n_near_local_site_with_place_sent_elsewhere``: those of
+          them whose destination is none of the local sites within the radius. These are the persons the rule could
+          have kept next to their site and did not. A site has a place for a Kreis exactly when a person of that
+          Kreis was sent there, because every cell receives exactly its total.
 
     Raises:
         ValueError: on a missing column, a radius that is not finite and > 0, persons that differ between
-            ``assigned`` and ``persons``, or a destination without a centre.
+            ``assigned`` and ``persons``, a missing home Kreis, or a destination without a centre.
     """
     if not (math.isfinite(radius_km) and radius_km > 0):
         raise ValueError(f"{_LOG_TAG} the radius must be finite and > 0 km, got {radius_km!r}")
-    _require_columns(assigned, _ASSIGNED_COLUMNS, "assigned persons")
+    assigned_columns = _ASSIGNED_COLUMNS + ([kreis_column] if kreis_column is not None else [])
+    _require_columns(assigned, assigned_columns, "assigned persons")
     _require_columns(centres, _CENTRE_COLUMNS + ["scope"], "centres (destination_centres)")
     frame = _checked_persons(persons)
     if assigned["person_id"].duplicated().any() or set(assigned["person_id"]) != set(frame["person_id"]):
         raise ValueError(f"{_LOG_TAG} the assigned persons and the persons are not the same persons")
-    merged = frame.merge(assigned[_ASSIGNED_COLUMNS], on="person_id", how="left", validate="one_to_one")
+    merged = frame.merge(assigned[assigned_columns], on="person_id", how="left", validate="one_to_one")
+    if kreis_column is None:
+        kreis = np.zeros(len(merged), dtype=np.int64)
+    elif merged[kreis_column].isna().any():
+        raise ValueError(f"{_LOG_TAG} an assigned person has no home Kreis in {kreis_column!r}")
+    else:
+        kreis = pd.factorize(merged[kreis_column])[0]
     destinations = pd.Index(sorted(set(merged["destination_id"])))
     centre_xy = _centre_xy(centres, destinations)
     column = destinations.get_indexer(merged["destination_id"])
@@ -958,10 +1012,14 @@ def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres
 
     local = centres.loc[centres["scope"] == _SCOPE_LOCAL, "destination_id"]
     near = _distance_matrix_m(merged, _centre_xy(centres, pd.Index(local))) / 1000.0 <= radius_km
+    sent_to = merged["destination_id"].to_numpy()
     goes_to_near_site = np.zeros(len(merged), dtype=bool)
+    has_place = np.zeros(near.shape, dtype=bool)
     for position, destination in enumerate(local):
-        goes_to_near_site |= near[:, position] & (merged["destination_id"].to_numpy() == destination)
+        goes_to_near_site |= near[:, position] & (sent_to == destination)
+        has_place[:, position] = np.isin(kreis, np.unique(kreis[sent_to == destination]))
     near_any = near.any(axis=1)
+    near_with_place = (near & has_place).any(axis=1)
 
     leg = merged["leg_km"].to_numpy(dtype=float)
     observed = ~np.isnan(leg)
@@ -975,6 +1033,8 @@ def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres
         "radius_km": float(radius_km),
         "n_near_local_site": int(near_any.sum()),
         "n_near_local_site_sent_elsewhere": int((near_any & ~goes_to_near_site).sum()),
+        "n_near_local_site_with_place": int(near_with_place.sum()),
+        "n_near_local_site_with_place_sent_elsewhere": int((near_with_place & ~goes_to_near_site).sum()),
     }
 
 
