@@ -1,12 +1,13 @@
-"""Extract the four committed MiD 2023 university-student aggregates (issue #140, Phase 0, R4).
+"""Extract the five committed MiD 2023 university-student aggregates (issue #140, Phase 0, R4).
 
 Reads the RESTRICTED MiD 2023 scientific-use microdata (persons, trips; comma-separated) and
-writes four small aggregate tables to ``--out-dir`` (default ``eqasim-data/data/braunschweig/mid``):
+writes five small aggregate tables to ``--out-dir`` (default ``eqasim-data/data/braunschweig/mid``):
 
     mid2023_student_status_by_age.csv              status of persons with an education trip, by age band
     mid2023_student_education_distance_mode.csv    distance band x main mode of students' education trips
     mid2023_student_share_20_29_by_land.csv        pupil / student share of the 20-29 year olds, per Land
     mid2023_student_behaviour_seed.csv             behaviour cells (the seed-side mirror of the SrV table)
+    mid2023_student_age_sex.csv                    sex x age group of the adult students, Germany and per RegioStaR 7
 
 All definitions live in ``braunschweig.calibration.mid_student_reference`` (and the shared label
 vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns only the
@@ -17,7 +18,12 @@ production config ``configs/base_bs.yml``.
 
 Usage (eqasim env, from a worktree; the raw directory is restricted and always passed):
     python scripts/extract_mid_student_reference.py --raw <MiD CSV directory> \
-        --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>
+        --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha> [--tables <list>]
+
+``--tables`` is a comma-separated subset of status, distance_mode, share_20_29, behaviour and
+age_sex (default all); only the asked tables are read and written, the other files stay as they
+are. ``HP_SEX`` and ``RegioStaR7`` are required persons columns only for ``age_sex``, and the trips
+file only for the tables that read trips.
 
 The persons file is expected to carry ``BLAND``; if it does not, ``MiD2023_Haushalte.csv``
 (``H_ID``, ``BLAND``) is read and joined on ``H_ID``.
@@ -51,6 +57,9 @@ TRIPS_FILE = "MiD2023_Wege.csv"
 HOUSEHOLDS_FILE = "MiD2023_Haushalte.csv"
 
 PERSON_READ_COLUMNS = list(R.BEHAVIOUR_PERSON_COLUMNS)
+AGE_SEX_READ_COLUMNS = list(R.AGE_SEX_PERSON_COLUMNS)
+TABLE_NAMES = ("status", "distance_mode", "share_20_29", "behaviour", "age_sex")
+TRIP_TABLES = ("status", "distance_mode", "behaviour")
 TRIP_READ_COLUMNS = list(dict.fromkeys(R.LEG_KEY_COLUMNS + R.FIRST_LEG_COLUMNS
                                        + R.ARRIVAL_COLUMNS + R.DISTANCE_COLUMNS
                                        + [R.RBW_COLUMN] + R.DIARY_FACT_COLUMNS))
@@ -231,6 +240,40 @@ def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: b
     ]
 
 
+def _age_sex_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
+    return _common_header(R.AGE_SEX_TABLE, source_commit, exclude_rbw_legs) + [
+        "# Weekday filter: none (ST_WOTAG is NOT filtered: a status share, not a day share, so",
+        "#   public-holiday reporting days are kept too); exclude_rbw_legs is unused by this",
+        "#   table, no leg is read.",
+        "# Universe: ADULT students (P_TAET %d, %d <= HP_ALTER <= %d), valid positive P_GEW, readable"
+        % (R.STUDENT_P_TAET, L.MIN_ADULT_AGE, R.MAX_VALID_AGE_YEARS),
+        "#   P_TAET, %s 1 (male) or 2 (female); students under 18 (n_students_under_18), without a"
+        % R.SEX_COLUMN,
+        "#   valid age (n_students_without_valid_age) and with another or a missing sex code",
+        "#   (n_students_excluded_sex) are counted and excluded. Students without a %s code %d to"
+        % (R.REGIOSTAR7_COLUMN, R.REGIOSTAR7_CODES[0]),
+        "#   %d (n_students_without_regiostar7) stay in the %s rows and are in no regiostar7_* row."
+        % (R.REGIOSTAR7_CODES[-1], R.REGION_GERMANY),
+        "# Age groups (inclusive whole years): %s."
+        % ", ".join("%s = %d-%d" % group for group in R.AGE_SEX_GROUPS),
+        "# Rows: areas %s and %s%d to %s%d (column %s), each with sex female, male and all, each"
+        % (R.REGION_GERMANY, R.AREA_REGIOSTAR7_PREFIX, R.REGIOSTAR7_CODES[0],
+           R.AREA_REGIOSTAR7_PREFIX, R.REGIOSTAR7_CODES[-1], R.REGIOSTAR7_COLUMN),
+        "#   with the four age groups (96 rows, every row emitted; an empty base has n_unweighted 0",
+        "#   and NaN shares).",
+        "# Use: rows %s are the shares the student level table uses (assumption A9 of"
+        % R.REGION_GERMANY,
+        "#   braunschweig/calibration/student_level_table.py); rows regiostar7_* show how the age",
+        "#   mix differs by RegioStaR 7 type of the home municipality and are used by no table.",
+        "# Columns: area, sex, age_group, n_unweighted, weight_sum (sum of P_GEW of the cell),",
+        "#   share_within_sex (weighted share of the age group in the (area, sex) base, sums to 1",
+        "#   over the four groups), share_of_adult_students (cell weight over the weight of all",
+        "#   students of the area, female plus male; on the 'all' rows the age margin), n_effective",
+        "#   (Kish size of the (area, sex) base), se_share_within_sex = sqrt(p (1 - p) / n_effective).",
+        _exclusions(diagnostics),
+    ]
+
+
 def _write(df: pd.DataFrame, path: Path, header: list) -> None:
     """Write the provenance-headed CSV with LF line endings and ``%.10g`` floats."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -241,6 +284,16 @@ def _write(df: pd.DataFrame, path: Path, header: list) -> None:
     logger.info("wrote %s (%d rows)", path, len(df))
 
 
+def _parse_tables(text: str) -> list:
+    """The asked table names; an unknown or empty name is a usage error."""
+    names = [name.strip() for name in text.split(",")]
+    unknown = [name for name in names if name not in TABLE_NAMES]
+    if unknown or not names:
+        raise argparse.ArgumentTypeError("unknown table name(s) %s; choose from %s"
+                                         % (unknown or [text], ",".join(TABLE_NAMES)))
+    return list(dict.fromkeys(names))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -248,56 +301,75 @@ def main(argv=None) -> int:
                         help="MiD raw CSV directory (restricted; must contain %s and %s)"
                              % (PERSONS_FILE, TRIPS_FILE))
     parser.add_argument("--out-dir", default=str(OUT_DEFAULT),
-                        help="Directory to write the four tables into")
+                        help="Directory to write the tables into")
     parser.add_argument("--source-commit", required=True,
                         help="git commit of the code state, recorded in every header")
+    parser.add_argument("--tables", type=_parse_tables, default=list(TABLE_NAMES),
+                        help="comma-separated subset of %s (default all)" % ",".join(TABLE_NAMES))
     args = parser.parse_args(argv)
+    tables = args.tables
+    need_trips = any(name in TRIP_TABLES for name in tables)
+    person_columns = list(PERSON_READ_COLUMNS)
+    if "age_sex" in tables:
+        person_columns = list(dict.fromkeys(person_columns + AGE_SEX_READ_COLUMNS))
+    elif not need_trips:
+        person_columns = list(R.PERSON_COLUMNS)
 
     raw = Path(args.raw)
     person_file, trip_file = raw / PERSONS_FILE, raw / TRIPS_FILE
-    for path in (person_file, trip_file):
+    for path in (person_file, trip_file) if need_trips else (person_file,):
         if not path.exists():
             raise FileNotFoundError("MiD raw file missing: %s" % path)
-    _require_columns(person_file, PERSON_READ_COLUMNS)
-    _require_columns(trip_file, TRIP_READ_COLUMNS)
+    _require_columns(person_file, person_columns)
+    if need_trips:
+        _require_columns(trip_file, TRIP_READ_COLUMNS)
     # BLAND from the persons file when it carries it, else from the households file.
+    needs_land = "share_20_29" in tables
     persons_have_land = "BLAND" in _header_columns(person_file)
     persons = pd.read_csv(person_file, low_memory=False,
-                          usecols=PERSON_READ_COLUMNS + (["BLAND"] if persons_have_land else []))
-    if persons_have_land:
-        households = None
-    else:
+                          usecols=person_columns + (["BLAND"] if persons_have_land else []))
+    households = None
+    if needs_land and not persons_have_land:
         household_file = raw / HOUSEHOLDS_FILE
         if not household_file.exists():
             raise FileNotFoundError("%s has no BLAND column and the households file is missing: "
                                     "%s" % (person_file, household_file))
         _require_columns(household_file, R.HOUSEHOLD_COLUMNS)
         households = pd.read_csv(household_file, usecols=R.HOUSEHOLD_COLUMNS, low_memory=False)
-    trips = pd.read_csv(trip_file, usecols=TRIP_READ_COLUMNS, low_memory=False)
-    logger.info("read %d persons, %d trips", len(persons), len(trips))
+    trips = (pd.read_csv(trip_file, usecols=TRIP_READ_COLUMNS, low_memory=False)
+             if need_trips else None)
+    logger.info("read %d persons, %s trips; tables: %s", len(persons),
+                "no" if trips is None else len(trips), ",".join(tables))
 
     exclude_rbw_legs = production_exclude_rbw_legs()
     exclude_holidays = production_exclude_holidays()
     drop_leading_arrive_home_leg = production_drop_leading_arrive_home_leg()
     day_settings = {"exclude_rbw_legs": exclude_rbw_legs, "exclude_holidays": exclude_holidays}
-    status, status_diagnostics = R.build_status_by_age_table(persons, trips, **day_settings)
-    distance, distance_diagnostics = R.build_distance_mode_table(persons, trips, **day_settings)
-    share, share_diagnostics = R.build_share_20_29_table(persons, households)
-    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(
-        persons, trips, drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
-        **day_settings)
-
     out = Path(args.out_dir)
     commit = args.source_commit
-    _write(status, out / R.STATUS_TABLE,
-           _status_header(status_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
-    _write(distance, out / R.DISTANCE_MODE_TABLE,
-           _distance_header(distance_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
-    _write(share, out / R.SHARE_20_29_TABLE,
-           _share_header(share_diagnostics, commit, exclude_rbw_legs))
-    _write(behaviour, out / R.BEHAVIOUR_TABLE,
-           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs, exclude_holidays,
-                             drop_leading_arrive_home_leg))
+    if "status" in tables:
+        status, diagnostics = R.build_status_by_age_table(persons, trips, **day_settings)
+        _write(status, out / R.STATUS_TABLE,
+               _status_header(diagnostics, commit, exclude_rbw_legs, exclude_holidays))
+    if "distance_mode" in tables:
+        distance, diagnostics = R.build_distance_mode_table(persons, trips, **day_settings)
+        _write(distance, out / R.DISTANCE_MODE_TABLE,
+               _distance_header(diagnostics, commit, exclude_rbw_legs, exclude_holidays))
+    if "share_20_29" in tables:
+        share, diagnostics = R.build_share_20_29_table(persons, households)
+        _write(share, out / R.SHARE_20_29_TABLE,
+               _share_header(diagnostics, commit, exclude_rbw_legs))
+    if "behaviour" in tables:
+        behaviour, diagnostics = R.build_behaviour_seed_table(
+            persons, trips, drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            **day_settings)
+        _write(behaviour, out / R.BEHAVIOUR_TABLE,
+               _behaviour_header(diagnostics, commit, exclude_rbw_legs, exclude_holidays,
+                                 drop_leading_arrive_home_leg))
+    if "age_sex" in tables:
+        age_sex, diagnostics = R.build_age_sex_table(persons)
+        _write(age_sex, out / R.AGE_SEX_TABLE, _age_sex_header(diagnostics, commit,
+                                                                exclude_rbw_legs))
     return 0
 
 
