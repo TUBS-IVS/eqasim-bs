@@ -29,7 +29,8 @@ from braunschweig.calibration.srv_student_reference import (
     QUANTITY_MODE_EDUCATION_LEGS, YOUNG_ADULT_STATUS_TABLE, YOUNG_ADULT_STATUSES,
     destination_vocabulary)
 from braunschweig.calibration.student_control_evidence import (
-    AREA_RULE_CELLS, AREA_RULE_TABLE, MIN_RESPONDENTS_PER_CELL, area_rule_table)
+    AREA_RULE_CELLS, AREA_RULE_CONTROL_DEFINITION_CELLS, AREA_RULE_TABLE, MIN_RESPONDENTS_PER_CELL,
+    area_rule_table)
 from braunschweig.calibration.student_parameters import EXTRA_BASES, PARAMETERS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -282,6 +283,12 @@ def _header_lines(name):
             if line.startswith("#")]
 
 
+def _header_exclusions(name):
+    """The ``# Exclusions:`` key=value pairs of a table header as a dict of strings."""
+    line, = [line for line in _header_lines(name) if line.startswith("# Exclusions:")]
+    return dict(re.findall(r"(?:: |, )([A-Za-z0-9_]+)=([^,\s]+)", line))
+
+
 def _site_kreise_of_header(name):
     match = re.search(r"Site Kreise \([^)]*\): (\[[^\]]*\]);", " ".join(_header_lines(name)))
     assert match, "no 'Site Kreise' header line in %s" % name
@@ -421,6 +428,10 @@ def test_phase1_table_headers_are_traceable_and_carry_no_local_paths(name):
     if name == PARAMETER_TABLE:
         assert "education_leg_share_harmonised_purpose" in header
         assert "education_leg_share_control_definition" in header
+        assert "work_leg_share_control_definition" in header
+    # Phase 3 tables carry the Phase 3 label, the Phase 1 ones keep theirs
+    expected_label = "Phase 3 reference table" if name in PHASE3_TABLES else "Phase 1 reference table"
+    assert expected_label in header, name
 
 
 # ------------------------------------------------------------- Phase 3 tables (issue #140), 2026-11-27
@@ -505,23 +516,64 @@ def test_education_leg_by_student_status_value_pins_20261127():
     row = _row(frame, code=REGION_ROW, group="student", age_range="18plus")
     assert (row["n_unweighted"], row["n_with_leg_unweighted"]) == (438, 156)
     assert row["share"] == pytest.approx(0.3705664224, rel=1e-9)
-    # the student row of Braunschweig is the education_leg share of the by-area table
-    by_area = _read_with_nan_label(PARAMETER_BY_AREA_TABLE)
-    bs_leg = _row(by_area, area=AREA_BRAUNSCHWEIG, parameter="education_leg",
-                  base="students_present", label="yes")
+    # Same definition (E_ZWECK_9, the control definition) as the per-area header values of the
+    # by-area table; its education_leg ROWS use the harmonised purpose and are not compared here.
+    exclusions = _header_exclusions(PARAMETER_BY_AREA_TABLE)
     bs_status = _row(frame, code="03101", group="student", age_range="18plus")
-    assert bs_status["n_with_leg_unweighted"] == bs_leg["n_unweighted"]
-    assert bs_status["share"] == pytest.approx(bs_leg["share"], rel=1e-9)
+    prefix = "%s_education_leg_" % AREA_BRAUNSCHWEIG
+    assert bs_status["n_with_leg_unweighted"] == int(exclusions[prefix + "n_with_control_definition"])
+    assert bs_status["share"] == pytest.approx(
+        float(exclusions[prefix + "share_control_definition"]), rel=1e-9)
+
+
+def test_control_definition_leg_shares_in_the_headers_value_pins_20261127():
+    """Work and education leg of the adult students under the control definition (E_ZWECK_9), as
+    the headers of the regional and the by-area table carry them (respondents, share, Kish
+    standard error). On this extraction they equal the harmonised-purpose rows; that is a property
+    of this data, pinned here, not an invariant of the code."""
+    regional = _header_exclusions(PARAMETER_TABLE)
+    assert (int(regional["work_leg_n_with_control_definition"]),
+            int(regional["work_leg_n_without_control_definition"])) == (85, 353)
+    assert float(regional["work_leg_share_control_definition"]) == pytest.approx(
+        0.1778498348, rel=1e-9)
+    assert float(regional["work_leg_se_share_control_definition"]) == pytest.approx(
+        0.02711374792, rel=1e-9)
+    by_area = _header_exclusions(PARAMETER_BY_AREA_TABLE)
+    frame = _read_with_nan_label(PARAMETER_BY_AREA_TABLE)
+    for area, (n_with, n_without, share, se) in {
+            AREA_BRAUNSCHWEIG: (52, 170, 0.1946382240, 0.04085751384),
+            AREA_SURROUNDING: (33, 183, 0.1532654836, 0.03160685084)}.items():
+        assert int(by_area["%s_work_leg_n_with_control_definition" % area]) == n_with
+        assert int(by_area["%s_work_leg_n_without_control_definition" % area]) == n_without
+        assert float(by_area["%s_work_leg_share_control_definition" % area]) == pytest.approx(
+            share, rel=1e-9)
+        assert float(by_area["%s_work_leg_se_share_control_definition" % area]) == pytest.approx(
+            se, rel=1e-9)
+        row = _row(frame, area=area, parameter="work_leg", base="students_present", label="yes")
+        assert row["n_unweighted"] == n_with and row["share"] == pytest.approx(share, rel=1e-9)
 
 
 def test_student_area_rule_is_the_rule_applied_to_the_by_area_table():
     committed = pd.read_csv(SRV / AREA_RULE_TABLE, comment="#")
-    recomputed = area_rule_table(_read_with_nan_label(PARAMETER_BY_AREA_TABLE))
-    assert list(committed["parameter"]) == [cell[0] for cell in AREA_RULE_CELLS]
+    recomputed = area_rule_table(_read_with_nan_label(PARAMETER_BY_AREA_TABLE),
+                                 control_diagnostics={key: float(value) for key, value in
+                                                      _header_exclusions(PARAMETER_BY_AREA_TABLE)
+                                                      .items() if "control_definition" in key})
+    assert list(committed["parameter"]) == (
+        [cell[0] for cell in AREA_RULE_CELLS]
+        + [parameter for parameter, _ in AREA_RULE_CONTROL_DEFINITION_CELLS])
     pd.testing.assert_frame_equal(committed, recomputed, check_dtype=False, rtol=1e-8)
     verdict = committed.set_index("parameter")
     assert verdict["area_value"].to_dict() == {
-        "education_leg": False, "work_leg": False, "season_ticket": True, "away_all_day": True}
+        "education_leg": False, "work_leg": False, "season_ticket": True, "away_all_day": True,
+        "education_leg_control_definition": False, "work_leg_control_definition": False}
+    # the work leg under the control definition (E_ZWECK_9 in 1, 2): enough respondents, no
+    # difference between the two areas
+    work = verdict.loc["work_leg_control_definition"]
+    assert (work["n_label_braunschweig"], work["n_other_braunschweig"]) == (52, 170)
+    assert (work["n_label_surrounding"], work["n_other_surrounding"]) == (33, 183)
+    assert bool(work["enough_respondents"])
+    assert work["difference_in_se"] == pytest.approx(0.800930003, rel=1e-8)
     assert verdict["difference_in_se"]["season_ticket"] == pytest.approx(3.622914114, rel=1e-8)
     assert verdict["difference_in_se"]["away_all_day"] == pytest.approx(-2.124241066, rel=1e-8)
     header = " ".join(_header_lines(AREA_RULE_TABLE))

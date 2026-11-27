@@ -1,6 +1,8 @@
 # Source: computed by scripts/extract_srv_student_reference.py on 2026-11-27 from the by-area
-#   parameter table srv2023_student_parameters_by_area.csv of the same run and code state; no raw data enters this table.
-# Code state: eqasim-bs 85b9d725, braunschweig/calibration/student_control_evidence.py
+#   parameter table srv2023_student_parameters_by_area.csv and its exclusion keys of the same run and code state; no raw data
+#   enters this table.
+# Table: srv2023_student_area_rule.csv (issue #140, Phase 3 reference table). A measurement, not a validation.
+# Code state: eqasim-bs b2ef4a3e, braunschweig/calibration/student_control_evidence.py
 #   (area_rule_table). A measurement, not a validation (issue #140, design A3 rule 2).
 # Rule: a parameter gets a value of its own for each home area (braunschweig, surrounding) only when the two
 #   areas differ by more than 2.0 standard errors of the difference (z = (share_braunschweig -
@@ -11,9 +13,18 @@
 # Bases: n_base_<area> = respondents of the cell's base in that area (students present at
 #   home on the reporting day; for away_all_day all students), n_label_<area> with the
 #   label, n_other_<area> = n_base - n_label. Cells: ['education_leg/yes', 'work_leg/yes', 'season_ticket/flatrate', 'away_all_day/yes'].
+# Two definitions of the education and the work leg, each in its own row: education_leg and
+#   work_leg use the HARMONISED purpose (rows of the by-area table); education_leg_control_definition and work_leg_control_definition use E_ZWECK_9 in
+#   [3, 4] (education) / [1, 2] (work, the work_by_employment target definition), from the
+#   <leg>_*_control_definition exclusion keys of srv2023_student_parameters_by_area.csv (base students_present, label yes,
+#   n_label / n_other = respondents with / without the leg). The two definitions agree on
+#   the SrV data of this run; the rule is applied to each separately and nothing relies on
+#   that agreement. The soft work-leg entry of the synthesis reads the control row.
 # Columns: parameter, base, label, n_base_braunschweig, n_label_braunschweig, n_other_braunschweig, share_braunschweig, se_braunschweig, n_base_surrounding, n_label_surrounding, n_other_surrounding, share_surrounding, se_surrounding, difference_in_se, enough_respondents, area_value.
 parameter,base,label,n_base_braunschweig,n_label_braunschweig,n_other_braunschweig,share_braunschweig,se_braunschweig,n_base_surrounding,n_label_surrounding,n_other_surrounding,share_surrounding,se_surrounding,difference_in_se,enough_respondents,area_value
 education_leg,students_present,yes,222,88,134,0.403320269,0.0506241833,216,68,148,0.3226027933,0.04101485472,1.238874695,True,False
 work_leg,students_present,yes,222,52,170,0.194638224,0.04085751384,216,33,183,0.1532654836,0.03160685084,0.800930003,True,False
 season_ticket,students_present,flatrate,222,203,19,0.9330748615,0.02578785663,216,161,55,0.7698927212,0.03692884291,3.622914114,True,True
 away_all_day,students_all,yes,248,26,222,0.0869729022,0.02723570885,263,47,216,0.1729445122,0.02993615289,-2.124241066,True,True
+education_leg_control_definition,students_present,yes,222,88,134,0.403320269,0.0506241833,216,68,148,0.3226027933,0.04101485472,1.238874695,True,False
+work_leg_control_definition,students_present,yes,222,52,170,0.194638224,0.04085751384,216,33,183,0.1532654836,0.03160685084,0.800930003,True,False
