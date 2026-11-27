@@ -120,6 +120,8 @@ LEVEL_FILE = "student_level_table.csv"
 GATE_FILE = "student_level_gate.csv"
 PRECHECK_FILE = "student_employed_target_precheck.csv"
 POINTS_FILE = "student_destination_points.csv"
+ORIGIN_PATTERN_PROXY_OFF = "none"
+ORIGIN_PATTERN_PROXY_DEFAULT = ";".join("%s=%s" % pair for pair in T.ORIGIN_PATTERN_PROXY_DEFAULT.items())
 POINT_COLUMNS = ["destination_id", "institution", "scope", "site_ags8", "x", "y", "point_source"]
 POINT_SOURCE_CURATED = "curated"
 POINT_SOURCE_COMMUNE_CENTRE = "commune_centre"
@@ -468,9 +470,12 @@ def prepare(args) -> dict:
     totals = T.che_totals(che)
     cells, cell_diagnostics = T.origin_cells(che, institutions, origin_kreise, region_kreise, distance_learning)
     pairs = G.pair_coefficients(gemeinden, points, args.weight_rule, args.max_commute_km)
+    # The proxy cells scale with the institution's enrollment: one set of cells per site table.
+    proxy = parse_origin_pattern_proxy(args.origin_pattern_proxy)
+    cells_model, proxy_diagnostics = T.apply_origin_pattern_proxy(cells, totals, sites, proxy)
 
     def build(weights):
-        return T.build_od_table(cells, totals, sites_builder, pairs, region_kreise, T.CommuterWeights(*weights))
+        return T.build_od_table(cells_model, totals, sites_builder, pairs, region_kreise, T.CommuterWeights(*weights))
 
     build_census_year = None
     if census_path:
@@ -480,18 +485,21 @@ def prepare(args) -> dict:
         outside_mask = sites["scope"] == T.SCOPE_SURROUNDING
         outside_mask &= sites["destination_id"].isin(curated["destination_id"])
         census_students[outside_mask] = sites.loc[outside_mask, "institution"].map(outside_census)
-        sites_census_builder = sites.assign(students_persons=census_students.astype(float))[T.SITE_COLUMNS]
+        sites_census = sites.assign(students_persons=census_students.astype(float))
+        sites_census_builder = sites_census[T.SITE_COLUMNS]
         if sites_census_builder["students_persons"].isna().any():
             raise ValueError("census-year site table: no enrollment for site(s) %s"
                              % sites_census_builder.loc[sites_census_builder["students_persons"].isna(),
                                                         "destination_id"].tolist()[:5])
+        cells_census, proxy_diagnostics_census = T.apply_origin_pattern_proxy(cells, totals, sites_census, proxy)
 
         def build_census_year(weights):
-            return T.build_od_table(cells, totals, sites_census_builder, pairs, region_kreise,
+            return T.build_od_table(cells_census, totals, sites_census_builder, pairs, region_kreise,
                                     T.CommuterWeights(*weights))
 
     diagnostics = {
         "origin_cells": cell_diagnostics,
+        "origin_pattern_proxy": {"setting": proxy, "model_semester": _proxy_summary(proxy_diagnostics)},
         "sites": {"n_sites": n_sites, "site_kreis_from_lsn_table": "primary %d/%d" % (len(lsn_rows), n_sites),
                   "site_kreis_from_polygon_lookup": "fallback %d/%d" % (len(curated_rows), n_sites),
                   "local_site_kreise": site_kreise, "distance_learning": list(distance_learning),
@@ -502,6 +510,7 @@ def prepare(args) -> dict:
     if census_path:
         diagnostics["sites"]["census_year_semester"] = census_semester
         diagnostics["sites"]["outside_lsn_enrollment_census_year"] = outside_census_summary
+        diagnostics["origin_pattern_proxy"]["census_year_semester"] = _proxy_summary(proxy_diagnostics_census)
     enrollment_lines = [
         "# Enrollment: enrollment_semester=%s (column semester of the --sites table, LSN-Online K3100101); "
         "the three institutions outside the LSN statistics carry the figures of OUTSIDE_LSN_STUDENTS in "
@@ -510,7 +519,7 @@ def prepare(args) -> dict:
             semester.replace(" ", "_"), outside_summary["primary"], outside_summary["fallback"])]
     return {"sites": sites_builder, "lsn_sites": lsn, "semester": semester,
             "census_year_semester": census_semester, "build_census_year": build_census_year,
-            "enrollment_lines": enrollment_lines, "points": points, "gemeinden": gemeinden, "cells": cells,
+            "enrollment_lines": enrollment_lines, "proxy_diagnostics": proxy_diagnostics, "points": points, "gemeinden": gemeinden, "cells": cells,
             "che_totals": totals, "pairs": pairs, "region_kreise": region_kreise, "site_kreise": site_kreise,
             "origin_kreise": origin_kreise, "diagnostics": diagnostics, "build": build,
             "inputs": [("che_origins", Path(args.che), False), ("lsn_site_table", sites_path, True),
@@ -518,6 +527,39 @@ def prepare(args) -> dict:
                        ("vg250_archive", Path(args.vg250), True),
                        ("curated_sites_script", REPO / "scripts" / "seed_nds_hochschulen.py", False),
                        ("enrollment_outside_lsn_script", REPO / "scripts" / "seed_lsn_university_sites.py", False)]}
+
+
+def parse_origin_pattern_proxy(text: str) -> dict:
+    """``--origin-pattern-proxy``: ``"<institution>=<proxy institution>"`` pairs separated by ';' (LSN names);
+    ``none`` or an empty text switches the proxy off."""
+    if text is None or text.strip().lower() in ("", ORIGIN_PATTERN_PROXY_OFF):
+        return {}
+    pairs = {}
+    for item in _csv_list(text, ";"):
+        institution, separator, proxy = (part.strip() for part in item.partition("="))
+        if not separator or not institution or not proxy or institution in pairs:
+            raise ValueError("--origin-pattern-proxy needs '<institution>=<proxy institution>' pairs separated by "
+                             "';', each institution once, or 'none'; got %r" % text)
+        pairs[institution] = proxy
+    return pairs
+
+
+def _proxy_summary(entries: list) -> list:
+    """The proxy diagnostics for the header: counts and persons, the Kreis lists as counts only."""
+    return [{key: (len(value) if isinstance(value, list) and key != "proxy_cells_above_own_censoring_bound" else value)
+             for key, value in entry.items()} for entry in entries]
+
+
+def _proxy_students(od: pd.DataFrame, entries: list) -> dict:
+    """Students (heads, after the commuter weight) on the proxy-pattern rows of T, per destination."""
+    result = {}
+    for entry in entries:
+        rows = (od["destination_id"] == entry["destination_id"]) & od["home_ars5"].isin(entry["proxy_pattern_kreise"])
+        rows &= od["cell_kind"] == T.KIND_COMMUTER
+        result[entry["destination_id"]] = {
+            "proxy_pattern_students_persons": float(od.loc[rows, "students_persons"].sum()),
+            "of_which_home_in_region_persons": float(od.loc[rows & od["home_in_region"], "students_persons"].sum())}
+    return result
 
 
 # ---------------------------------------------------------------------------------------- headers
@@ -852,6 +894,8 @@ def _run_balance(args) -> int:
     diagnostics["build_od_table"] = t_diagnostics
     diagnostics["build_od_table_census_year"] = t_diagnostics_census_year
     diagnostics["balance"] = _balance_summary(tables, od)
+    diagnostics["origin_pattern_proxy"] = {**diagnostics["origin_pattern_proxy"],
+                                           "students_on_proxy_rows": _proxy_students(od, prepared["proxy_diagnostics"])}
     day_factor = education_leg_share * (1.0 - away_share)
     weights_lines = _weights_lines(weights, mover_share, args.weights_source, mover_kreise)
     t_inputs = prepared["inputs"]
@@ -977,6 +1021,10 @@ def _common_parser() -> argparse.ArgumentParser:
                              % SEPARATOR_DISTANCE_LEARNING)
     parser.add_argument("--mover-site-kreise", default=MOVER_SITE_KREISE_DEFAULT,
                         help="site Kreise whose movers may live in Braunschweig (design B3 step 7; ASSUMPTION)")
+    parser.add_argument("--origin-pattern-proxy", default=ORIGIN_PATTERN_PROXY_DEFAULT,
+                        help="'<institution>=<proxy institution>' pairs separated by ';' (LSN names, same commune): an "
+                             "institution without an own CHE list takes the proxy's origin pattern (ASSUMPTION, owner "
+                             "decision of 2026-11-27, ADR-0210); 'none' switches it off. Default: %(default)s")
     parser.add_argument("--che", default=str(CHE_DEFAULT), help="CHE origin table (committed)")
     parser.add_argument("--destination", default=str(SRV_DEFAULTS["destination"]), help="SrV destination reference (committed)")
     parser.add_argument("--srv-share", default=str(SRV_DEFAULTS["srv_share"]), help="SrV student share by Kreis (committed)")

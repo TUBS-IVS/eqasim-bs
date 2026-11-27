@@ -32,6 +32,10 @@ weights or the balance. Assumptions behind it:
 - ASSUMPTION A6: a student who does not live in the origin Kreis lives in the Kreis of the site
   (the "movers" of the own-Kreis row); so does a student with a foreign certificate.
 - ASSUMPTION A7: see above; distance-learning cells never reach the builder.
+- ASSUMPTION (origin-pattern proxy, owner decision of 2026-11-27, ADR-0210): an institution without an own
+  CHE list (the art academy) takes the origin pattern of an institution with one in the same commune (TU
+  Braunschweig): students of the two come from the same Kreise in the same proportions
+  (:func:`apply_origin_pattern_proxy`, applied to the cells before :func:`build_od_table`).
 
 Pure module (no I/O); the caller reads the CHE table with ``comment="#"`` and ``dtype=str`` so
 that ``origin_ars5`` keeps its leading zeros.
@@ -93,6 +97,12 @@ SOURCE_KREIS_VIEW = "kreis_view"
 SOURCE_BOTH_VIEWS = "both_views"
 SOURCE_CENSORED = "censored"
 SOURCES = (SOURCE_INSTITUTION_VIEW, SOURCE_KREIS_VIEW, SOURCE_BOTH_VIEWS, SOURCE_CENSORED)
+# Set by apply_origin_pattern_proxy, never by origin_cells (so not in SOURCES).
+SOURCE_PROXY_PATTERN = "proxy_pattern"
+
+# ASSUMPTION (origin-pattern proxy, owner decision of 2026-11-27, ADR-0210): the art academy, which has no
+# own CHE list, takes the origin pattern of TU Braunschweig in the same commune. LSN institution names.
+ORIGIN_PATTERN_PROXY_DEFAULT: dict[str, str] = {"Hochsch. f. Bildende Künste Braunschweig": "TU Braunschweig"}
 
 # CHE publishes "top 10" lists: a list with this many rows hides every smaller cell.
 CHE_LIST_LENGTH = 10
@@ -343,6 +353,117 @@ def origin_cells(che: pd.DataFrame, institutions: list[str], origin_kreise: list
         LOGGER.warning("[student_od_table] %d cell(s) shown in one view exceed the bound of the other view's "
                        "list (check the transcription): %s", len(signals), signals)
     return cells, diagnostics
+
+
+def apply_origin_pattern_proxy(cells: pd.DataFrame, che_totals: pd.Series, sites: pd.DataFrame,
+                               proxy: dict[str, str]) -> tuple[pd.DataFrame, list[dict]]:
+    """Give an institution without an own CHE list the origin pattern of a proxy in the same commune.
+
+    Owner decision of 2026-11-27 (ADR-0210, Decision 1 as amended): the art academy has no own CHE list,
+    so without this rule every student that no Kreis list shows would live in the site's Kreis.
+
+    ASSUMPTION (origin-pattern proxy): students of two institutions in one commune come from the same Kreise
+    in the same proportions.
+
+    Rule, per pair ``institution -> proxy`` of ``proxy`` (names of column ``institution`` of ``sites``, the
+    LSN names): for every origin Kreis ``k`` other than the institution's site Kreis whose cell of the
+    institution is censored, the cell becomes ``O(k, proxy) * E_institution / E_proxy`` with ``O(k, proxy)``
+    the proxy's scaled origin, i.e. ``che_persons(k, proxy) * E_institution / CHE total of the proxy`` (the
+    institution has no CHE total, so :func:`build_od_table` leaves it unscaled); the upper bound passes
+    through the same factor, and ``source`` becomes :data:`SOURCE_PROXY_PATTERN`. The commuter weight is
+    applied later by the builder, so the proxy's weights and censoring bounds apply unchanged. A cell that a
+    CHE view shows for the institution keeps its observed value; the own-Kreis row stays the remainder
+    (A6), and :func:`build_od_table` raises on a negative remainder. The enrollment is that of ``sites``:
+    call once per site table (model semester, census-year semester).
+
+    Parameters:
+        cells: :func:`origin_cells` output (:data:`CELL_COLUMNS`), rectangular.
+        che_totals: :func:`che_totals` output.
+        sites: :data:`SITE_COLUMNS` plus ``site_ags8`` (the site commune).
+        proxy: institution -> proxy institution; empty: the cells are returned unchanged.
+
+    Returns:
+        ``(cells, diagnostics)``: the cells (``che_persons`` float once a cell is replaced) and one dict per
+        pair with ``proxy_pattern_cells``, ``proxy_pattern_origin_persons``, ``proxy_pattern_kreise``, the
+        kept shown cells and ``proxy_cells_above_own_censoring_bound`` (replaced cells whose value exceeds
+        the bound the institution's own CHE lists set; a signal, the value is kept).
+
+    Raises:
+        ValueError: an unknown institution, an institution or proxy without exactly one local site, an
+            institution with an own CHE list, a proxy without one, sites in different communes, a missing
+            cell, or a non-positive enrollment or CHE total.
+    """
+    if not proxy:
+        return cells, []
+    _require_frame_columns(sites, [*SITE_COLUMNS, "site_ags8"], "apply_origin_pattern_proxy sites")
+    _require_frame_columns(cells, CELL_COLUMNS, "apply_origin_pattern_proxy cells")
+    result = cells.copy()
+    diagnostics = []
+    for institution, proxy_institution in proxy.items():
+        chosen = {}
+        for role, name in (("institution", institution), ("proxy", proxy_institution)):
+            rows = sites[sites["institution"] == name]
+            if len(rows) != 1 or rows["scope"].iloc[0] != SCOPE_LOCAL:
+                raise ValueError(f"origin-pattern proxy: {role} {name!r} needs exactly one local site in column "
+                                 f"'institution' of the sites, found {len(rows)} row(s) with scope "
+                                 f"{rows['scope'].tolist()}")
+            chosen[role] = rows.iloc[0]
+        site, proxy_site = chosen["institution"], chosen["proxy"]
+        if institution == proxy_institution:
+            raise ValueError(f"origin-pattern proxy: {institution!r} cannot be its own proxy")
+        if site["site_ags8"] != proxy_site["site_ags8"]:
+            raise ValueError(f"origin-pattern proxy: {institution!r} (commune {site['site_ags8']}) and its proxy "
+                             f"{proxy_institution!r} (commune {proxy_site['site_ags8']}) lie in different communes; "
+                             f"the proxy must share the commune (ADR-0210)")
+        che_name, proxy_che_name = site["che_institution"], proxy_site["che_institution"]
+        if che_name in che_totals.index:
+            raise ValueError(f"origin-pattern proxy: {institution!r} has an own CHE list (total "
+                             f"{che_totals[che_name]}); the proxy is only for institutions without one")
+        if proxy_che_name not in che_totals.index:
+            raise ValueError(f"origin-pattern proxy: proxy {proxy_institution!r} has no own CHE list (no total)")
+        enrollment, proxy_total = float(site["students_persons"]), float(che_totals[proxy_che_name])
+        if not (math.isfinite(enrollment) and enrollment > 0 and math.isfinite(proxy_total) and proxy_total > 0):
+            raise ValueError(f"origin-pattern proxy: needs a positive enrollment of {institution!r} and CHE total "
+                             f"of {proxy_institution!r}, got {enrollment!r} and {proxy_total!r}")
+        factor = enrollment / proxy_total
+
+        own = result[result["institution"] == che_name].set_index("origin_ars5")
+        donor = result[result["institution"] == proxy_che_name].set_index("origin_ars5")
+        missing = sorted(set(own.index) ^ set(donor.index))
+        if missing:
+            raise ValueError(f"origin-pattern proxy: origin Kreise {missing[:5]} lack a cell of {che_name!r} or "
+                             f"{proxy_che_name!r}; the cells must be rectangular")
+        replace = (own["source"] == SOURCE_CENSORED) & (own.index != site["site_kreis_ars5"])
+        kreise = own.index[replace].tolist()
+        values = donor.loc[kreise, "che_persons"].to_numpy(dtype=float) * factor
+        bounds = donor.loc[kreise, "upper_bound_persons"].to_numpy(dtype=float) * factor
+        own_bounds = own.loc[kreise, "upper_bound_persons"].to_numpy(dtype=float)
+        above = [{"origin_ars5": k, "proxy_pattern_persons": float(v), "own_upper_bound_persons": float(b)}
+                 for k, v, b in zip(kreise, values, own_bounds) if math.isfinite(b) and v > b]
+        mask = (result["institution"] == che_name) & result["origin_ars5"].isin(kreise)
+        position = pd.Index(kreise).get_indexer(result.loc[mask, "origin_ars5"])
+        result["che_persons"] = result["che_persons"].astype(float)
+        result.loc[mask, "che_persons"] = values[position]
+        result.loc[mask, "upper_bound_persons"] = bounds[position]
+        result.loc[mask, "source"] = SOURCE_PROXY_PATTERN
+        kept = own.index[(own["source"] != SOURCE_CENSORED) & (own.index != site["site_kreis_ars5"])].tolist()
+        entry = {"institution": institution, "proxy": proxy_institution, "destination_id": site["destination_id"],
+                 "site_ags8": site["site_ags8"], "enrollment_persons": enrollment,
+                 "proxy_che_total_persons": proxy_total, "proxy_pattern_cells": len(kreise),
+                 "proxy_pattern_origin_persons": float(values.sum()),
+                 "proxy_pattern_upper_bound_persons": float(np.nansum(bounds)), "proxy_pattern_kreise": kreise,
+                 "shown_cells_kept_outside_site_kreis": kept, "proxy_cells_above_own_censoring_bound": above}
+        diagnostics.append(entry)
+        n_other = int((own.index != site["site_kreis_ars5"]).sum())
+        LOGGER.info("[student_od_table] origin-pattern proxy %s -> %s (owner decision 2026-11-27, ADR-0210): origin "
+                    "Kreise outside the site Kreis with an own CHE cell (primary) %s, proxy pattern %s, %.1f origin "
+                    "persons", institution, proxy_institution, _rate(len(kept), n_other), _rate(len(kreise), n_other),
+                    entry["proxy_pattern_origin_persons"])
+        if above:
+            LOGGER.warning("[student_od_table] origin-pattern proxy %s: %d proxy cell(s) exceed the bound of the "
+                           "institution's own CHE lists (kept under the origin-pattern proxy ASSUMPTION): %s",
+                           institution, len(above), above)
+    return result, diagnostics
 
 
 def che_totals(che: pd.DataFrame) -> pd.Series:

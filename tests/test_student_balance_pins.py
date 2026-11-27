@@ -8,8 +8,10 @@ tables and pin a few values copied unrounded from the files written by
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +26,8 @@ IN = SCHOOLS / "student_balance_in_commuters_by_origin.csv"
 LEVEL = ROOT / "eqasim-data" / "data" / "braunschweig" / "popsim" / "student_level_table.csv"
 GATE = ROOT / "docs" / "runs" / "artifacts" / "student-balance-2026-11-27" / "student_level_gate.csv"
 ALL_FILES = [OD, BY_SITE, OUT, IN, LEVEL, GATE]
+# The commit that holds the five tables of run student-balance-2026-11-27 (before the origin-pattern proxy).
+OFF_REFERENCE_COMMIT = "a5e99557"
 
 
 @pytest.fixture(scope="module")
@@ -187,6 +191,45 @@ def test_level_table_values_2026_11_27(script):
     assert cell[("male", "20_24")] == pytest.approx(3510.626081, rel=1e-9)
     assert cell[("male", "25_29")] == pytest.approx(1434.297268, rel=1e-9)
     assert cell[("male", "30plus")] == pytest.approx(439.5621738, rel=1e-9)
+
+
+def _first_existing(relative):
+    # Local-only inputs (never committed): this worktree or the main checkout.
+    return next((base / relative for base in (ROOT, ROOT.parents[2]) if (base / relative).exists()), None)
+
+
+def _blob_frame(commit, path):
+    shown = subprocess.run(["git", "-C", str(ROOT), "show", "%s:%s" % (commit, path.relative_to(ROOT).as_posix())],
+                           capture_output=True)
+    if shown.returncode != 0:
+        pytest.skip("commit %s of the 2026-11-27 tables is not in this clone" % commit)
+    return pd.read_csv(io.BytesIO(shown.stdout), comment="#", encoding="utf-8")
+
+
+def test_without_origin_pattern_proxy_the_balance_equals_the_tables_of_2026_11_27(script, tmp_path):
+    """OFF pin of the origin-pattern proxy (ADR-0210, amendment of 2026-11-27): the full ``balance`` run of
+    docs/runs/student-balance-2026-11-27.yml with ``--origin-pattern-proxy none`` reproduces the five tables of
+    that run. Data-gated (VG250 and the Zensus tables are local-only); takes about ten seconds because it loads
+    the VG250 communes, which no smaller input can replace for a pin on the real tables."""
+    vg250 = _first_existing(Path("eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip"))
+    students = _first_existing(Path("eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv"))
+    employed = _first_existing(Path("eqasim-data/data/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv"))
+    if None in (vg250, students, employed):
+        pytest.skip("local-only VG250 archive or Zensus tables not present")
+    seed = script._load_script("seed_lsn_university_sites")
+    site_paths = []
+    for rows, semester in ((seed.SITE_ROWS, seed.SEMESTER), (seed.CENSUS_YEAR_SITE_ROWS, seed.CENSUS_YEAR_SEMESTER)):
+        path = tmp_path / ("sites_%d.csv" % len(site_paths))
+        seed.build_sites_frame(rows, semester=semester).to_csv(path, index=False, lineterminator="\n")
+        site_paths.append(path)
+    assert script.main(["balance", "--sites", str(site_paths[0]), "--sites-census-year", str(site_paths[1]),
+                        "--vg250", str(vg250), "--zensus-students", str(students), "--zensus-employed", str(employed),
+                        "--weights", "1,1,0.3", "--mover-share", "0.4", "--mover-site-kreise", "03158",
+                        "--weights-source", "owner", "--source-commit", "test", "--origin-pattern-proxy", "none",
+                        "--label", "off", "--artifact-dir", str(tmp_path)]) == 0
+    for path in [OD, BY_SITE, OUT, IN, LEVEL]:
+        written = pd.read_csv(tmp_path / "options" / "off" / path.name, comment="#", encoding="utf-8")
+        pd.testing.assert_frame_equal(written, _blob_frame(OFF_REFERENCE_COMMIT, path), check_exact=False, rtol=1e-9)
 
 
 def test_level_gate_values_2026_11_27():
