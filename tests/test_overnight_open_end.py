@@ -58,7 +58,7 @@ def test_no_usable_answer_codes_are_false_and_counted(caplog):
 def test_unknown_code_raises():
     with pytest.raises(ValueError) as exc:
         _flags([5, 5, 2])
-    assert "5" in str(exc.value) and "2" in str(exc.value)
+    assert "2 rows" in str(exc.value) and "5: 2" in str(exc.value)
 
 
 def _flag_true(h=1, p=1):
@@ -98,7 +98,7 @@ def test_fact_row_without_an_answer_raises():
     facts = _facts([(1, 1, False, 3, 1, False), (9, 9, False, 3, 1, False)])
     with pytest.raises(KeyError) as exc:
         ooe.keeps_open_end(facts, _flag_true())
-    assert "1" in str(exc.value)
+    assert "1 of 2 diary-fact rows" in str(exc.value)
 
 
 def test_answer_row_without_facts_is_unused():
@@ -131,3 +131,59 @@ def test_attach_src_keeps_open_end_matches_keeps_open_end():
     assert "src_keeps_open_end" not in persons.columns
     keys = list(zip(persons["source_H_ID"], persons["source_P_ID"]))
     assert out["src_keeps_open_end"].tolist() == [bool(expected.loc[k]) for k in keys]
+
+
+@pytest.mark.parametrize("sep", [",", ";"])
+def test_load_overnight_answers_reads_both_separators(tmp_path, sep):
+    path = tmp_path / "MiD2023_Personen.csv"
+    path.write_text(sep.join(["H_ID", "P_ID", "P_STREISE", "OTHER"]) + "\n"
+                    + sep.join(["10", "1", "2", "x"]) + "\n" + sep.join(["10", "2", "402", "y"]) + "\n")
+    out = ooe.load_overnight_answers(tmp_path)
+    assert list(out.columns) == ["H_ID", "P_ID", "P_STREISE"]
+    assert out.values.tolist() == [[10, 1, 2], [10, 2, 402]]
+
+
+def test_load_overnight_answers_missing_column_raises(tmp_path):
+    (tmp_path / "MiD2023_Personen.csv").write_text("H_ID,P_ID\n1,1\n")
+    with pytest.raises(KeyError, match="P_STREISE"):
+        ooe.load_overnight_answers(tmp_path)
+
+
+def test_load_overnight_answers_null_answer_raises(tmp_path):
+    (tmp_path / "MiD2023_Personen.csv").write_text("H_ID,P_ID,P_STREISE\n1,1,2\n1,2,\n")
+    with pytest.raises(ValueError, match="missing values"):
+        ooe.load_overnight_answers(tmp_path)
+
+
+def test_null_fact_raises_with_column_and_count():
+    facts = _facts([(1, 1, False, 3, 1, False), (1, 2, None, 3, 1, False)])
+    overnight = pd.Series(True, index=facts.index, name="overnight_trip")
+    with pytest.raises(ValueError, match="'ends_at_home' has 1 null"):
+        ooe.keeps_open_end(facts, overnight)
+
+
+def test_null_src_fact_raises_with_column_and_count():
+    facts = _facts([(1, 1, False, 3, 1, False)])
+    overnight = pd.Series(True, index=facts.index, name="overnight_trip")
+    persons = pd.DataFrame({
+        "source_H_ID": [1, 1], "source_P_ID": [1, 1], "src_ends_at_home": [False, False],
+        "src_n_direct_legs": [3, None], "src_first_so1": [1, 1], "src_starts_arriving_home": [False, False],
+    })
+    with pytest.raises(ValueError, match="'src_n_direct_legs' has 1 null"):
+        ooe.attach_src_keeps_open_end(persons, overnight)
+
+
+def test_duplicate_answer_key_raises():
+    with pytest.raises(ValueError, match="2 answer rows"):
+        ooe.overnight_trip_flags(_answers([(1, 1, 2), (1, 1, 1), (1, 2, 1)]))
+
+
+def test_unmatched_source_key_error_names_dtypes():
+    overnight = _flag_true(1, 1)
+    persons = pd.DataFrame({
+        "source_H_ID": ["1"], "source_P_ID": ["1"], "src_ends_at_home": [False],
+        "src_n_direct_legs": [3], "src_first_so1": [1], "src_starts_arriving_home": [False],
+    })
+    with pytest.raises(KeyError) as exc:
+        ooe.attach_src_keeps_open_end(persons, overnight)
+    assert "source key dtypes" in str(exc.value) and "int64" in str(exc.value)

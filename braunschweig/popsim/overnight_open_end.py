@@ -68,6 +68,11 @@ def overnight_trip_flags(answers: pd.DataFrame) -> pd.Series:
     missing = [c for c in ("H_ID", "P_ID", "P_STREISE") if c not in answers.columns]
     if missing:
         raise KeyError(f"overnight_trip_flags: answers frame lacks required column(s) {missing}")
+    duplicated = answers.duplicated(subset=["H_ID", "P_ID"], keep=False)
+    if duplicated.any():
+        raise ValueError(
+            f"[popsim.overnight_open_end] {int(duplicated.sum())} answer rows share a duplicated (H_ID, P_ID) key"
+        )
     code = answers["P_STREISE"].astype(int)
     unknown = code[~code.isin(_KNOWN_CODES)]
     if len(unknown):
@@ -105,6 +110,7 @@ def keeps_open_end(facts: pd.DataFrame, overnight: pd.Series) -> pd.Series:
     missing_cols = [c for c in _FACT_COLUMNS if c not in facts.columns]
     if missing_cols:
         raise KeyError(f"keeps_open_end: facts frame lacks required column(s) {missing_cols}")
+    _reject_nulls(facts, _FACT_COLUMNS)
     absent = facts.index.difference(overnight.index)
     if len(absent):
         raise KeyError(
@@ -131,6 +137,7 @@ def attach_src_keeps_open_end(
     missing = [c for c in required if c not in persons.columns]
     if missing:
         raise KeyError(f"attach_src_keeps_open_end: persons frame lacks required column(s) {missing}")
+    _reject_nulls(persons, _SRC_FACT_COLUMNS)
     keys = pd.MultiIndex.from_arrays(
         [persons[source_household_id].to_numpy(), persons[source_person_id].to_numpy()],
         names=["H_ID", "P_ID"],
@@ -139,20 +146,22 @@ def attach_src_keeps_open_end(
     if len(absent):
         raise KeyError(
             f"[popsim.overnight_open_end] {len(absent)} distinct plan sources have no overnight answer "
-            f"by (H_ID, P_ID), e.g. {list(absent[:3])}"
+            f"by (H_ID, P_ID), e.g. {list(absent[:3])}; source key dtypes "
+            f"({persons[source_household_id].dtype}, {persons[source_person_id].dtype}), "
+            f"answer index dtypes {[str(d) for d in overnight.index.dtypes]}"
         )
     flag = overnight.reindex(keys).astype(bool).to_numpy()
     decision = _decide(
         persons["src_ends_at_home"].to_numpy(dtype=bool), persons["src_n_direct_legs"].to_numpy(),
         persons["src_first_so1"].to_numpy(), persons["src_starts_arriving_home"].to_numpy(dtype=bool),
-        flag, persons.index, "persons",
+        flag, persons.index, "persons", note=" (donor rows, not distinct plan sources)",
     )
     out = persons.copy()
     out["src_" + KEEPS_OPEN_END_COLUMN] = decision.to_numpy()
     return out
 
 
-def _decide(ends_at_home, n_direct_legs, first_so1, starts_arriving_home, flag, index, unit):
+def _decide(ends_at_home, n_direct_legs, first_so1, starts_arriving_home, flag, index, unit, note=""):
     """Shared rule: ``not ends_at_home and n_direct_legs > 0 and overnight and not middle_day``."""
     open_end = ~ends_at_home & (n_direct_legs > 0)
     middle_day = (first_so1 == _FIRST_SO1_AWAY_START_CODE) & ~starts_arriving_home
@@ -161,12 +170,21 @@ def _decide(ends_at_home, n_direct_legs, first_so1, starts_arriving_home, flag, 
     n_kept = int(keep.sum())
     n_middle = int((open_end & flag & middle_day).sum())
     logger.info(
-        "[popsim.overnight_open_end] decisions over %d open-end %s: kept open %d (%.2f%%), closed %d (%.2f%%), "
-        "of which middle day %d (%.2f%%)",
-        n_open, unit, n_kept, _pct(n_kept, n_open), n_open - n_kept, _pct(n_open - n_kept, n_open),
-        n_middle, _pct(n_middle, n_open),
+        "[popsim.overnight_open_end] decisions over %d open-end %s%s: kept open %d (%.2f%%), closed %d (%.2f%%), "
+        "of which middle day %d (%.2f%%; counted among the overnight-flagged open-end %s)",
+        n_open, unit, note, n_kept, _pct(n_kept, n_open), n_open - n_kept, _pct(n_open - n_kept, n_open),
+        n_middle, _pct(n_middle, n_open), unit,
     )
     return pd.Series(keep, index=index, name=KEEPS_OPEN_END_COLUMN)
+
+
+def _reject_nulls(frame, columns):
+    for column in columns:
+        n_null = int(frame[column].isna().sum())
+        if n_null:
+            raise ValueError(
+                f"[popsim.overnight_open_end] column {column!r} has {n_null} null value(s) in {len(frame)} rows"
+            )
 
 
 def _pct(part, whole) -> float:
