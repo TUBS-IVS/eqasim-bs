@@ -70,6 +70,8 @@ import pandas as pd
 from braunschweig.calibration.mid_student_reference import REGION_GERMANY as MID_GERMANY_CODE
 from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
 from braunschweig.calibration.srv_participation_universe import REGION_CODE, UNSURVEYED_KREISE
+from braunschweig.calibration.srv_student_reference import AREA_BRAUNSCHWEIG, AREA_SURROUNDING
+from braunschweig.calibration.student_parameters import BASE_PRESENT, BASE_STUDENTS_ALL
 from braunschweig.calibration.student_behaviour_labels import (
     BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, NOT_STUDENT, UNIVERSE_ADULTS,
     UNIVERSE_STUDENTS, share_standard_error)
@@ -86,6 +88,25 @@ MIN_RESPONDENTS_PER_CELL = 30
 # threshold.
 MIN_DIFFERENCE_STANDARD_ERRORS = 2.0
 RULE_UNIVERSE = UNIVERSE_STUDENTS
+
+# Area rule (design A3 rule 2 of the student synthesis, issue #140): a parameter gets a value of
+# its own for Braunschweig and the surrounding Kreise only when the two areas differ clearly AND
+# both rest on enough respondents. ASSUMPTION thresholds (A20 of the design), judgements fixed
+# before the measurement, not sourced values: at least this many respondents in the base of each
+# area's share (the students present; all students for away_all_day), and at least this many
+# with and without the label on either side. The difference limit is
+# MIN_DIFFERENCE_STANDARD_ERRORS above.
+MIN_RESPONDENTS_PER_AREA = 100
+MIN_RESPONDENTS_EACH_SIDE = 10
+AREA_RULE_CELLS = (("education_leg", BASE_PRESENT, "yes"), ("work_leg", BASE_PRESENT, "yes"),
+                   ("season_ticket", BASE_PRESENT, "flatrate"),
+                   ("away_all_day", BASE_STUDENTS_ALL, "yes"))
+AREA_RULE_TABLE = "srv2023_student_area_rule.csv"
+_AREAS = (AREA_BRAUNSCHWEIG, AREA_SURROUNDING)
+AREA_RULE_COLUMNS = (["parameter", "base", "label"]
+                     + ["%s_%s" % (key, area) for area in _AREAS
+                        for key in ("n_base", "n_label", "n_other", "share", "se")]
+                     + ["difference_in_se", "enough_respondents", "area_value"])
 # Comparison tables by decision of issue #140 (the model derives availability itself).
 COMPARISON_ONLY = ("car_availability", "driving_licence")
 # Their SrV codebook variables in srv2023_student_comparison.csv (srv_student_reference.
@@ -450,3 +471,68 @@ def build_level_gate(srv_shares: pd.DataFrame, census_students: pd.DataFrame,
                 len(covered), len(ZGB_KREISE), list(UNSURVEYED_KREISE), REGION_CODE, covered,
                 ratio_germany, SENSITIVITY_LAND, ratio_land)
     return gate
+
+
+def area_rule_table(by_area: pd.DataFrame, cells=AREA_RULE_CELLS) -> pd.DataFrame:
+    """Design A3 rule 2: which parameters get a value of their own per home area.
+
+    ``by_area`` is the table of :func:`srv_student_reference.build_parameter_table_by_area`
+    (columns ``area, parameter, base, label, n_unweighted, share, se_share``). One row per cell
+    ``(parameter, label)`` of ``cells`` on its base, columns :data:`AREA_RULE_COLUMNS`.
+    ``n_base_<area>`` is the sum of ``n_unweighted`` over the labels of the cell's (parameter,
+    base) in that area, ``n_label_<area>`` the respondents with the label, ``n_other_<area>`` the
+    rest (base minus label). ``difference_in_se = (share_braunschweig - share_surrounding) /
+    sqrt(se_braunschweig^2 + se_surrounding^2)``, NaN when that denominator is not positive
+    (such a cell is not evaluable and gets no area value, counted and logged).
+    ``enough_respondents``: both bases hold at least :data:`MIN_RESPONDENTS_PER_AREA` and the four
+    label / other counts at least :data:`MIN_RESPONDENTS_EACH_SIDE`. ``area_value`` =
+    ``enough_respondents`` and ``abs(difference_in_se) > MIN_DIFFERENCE_STANDARD_ERRORS``.
+    Raises ``ValueError`` when a cell is missing in an area or an area is unexpected.
+    """
+    needed = ["area", "parameter", "base", "label", "n_unweighted", "share", "se_share"]
+    _require_columns(by_area, needed, "by-area parameter table")
+    unexpected = sorted(set(by_area["area"]) - set(_AREAS))
+    if unexpected:
+        raise ValueError("by-area parameter table: area(s) %s outside the surveyed areas %s"
+                         % (unexpected, list(_AREAS)))
+    rows = []
+    for parameter, base, label in cells:
+        row = {"parameter": parameter, "base": base, "label": label}
+        for area in _AREAS:
+            cell = by_area[(by_area["area"] == area) & (by_area["parameter"] == parameter)
+                           & (by_area["base"] == base)]
+            chosen = cell[cell["label"] == label]
+            if len(chosen) != 1:
+                raise ValueError("by-area parameter table: expected exactly one row for %s / %s /"
+                                 " %s in area %s, found %d" % (parameter, base, label, area,
+                                                               len(chosen)))
+            n_base = int(cell["n_unweighted"].sum())
+            n_label = int(chosen["n_unweighted"].iloc[0])
+            row.update({"n_base_%s" % area: n_base, "n_label_%s" % area: n_label,
+                        "n_other_%s" % area: n_base - n_label,
+                        "share_%s" % area: float(chosen["share"].iloc[0]),
+                        "se_%s" % area: float(chosen["se_share"].iloc[0])})
+        rows.append(row)
+    table = pd.DataFrame(rows)
+    first, second = _AREAS
+    denominator = np.hypot(table["se_%s" % first], table["se_%s" % second])
+    table["difference_in_se"] = np.where(
+        denominator > 0, (table["share_%s" % first] - table["share_%s" % second]) / denominator,
+        np.nan)
+    thin_bases = ((table["n_base_%s" % first] >= MIN_RESPONDENTS_PER_AREA)
+                  & (table["n_base_%s" % second] >= MIN_RESPONDENTS_PER_AREA))
+    sides = [table["%s_%s" % (key, area)] >= MIN_RESPONDENTS_EACH_SIDE
+             for area in _AREAS for key in ("n_label", "n_other")]
+    table["enough_respondents"] = thin_bases & sides[0] & sides[1] & sides[2] & sides[3]
+    table["area_value"] = (table["enough_respondents"]
+                           & (table["difference_in_se"].abs() > MIN_DIFFERENCE_STANDARD_ERRORS))
+    table = table[AREA_RULE_COLUMNS]
+    n_not_evaluable = int(table["difference_in_se"].isna().sum())
+    logger.info("%s area rule: %d cells, enough respondents in %d, area value in %d, %d without a "
+                "defined difference (zero standard error, no area value)", _LOG_TAG, len(table),
+                int(table["enough_respondents"].sum()), int(table["area_value"].sum()),
+                n_not_evaluable)
+    if n_not_evaluable:
+        logger.warning("%s area rule: %d of %d cells have a zero standard error on both sides and "
+                       "are not evaluable", _LOG_TAG, n_not_evaluable, len(table))
+    return table

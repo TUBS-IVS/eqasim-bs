@@ -1,7 +1,7 @@
-"""Extract the nine committed SrV 2023 university-student aggregates (issue #140, Phases 0 and 1).
+"""Extract the twelve committed SrV 2023 university-student aggregates (issue #140, Phases 0, 1, 3).
 
 Reads the LOCAL-ONLY SrV 2023 "Braunschweig und RGB" scientific-use microdata (persons, legs,
-households; cp1252, semicolon, decimal comma) and writes nine small aggregate tables to
+households; cp1252, semicolon, decimal comma) and writes twelve small aggregate tables to
 ``--out-dir`` (default ``eqasim-data/data/braunschweig/srv``). Phase 0:
 
     srv2023_student_share_by_kreis.csv               student share of adults / 20-29, presence
@@ -47,6 +47,8 @@ if str(REPO) not in sys.path:
 from braunschweig.calibration import srv_student_reference as R  # noqa: E402
 from braunschweig.calibration import srv_plan_structure as PS  # noqa: E402
 from braunschweig.calibration import student_behaviour_labels as L  # noqa: E402
+from braunschweig.calibration import student_control_evidence as CE  # noqa: E402
+from braunschweig.calibration import student_parameters as SP  # noqa: E402
 from braunschweig.calibration.srv_distance_targets import (  # noqa: E402
     EDUCATION_PURPOSES, WOLFSBURG_KREIS, ZGB_KREISE, select_person_observations)
 # The raw SrV read format (cp1252, semicolon, decimal comma) has one home; reuse it.
@@ -112,7 +114,7 @@ def _exclusions(*dicts) -> str:
 
 def _common_header(table_name: str, source_commit: str,
                    table_label: str = "Phase 0 reference table R5") -> list:
-    """Provenance lines all nine tables share (source, code state, universe, weight, caveats).
+    """Provenance lines all the tables share (source, code state, universe, weight, caveats).
 
     ``table_label`` names the phase / reference table in the ``# Table:`` line.
     """
@@ -337,6 +339,84 @@ def _destination_header(diagnostics: dict, universe_diagnostics: dict, n_bootstr
     ]
 
 
+def _by_area_header(diagnostics: dict, universe_diagnostics: dict, source_commit: str,
+                    sites: list) -> list:
+    return _phase1_header(R.PARAMETER_BY_AREA_TABLE, source_commit, sites) + [
+        "# The rows of %s once per surveyed home area (column area): the households are filtered"
+        % R.PARAMETER_TABLE,
+        "#   by their Kreis, the persons by their household, the universe by its Kreis; every",
+        "#   definition, base and exclusion rule is that of the parameter table (same builder).",
+        "# Home areas (srv_student_reference.HOME_AREAS): %s. Wolfsburg (%s) is not surveyed and has"
+        % ("; ".join("%s = %s" % (area, list(kreise)) for area, kreise in R.HOME_AREAS.items()),
+           WOLFSBURG_KREIS),
+        "#   no row here (the model side reports it with NaN SrV columns).",
+        "# The two areas together are the region: per (parameter, base, label) the n_unweighted of",
+        "#   the two areas add up to the row of %s. No cell is pooled (design A15);"
+        % R.PARAMETER_TABLE,
+        "#   every row carries its n_unweighted.",
+        "# Two education-leg definitions as in the parameter table: the education_leg rows use the",
+        "#   harmonised purpose, education_leg_share_control_definition (per area, in the",
+        "#   exclusion keys below) uses E_ZWECK_9 in %s." % sorted(R.EDUCATION_E_ZWECK_9),
+        "# Columns: area, %s." % ", ".join(SP.PARAMETER_COLUMNS),
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE
+        + " (keys of the builder are prefixed with the area; the universe keys are the region's)",
+    ]
+
+
+def _education_leg_by_status_header(diagnostics: dict, universe_diagnostics: dict,
+                                    source_commit: str, sites: list) -> list:
+    return _phase1_header(R.EDUCATION_LEG_BY_STATUS_TABLE, source_commit, sites) + [
+        "# Base of THIS table: adults (V_ALTER >= %d) of the universe above with a readable V_ERW"
+        " and a valid age,"
+        % L.MIN_ADULT_AGE,
+        "#   at home at some point on the reporting day; group %s (V_ERW %d) or %s (everybody else)."
+        % (R.GROUP_STUDENT, R.STUDENT_V_ERW, R.GROUP_OTHER_ADULT),
+        "# Education leg: E_ZWECK_9 in %s, the control definition of"
+        % sorted(R.EDUCATION_E_ZWECK_9),
+        "#   target2026_education_18plus_by_kreis.csv (srv_participation_universe."
+        "persons_with_purpose).",
+        "# Rows: per ZGB Kreis age_range 18plus (Wolfsburg a zero row with NaN share) and for the",
+        "#   region %s every age_range of %s (bounds inclusive; 200 = open end), per group."
+        % (R.REGION_CODE, [name for name, _, _ in R.EDUCATION_AGE_RANGES]),
+        "# Columns: %s; share = weighted share of the base with an education leg,"
+        % ", ".join(R.EDUCATION_LEG_BY_STATUS_COLUMNS),
+        "#   n_with_leg_unweighted its unweighted count, weight_sum the weight of the persons WITH a",
+        "#   leg (expanded persons), n_effective the Kish size of the whole base of the row.",
+        "# Who the other adults with a leg are (pupil, apprentice, employed, other by age band):",
+        "#   see %s, not repeated here." % R.EDUCATION_STATUS_TABLE,
+        _exclusions(universe_diagnostics, diagnostics) + " " + _UNIVERSE_UNITS_NOTE,
+    ]
+
+
+def _area_rule_header(source_commit: str) -> list:
+    return [
+        "# Source: computed by scripts/extract_srv_student_reference.py on %s from the by-area"
+        % dt.date.today().isoformat(),
+        "#   parameter table %s of the same run and code state; no raw data enters this table."
+        % R.PARAMETER_BY_AREA_TABLE,
+        "# Code state: eqasim-bs %s, braunschweig/calibration/student_control_evidence.py"
+        % source_commit,
+        "#   (area_rule_table). A measurement, not a validation (issue #140, design A3 rule 2).",
+        "# Rule: a parameter gets a value of its own for each home area (%s) only when the two"
+        % ", ".join(R.HOME_AREAS),
+        "#   areas differ by more than %s standard errors of the difference (z = (share_%s -"
+        % (CE.MIN_DIFFERENCE_STANDARD_ERRORS, R.AREA_BRAUNSCHWEIG),
+        "#   share_%s) / sqrt(se_%s^2 + se_%s^2)) AND enough_respondents holds: both bases have at"
+        % (R.AREA_SURROUNDING, R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING),
+        "#   least %d respondents and the label and the rest at least %d respondents on each side."
+        % (CE.MIN_RESPONDENTS_PER_AREA, CE.MIN_RESPONDENTS_EACH_SIDE),
+        "# ASSUMPTIONS (designer's judgements, design A14 and A20, not sourced thresholds): the %s"
+        % CE.MIN_DIFFERENCE_STANDARD_ERRORS,
+        "#   standard errors, the %d and the %d respondents."
+        % (CE.MIN_RESPONDENTS_PER_AREA, CE.MIN_RESPONDENTS_EACH_SIDE),
+        "# Bases: n_base_<area> = respondents of the cell's base in that area (students present at",
+        "#   home on the reporting day; for away_all_day all students), n_label_<area> with the",
+        "#   label, n_other_<area> = n_base - n_label. Cells: %s."
+        % ["%s/%s" % (parameter, label) for parameter, _, label in CE.AREA_RULE_CELLS],
+        "# Columns: %s." % ", ".join(CE.AREA_RULE_COLUMNS),
+    ]
+
+
 def read_site_kreise(path: Path) -> tuple:
     """Site Kreise (``site_kreis_ars5`` of the ``local`` rows) and the sha256 of the table.
 
@@ -386,7 +466,7 @@ def main(argv=None) -> int:
                         help="local-only site table R1 (lsn_university_sites.csv; columns "
                              "site_kreis_ars5, scope); never a default path")
     parser.add_argument("--out-dir", default=str(OUT_DEFAULT),
-                        help="Directory to write the nine tables into")
+                        help="Directory to write the twelve tables into")
     parser.add_argument("--source-commit", required=True,
                         help="git commit of the code state, recorded in every header")
     parser.add_argument("--n-bootstrap", type=int, default=500,
@@ -435,6 +515,14 @@ def main(argv=None) -> int:
     destination, destination_diagnostics = R.build_destination_reference(
         universe, legs, site_kreise, args.n_bootstrap, args.seed)
 
+    # Phase 3: the same parameter builder per home area, the education leg by student status,
+    # and the area rule computed from the by-area table just built (no raw data in the rule).
+    by_area, by_area_diagnostics = R.build_parameter_table_by_area(
+        universe, persons, households, harmonised_persons, harmonised_trips, legs)
+    education_by_status, education_by_status_diagnostics = \
+        R.build_education_leg_by_student_status(universe, legs)
+    area_rule = CE.area_rule_table(by_area)
+
     out = Path(args.out_dir)
     commit = args.source_commit
     _write(share, out / R.STUDENT_SHARE_TABLE,
@@ -460,6 +548,13 @@ def main(argv=None) -> int:
     _write(destination, out / R.DESTINATION_TABLE,
            _destination_header(destination_diagnostics, universe_diagnostics, args.n_bootstrap,
                                args.seed, commit, sites_lines))
+    _write(by_area, out / R.PARAMETER_BY_AREA_TABLE,
+           _by_area_header(by_area_diagnostics, universe_diagnostics, commit, sites_lines))
+    _write(education_by_status, out / R.EDUCATION_LEG_BY_STATUS_TABLE,
+           _education_leg_by_status_header(education_by_status_diagnostics,
+                                           universe_diagnostics, commit, sites_lines))
+    _write(area_rule, out / CE.AREA_RULE_TABLE,
+           _area_rule_header(commit))
     return 0
 
 

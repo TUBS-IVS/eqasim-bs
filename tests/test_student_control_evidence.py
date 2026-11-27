@@ -356,3 +356,73 @@ def test_cli_writes_gate_and_rule_tables(tmp_path):
     comparison = pd.read_csv(out / "student_comparison_only.csv", comment="#")
     assert set(comparison["variable"]) == set(E.COMPARISON_ONLY)
     assert set(comparison["source_table"]) == {"srv2023_student_comparison.csv"}
+
+
+# ------------------------------------------------------------------ Phase 3: area rule (A3 rule 2)
+def _by_area(cell_values):
+    """A by-area table of one cell (season_ticket, flatrate): per area the label and the other
+    label with their respondents, the flatrate share and a standard error of 0.1."""
+    rows = []
+    for area, (n_label, n_other, share) in cell_values.items():
+        for label, count, value in (("flatrate", n_label, share),
+                                    ("no_flatrate", n_other, 1.0 - share)):
+            rows.append({"area": area, "group": "mobility_tools", "parameter": "season_ticket",
+                         "base": "students_present", "label": label, "n_unweighted": count,
+                         "weight_sum": float(count), "share": value, "n_effective": 50.0,
+                         "se_share": 0.1})
+    return pd.DataFrame(rows)
+
+
+_ONE_CELL = (("season_ticket", "students_present", "flatrate"),)
+
+
+def _two_areas(bs, um, z):
+    """Braunschweig (n_label, n_other) and surrounding (n_label, n_other) with the flatrate-share
+    difference that gives ``z`` standard errors (both se 0.1)."""
+    share_um = 0.3
+    share_bs = share_um + z * math.hypot(0.1, 0.1)
+    return _by_area({"braunschweig": (*bs, share_bs), "surrounding": (*um, share_um)})
+
+
+@pytest.mark.parametrize("bs, um, z, enough, value", [
+    ((50, 49), (50, 50), 3.0, False, False),     # 99 respondents in one base
+    ((9, 91), (50, 50), 3.0, False, False),      # 100 in the base but 9 with the label
+    ((91, 9), (50, 50), 3.0, False, False),      # 9 without the label
+    ((50, 50), (10, 90), 2.01, True, True),      # 100 / 10 on both sides, just above 2 se
+    ((50, 50), (10, 90), 1.99, True, False),     # just below
+    ((10, 90), (90, 10), -2.5, True, True),      # the sign does not matter
+])
+def test_area_rule_needs_100_in_the_base_and_10_on_each_side(bs, um, z, enough, value):
+    table = E.area_rule_table(_two_areas(bs, um, z), cells=_ONE_CELL)
+    assert len(table) == 1
+    row = table.iloc[0]
+    assert row["difference_in_se"] == pytest.approx(z)
+    assert bool(row["enough_respondents"]) is enough
+    assert bool(row["area_value"]) is value
+    assert (row["n_base_braunschweig"], row["n_label_braunschweig"],
+            row["n_other_braunschweig"]) == (sum(bs), bs[0], bs[1])
+    assert (row["n_base_surrounding"], row["n_other_surrounding"]) == (sum(um), um[1])
+
+
+def test_area_rule_cells_use_the_real_parameter_bases():
+    from braunschweig.calibration import student_parameters as SP
+    assert E.MIN_RESPONDENTS_PER_AREA == 100 and E.MIN_RESPONDENTS_EACH_SIDE == 10
+    for parameter, base, label in E.AREA_RULE_CELLS:
+        assert label in SP.PARAMETERS[parameter].labels
+        assert base in (SP.PARAMETERS[parameter].base, *SP.EXTRA_BASES.get(parameter, ()))
+    rows = []
+    for area in ("braunschweig", "surrounding"):
+        for parameter, base, label in E.AREA_RULE_CELLS:
+            for name in SP.PARAMETERS[parameter].labels:
+                rows.append({"area": area, "group": "g", "parameter": parameter, "base": base,
+                             "label": name, "n_unweighted": 60, "weight_sum": 60.0,
+                             "share": 0.5, "n_effective": 60.0, "se_share": 0.06})
+    table = E.area_rule_table(pd.DataFrame(rows))
+    assert list(table["parameter"]) == [cell[0] for cell in E.AREA_RULE_CELLS]
+    assert list(table.columns) == E.AREA_RULE_COLUMNS
+    assert not table["area_value"].any() and table["enough_respondents"].all()
+
+
+def test_area_rule_refuses_a_missing_cell():
+    with pytest.raises(ValueError, match="season_ticket"):
+        E.area_rule_table(_by_area({"braunschweig": (50, 50, 0.3)}), cells=_ONE_CELL)

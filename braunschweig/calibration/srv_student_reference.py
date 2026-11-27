@@ -87,7 +87,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from braunschweig.calibration.srv_distance_targets import (ZGB_KREISE,
+from braunschweig.calibration.srv_distance_targets import (WOLFSBURG_KREIS, ZGB_KREISE,
                                                             bootstrap_emd_noise_floor,
                                                             kreis_from_ags,
                                                             weighted_band_shares)
@@ -253,6 +253,28 @@ DISTANCE_COLUMNS = (["code", "level", "n_persons"]
                     + ["share_%s" % label for label in STUDENT_DISTANCE_LABELS]
                     + ["emd_noise_95"])
 COMPARISON_COLUMNS = ["variable", "group", "code", "n_unweighted", "share"]
+
+# ---------------------------------------------------------------- Phase 3: home area, status
+# The home areas of design A3 rule 2 (issue #140). ONE constant owns the Kreis -> area mapping and
+# every consumer (the extraction, the analysis stage, the area rule) imports it. Wolfsburg is not
+# surveyed by SrV: it has an area name (the model side reports it) but no SrV rows.
+AREA_BRAUNSCHWEIG = "braunschweig"
+AREA_SURROUNDING = "surrounding"
+AREA_WOLFSBURG = "wolfsburg"
+_SURVEYED_KREISE = tuple(kreis for kreis in ZGB_KREISE if kreis != WOLFSBURG_KREIS)
+HOME_AREAS: dict[str, tuple[str, ...]] = {
+    AREA_BRAUNSCHWEIG: (BRAUNSCHWEIG_KREIS,),
+    AREA_SURROUNDING: tuple(kreis for kreis in _SURVEYED_KREISE if kreis != BRAUNSCHWEIG_KREIS),
+}
+PARAMETER_BY_AREA_TABLE = "srv2023_student_parameters_by_area.csv"
+EDUCATION_LEG_BY_STATUS_TABLE = "srv2023_education_leg_by_student_status.csv"
+# Age ranges of the education-leg-by-status table, bounds INCLUSIVE; 200 is an upper sentinel.
+EDUCATION_AGE_RANGES = (("18plus", MIN_ADULT_AGE, 200), ("18_29", MIN_ADULT_AGE, 29),
+                        ("30plus", 30, 200))
+AGE_RANGE_ALL_ADULTS = EDUCATION_AGE_RANGES[0][0]
+EDUCATION_LEG_BY_STATUS_COLUMNS = ["code", "level", "group", "age_range", "n_unweighted",
+                                   "n_with_leg_unweighted", "weight_sum", "share",
+                                   "n_effective", "se_share"]
 
 
 # --------------------------------------------------------------------------- helpers
@@ -1078,6 +1100,130 @@ def build_young_adult_status_table(universe: pd.DataFrame) -> tuple[pd.DataFrame
     diagnostics["n_young_adults"] = int(len(young))
     logger.info("%s young-adult status table: %d persons aged %d to %d", _LOG_TAG, len(young),
                 *AGE_BAND_20_29)
+    return table, diagnostics
+
+
+# --------------------------------------------------------------------------- home area (Phase 3)
+def area_of_kreis(kreis: pd.Series) -> pd.Series:
+    """The home area of each Kreis code (:data:`HOME_AREAS`; Wolfsburg is :data:`AREA_WOLFSBURG`).
+
+    Returns an object Series on the index of ``kreis``; a missing code stays NaN (no area). A code
+    outside :data:`srv_distance_targets.ZGB_KREISE` raises ``ValueError`` naming it, because a
+    Kreis that belongs to no area must never be counted into one by default.
+    """
+    codes = pd.Series(kreis)
+    foreign = sorted(set(codes[codes.notna()]) - set(ZGB_KREISE))
+    if foreign:
+        raise ValueError("Kreis code(s) %s outside the ZGB Kreise %s have no home area"
+                         % (foreign, list(ZGB_KREISE)))
+    mapping = {code: area for area, kreise in HOME_AREAS.items() for code in kreise}
+    mapping[WOLFSBURG_KREIS] = AREA_WOLFSBURG
+    return codes.map(mapping).astype(object)
+
+
+def build_parameter_table_by_area(universe: pd.DataFrame, persons: pd.DataFrame,
+                                  households: pd.DataFrame, harmonised_persons: pd.DataFrame,
+                                  harmonised_trips: pd.DataFrame,
+                                  legs: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """:func:`build_parameter_table` once per surveyed home area of :data:`HOME_AREAS`.
+
+    The arguments are those of :func:`build_parameter_table` for the WHOLE region. Per area the
+    households are filtered by their Kreis (the household AGS, as everywhere), the persons by
+    their household, the universe by its ``kreis`` column; the harmonised frames are passed whole
+    (the join inside the builder is on ``pid``). Columns ``["area", *PARAMETER_COLUMNS]``; the
+    two areas together are the region, so for every (parameter, base, label) the counts of the
+    areas add up to the regional table. A household whose Kreis is outside the ZGB raises
+    (:func:`area_of_kreis`). Diagnostics are the builder's, keyed ``<area>_<key>``, plus the
+    households and universe persons that belong to neither surveyed area
+    (``n_households_without_kreis``, ``n_households_wolfsburg``,
+    ``n_universe_persons_in_no_surveyed_area``), counted and logged; Wolfsburg is not surveyed,
+    so a household or person there would be a data surprise, not a row.
+    """
+    _require_columns(universe, ["kreis"], "universe")
+    _require_columns(persons, ["HHNR"], "persons")
+    _require_columns(households, ["HHNR", "AGS"], "households")
+    household_area = area_of_kreis(kreis_from_ags(households["AGS"])).to_numpy()
+    surveyed_kreise = {kreis for kreise in HOME_AREAS.values() for kreis in kreise}
+    diagnostics = {
+        "n_households_without_kreis": int(pd.isna(household_area).sum()),
+        "n_households_wolfsburg": int((household_area == AREA_WOLFSBURG).sum()),
+        "n_universe_persons_in_no_surveyed_area":
+            int((~universe["kreis"].isin(surveyed_kreise)).sum())}
+    for key, n_total in (("n_households_without_kreis", len(households)),
+                         ("n_households_wolfsburg", len(households)),
+                         ("n_universe_persons_in_no_surveyed_area", len(universe))):
+        logger.info("%s parameter table by area: %s = %d of %d", _LOG_TAG, key, diagnostics[key],
+                    n_total)
+        if diagnostics[key]:
+            logger.warning("%s parameter table by area: %d of %d rows (%s) belong to no surveyed "
+                           "home area and are in no area row", _LOG_TAG, diagnostics[key], n_total,
+                           key)
+    frames = []
+    for area, kreise in HOME_AREAS.items():
+        households_area = households[household_area == area]
+        persons_area = persons[persons["HHNR"].isin(households_area["HHNR"]).to_numpy()]
+        universe_area = universe[universe["kreis"].isin(kreise).to_numpy()]
+        table, area_diagnostics = build_parameter_table(
+            universe_area, persons_area, households_area, harmonised_persons, harmonised_trips,
+            legs)
+        frames.append(table.assign(area=area)[["area", *PARAMETER_COLUMNS]])
+        diagnostics.update({"%s_%s" % (area, key): value
+                            for key, value in area_diagnostics.items()})
+        logger.info("%s parameter table by area: %s has %d adult students at home on the "
+                    "reporting day", _LOG_TAG, area, area_diagnostics["n_adult_students"])
+    return pd.concat(frames, ignore_index=True), diagnostics
+
+
+def build_education_leg_by_student_status(universe: pd.DataFrame,
+                                          legs: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Share of the adults at home on the reporting day with an education leg, students and others.
+
+    Base: adults (``age >= MIN_ADULT_AGE``) of :func:`student_universe` with a readable ``V_ERW``
+    and a valid age (a person without an age is in no base: ``n_adults_missing_age``, counted and
+    logged); group ``student`` (``V_ERW`` 7) or ``other_adult``. Education leg: ``E_ZWECK_9`` in
+    :data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the control definition of
+    ``target2026_education_18plus_by_kreis.csv`` (:func:`persons_with_purpose`). Rows
+    (:data:`EDUCATION_LEG_BY_STATUS_COLUMNS`): per ZGB Kreis ``18plus`` (Wolfsburg a zero row with
+    NaN share) and for :data:`REGION_CODE` every range of :data:`EDUCATION_AGE_RANGES`, per group.
+    ``share`` is the weighted share of the base with a leg, ``weight_sum`` the weight of the
+    persons WITH a leg (expanded persons), ``n_effective`` the Kish size of the whole base.
+    """
+    readable, diagnostics = _drop_unreadable_employment(universe)
+    n_missing_age = int(readable["age"].isna().sum())
+    _log_exclusion("education leg by student status: valid age (no age, no adult)", n_missing_age,
+                   len(readable))
+    diagnostics["n_adults_missing_age"] = n_missing_age
+    adults = _adults(readable)
+    education_pids, leg_diagnostics = persons_with_purpose(legs, EDUCATION_E_ZWECK_9)
+    diagnostics.update(leg_diagnostics)
+    adults["has_leg"] = adults["pid"].isin(education_pids)
+    adults["group"] = np.where(adults["is_student"], GROUP_STUDENT, GROUP_OTHER_ADULT)
+    by_kreis = _groups_by_kreis(adults, ZGB_KREISE, "education leg by student status")
+
+    def rows_of(level, code, frame, age_range, minimum, maximum):
+        in_range = frame[(frame["age"] >= minimum) & (frame["age"] <= maximum)]
+        for group in (GROUP_STUDENT, GROUP_OTHER_ADULT):
+            members = in_range[in_range["group"] == group]
+            weight = members["weight"].astype(float)
+            mask = members["has_leg"].to_numpy()
+            share, n_effective, se = _share_with_error(weight, mask)
+            yield {"code": code, "level": level, "group": group, "age_range": age_range,
+                   "n_unweighted": int(len(members)), "n_with_leg_unweighted": int(mask.sum()),
+                   "weight_sum": float(weight[mask].sum()), "share": share,
+                   "n_effective": n_effective, "se_share": se}
+
+    rows = []
+    for code in ZGB_KREISE:
+        rows.extend(rows_of(LEVEL_KREIS, code, by_kreis[code], *EDUCATION_AGE_RANGES[0]))
+    for age_range in EDUCATION_AGE_RANGES:
+        rows.extend(rows_of(LEVEL_TOTAL, REGION_CODE, adults, *age_range))
+    table = pd.DataFrame(rows, columns=EDUCATION_LEG_BY_STATUS_COLUMNS)
+    diagnostics["n_adults"] = int(len(adults))
+    region = table[(table["code"] == REGION_CODE) & (table["age_range"] == AGE_RANGE_ALL_ADULTS)]
+    logger.info("%s education leg by student status: %d adults; region education-leg share "
+                "%s", _LOG_TAG, len(adults),
+                ", ".join("%s %.4f (n %d)" % (row["group"], row["share"], row["n_unweighted"])
+                          for _, row in region.iterrows()))
     return table, diagnostics
 
 

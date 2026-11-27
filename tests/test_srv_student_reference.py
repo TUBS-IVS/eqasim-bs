@@ -325,6 +325,9 @@ def _cli_frames(srv_frames):
 
 def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     persons, legs, households = _cli_frames(srv_frames)
+    # a readable arrival for the one education student of the surrounding area: with a single
+    # student there the per-area parameter table would (rightly) hit the exclusion limit
+    legs.loc[(legs["HHNR"] == 3) & (legs["PNR"] == 1) & (legs["WNR"] == 1), "E_ANKUNFT"] = 450
     raw = tmp_path / "srv2023_raw"
     raw.mkdir()
     for frame, name in ((persons, "SrV2023_Personen.csv"), (legs, "SrV2023_Wege.csv"),
@@ -405,6 +408,23 @@ def test_cli_writes_all_tables_with_headers(srv_frames, tmp_path):
     comparison = tables[R.COMPARISON_TABLE]
     assert set(comparison["group"]) == {"student", "other_adult"}
     assert set(comparison["variable"]) == {"V_PKW_VERFUEG", "V_FUEHR_PKW", "V_FK_VERFUEG"}
+
+    # Phase 3: the two area tables carry the sites line and the exclusions, the area rule is
+    # computed from the by-area table (no exclusions of its own) and names its thresholds
+    for name in (R.PARAMETER_BY_AREA_TABLE, R.EDUCATION_LEG_BY_STATUS_TABLE):
+        text = (out / name).read_text(encoding="utf-8")
+        header = [line for line in text.splitlines() if line.startswith("#")]
+        assert "\r\n" not in text and sites_hash in " ".join(header)
+        assert sum(line.startswith("# Exclusions:") for line in header) == 1
+        assert any("abc1234" in line for line in header)
+    by_area = pd.read_csv(out / R.PARAMETER_BY_AREA_TABLE, comment="#", keep_default_na=False,
+                          na_values=[""])
+    assert set(by_area["area"]) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING}
+    status = pd.read_csv(out / R.EDUCATION_LEG_BY_STATUS_TABLE, comment="#", dtype={"code": str})
+    assert len(status) == 8 * 2 + 3 * 2
+    rule_text = (out / "srv2023_student_area_rule.csv").read_text(encoding="utf-8")
+    assert "ASSUMPTION" in rule_text and R.PARAMETER_BY_AREA_TABLE in rule_text
+    assert len(pd.read_csv(out / "srv2023_student_area_rule.csv", comment="#")) == 4
 
 
 def _load_extraction_script():
@@ -1208,3 +1228,119 @@ def test_fallback_rate_above_the_limit_raises_with_a_fallback_message():
         (3101000, 1, 7, [_edu(3101000, minute=-1)]), (3101000, 1, 7, [_edu(3101000)])])
     with pytest.raises(ValueError, match="fallback served 3 of 4"):
         R.build_destination_reference(universe, legs, SITES, 10, 0)
+
+
+# ------------------------------------------------------------------ Phase 3: home area, status
+def test_area_of_kreis_maps_every_zgb_kreis_once():
+    from braunschweig.calibration.srv_distance_targets import ZGB_KREISE
+    areas = R.area_of_kreis(pd.Series(list(ZGB_KREISE)))
+    assert set(areas) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING, R.AREA_WOLFSBURG}
+    by_kreis = dict(zip(ZGB_KREISE, areas))
+    assert by_kreis["03101"] == R.AREA_BRAUNSCHWEIG
+    assert by_kreis[WOLFSBURG] == R.AREA_WOLFSBURG
+    assert sum(1 for area in by_kreis.values() if area == R.AREA_SURROUNDING) == 6
+    # the two surveyed areas partition the seven surveyed Kreise, Wolfsburg belongs to neither
+    surveyed = [kreis for kreise in R.HOME_AREAS.values() for kreis in kreise]
+    assert sorted(surveyed) == sorted(set(ZGB_KREISE) - {WOLFSBURG})
+    assert set(R.HOME_AREAS) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING}
+    missing = R.area_of_kreis(pd.Series(["03101", np.nan]))
+    assert missing.iloc[0] == R.AREA_BRAUNSCHWEIG and pd.isna(missing.iloc[1])
+    with pytest.raises(ValueError, match="09999"):
+        R.area_of_kreis(pd.Series(["03101", "09999"]))
+
+
+def _by_area_frames(srv_frames):
+    """The parameter fixture with a readable arrival of 3_1, so that the one education student of
+    the surrounding area does not hit the exclusion limit (that rule is not under test here)."""
+    persons, legs, households = _parameter_frames(srv_frames)
+    legs.loc[(legs["HHNR"] == 3) & (legs["PNR"] == 1) & (legs["WNR"] == 1), "E_ANKUNFT"] = 450
+    return persons, legs, households
+
+
+def test_by_area_rows_add_up_to_the_regional_counts(srv_frames):
+    persons, legs, households = _by_area_frames(srv_frames)
+    universe, _ = R.student_universe(persons, households)
+    harmonised_persons, harmonised_trips = _harmonise(persons, legs, households)
+    regional, _ = R.build_parameter_table(universe, persons, households, harmonised_persons,
+                                          harmonised_trips, legs)
+    table, diagnostics = R.build_parameter_table_by_area(
+        universe, persons, households, harmonised_persons, harmonised_trips, legs)
+    assert list(table.columns) == ["area", *SP.PARAMETER_COLUMNS]
+    assert set(table["area"]) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING}
+    assert len(table) == 2 * len(regional)
+    key = ["parameter", "base", "label"]
+    summed = table.groupby(key, sort=False)[["n_unweighted", "weight_sum"]].sum()
+    expected = regional.set_index(key)[["n_unweighted", "weight_sum"]]
+    pd.testing.assert_frame_equal(summed.loc[expected.index], expected, check_dtype=False)
+    # hand check: the adult students 1_1 [2] and 1_2 [1] live in Braunschweig, 3_1 and 3_2 in 03102
+    for area in (R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING):
+        assert diagnostics["%s_n_adult_students" % area] == 2
+        assert ("%s_education_leg_share_control_definition" % area) in diagnostics
+    cell = _parameter_cell(table[table["area"] == R.AREA_BRAUNSCHWEIG], "season_ticket",
+                           "flatrate")
+    assert cell["n_unweighted"] == 1 and cell["share"] == pytest.approx(2 / 3)
+
+
+def test_by_area_rejects_a_household_outside_the_zgb(srv_frames):
+    persons, legs, households = _by_area_frames(srv_frames)
+    universe, _ = R.student_universe(persons, households)
+    harmonised_persons, harmonised_trips = _harmonise(persons, legs, households)
+    households = households.copy()
+    households.loc[households["HHNR"] == 4, "AGS"] = 9999000
+    with pytest.raises(ValueError, match="09999"):
+        R.build_parameter_table_by_area(universe, persons, households, harmonised_persons,
+                                        harmonised_trips, legs)
+
+
+def _status_row(table, code, group, age_range="18plus"):
+    rows = table[(table["code"] == code) & (table["group"] == group)
+                 & (table["age_range"] == age_range)]
+    assert len(rows) == 1, (code, group, age_range)
+    return rows.iloc[0]
+
+
+def test_education_leg_by_status_partitions_the_adults(srv_frames):
+    """Adults with a readable V_ERW: students 1_1 [2, leg], 1_2 [1], 3_1 [1, leg], 3_2 [1];
+    other adults 2_1 [2], 2_3 [1, leg], 3_3 [2], 4_1 [2], 4_2 [2, leg]. The pupil 2_2 (15) has a
+    leg but is no adult, 4_3 has no readable V_ERW."""
+    persons, legs, households = srv_frames
+    universe, _ = R.student_universe(persons, households)
+    table, diagnostics = R.build_education_leg_by_student_status(universe, legs)
+    assert list(table.columns) == ["code", "level", "group", "age_range", "n_unweighted",
+                                   "n_with_leg_unweighted", "weight_sum", "share", "n_effective",
+                                   "se_share"]
+    assert diagnostics["n_excluded_unreadable_employment_code"] == 1
+    region = REGION_CODE
+    student, other = (_status_row(table, region, group) for group in
+                      (R.GROUP_STUDENT, R.GROUP_OTHER_ADULT))
+    assert (student["n_unweighted"], student["n_with_leg_unweighted"]) == (4, 2)
+    assert student["weight_sum"] == pytest.approx(3.0)
+    assert student["share"] == pytest.approx(3 / 5)
+    assert (other["n_unweighted"], other["n_with_leg_unweighted"]) == (5, 2)
+    assert other["share"] == pytest.approx(3 / 9)
+    # per Kreis the two groups add up to the adults of the base, and the Kreise to the region
+    for group in (R.GROUP_STUDENT, R.GROUP_OTHER_ADULT):
+        kreise = table[(table["level"] == "kreis") & (table["group"] == group)]
+        assert kreise["n_unweighted"].sum() == _status_row(table, region, group)["n_unweighted"]
+    for code, n_adults in (("03101", 4), ("03102", 5), (region, 9)):
+        both = table[(table["code"] == code) & (table["age_range"] == "18plus")]
+        assert both["n_unweighted"].sum() == n_adults
+    assert _status_row(table, "03101", R.GROUP_OTHER_ADULT)["share"] == pytest.approx(1 / 3)
+    # the two age ranges partition the 18plus row of the region, per group
+    for group in (R.GROUP_STUDENT, R.GROUP_OTHER_ADULT):
+        parts = [_status_row(table, region, group, age_range) for age_range in ("18_29", "30plus")]
+        assert sum(part["n_unweighted"] for part in parts) == \
+            _status_row(table, region, group)["n_unweighted"]
+    assert _status_row(table, region, R.GROUP_STUDENT, "18_29")["n_unweighted"] == 3
+    assert _status_row(table, region, R.GROUP_OTHER_ADULT, "30plus")["n_unweighted"] == 3
+    # Wolfsburg is not surveyed: zero row, NaN share
+    for group in (R.GROUP_STUDENT, R.GROUP_OTHER_ADULT):
+        wolfsburg = _status_row(table, WOLFSBURG, group)
+        assert wolfsburg["n_unweighted"] == 0 and np.isnan(wolfsburg["share"])
+    # E_ZWECK_9 3 (school) counts as an education leg like 4, E_ZWECK_9 1 (work) does not
+    changed = legs.copy()
+    changed.loc[(changed["HHNR"] == 2) & (changed["PNR"] == 1) & (changed["WNR"] == 1),
+                "E_ZWECK_9"] = 3
+    table_3, _ = R.build_education_leg_by_student_status(universe, changed)
+    other_3 = _status_row(table_3, region, R.GROUP_OTHER_ADULT)
+    assert other_3["n_with_leg_unweighted"] == 3 and other_3["share"] == pytest.approx(5 / 9)
