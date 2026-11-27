@@ -48,7 +48,11 @@ if str(REPO) not in sys.path:
 from braunschweig.calibration import srv_absence as A  # noqa: E402
 # The student definition of the SrV student tables, passed INTO the (hashed) absence helper so
 # that srv_absence.py carries no second copy of the code and no import of the student module.
-from braunschweig.calibration.srv_student_reference import STUDENT_V_ERW  # noqa: E402
+from braunschweig.calibration.srv_student_reference import (  # noqa: E402
+    APPRENTICE_V_ERW,
+    PUPIL_V_ERW,
+    STUDENT_V_ERW,
+)
 
 RAW_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_raw"
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
@@ -131,7 +135,8 @@ def _common_header(table_name: str, diagnostics: dict, source_commit: str,
     return lines
 
 
-def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, n_unreadable_employment_code: int) -> list:
+def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str,
+                n_unreadable_employment_code: int) -> list:
     """Provenance header for the absence-by-age-band table."""
     lines = _common_header(A.ABSENCE_BY_AGE_TABLE, diagnostics, source_commit)
     all_row = table[table["band"] == A.ALL_BAND].iloc[0]
@@ -147,9 +152,11 @@ def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str, n_un
         "#   GEWICHT_P_ZENSUS-weighted away-all-day share, over the persons of the band whose V_ERW is",
         "#   readable and NOT %d (Student/in, braunschweig.calibration.srv_student_reference.STUDENT_V_ERW,"
         % STUDENT_V_ERW,
-        "#   the definition of the SrV student tables). Pupils (V_ERW 6) and apprentices (V_ERW 8) are",
-        "#   therefore non-students here. Persons whose V_ERW is missing or negative (-8 not surveyed,",
-        "#   -10 implausible) are in NO non-student column and never classed non-student: %d of %d persons"
+        "#   the definition of the SrV student tables). Pupils (V_ERW %d) and apprentices (V_ERW %d) are"
+        % (PUPIL_V_ERW, APPRENTICE_V_ERW),
+        "#   therefore non-students here. Persons whose V_ERW is missing or negative (the non-answer",
+        "#   codes as defined in srv_student_reference) are in NO non-student column and never classed",
+        "#   non-student: %d of %d persons"
         % (n_unreadable_employment_code, int(all_row["n_unweighted"])),
         "#   (excluded_unreadable_employment_code=%d). Weights are the RAW SrV weights GEWICHT_P_ZENSUS, with"
         % n_unreadable_employment_code,
@@ -358,7 +365,8 @@ def main(argv=None) -> int:
     A.check_invariants(by_age, by_size, composition, partial_subset)
     logger.info("invariants passed; diagnostics: %s; clustering: %s", diagnostics, clustering)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE, _age_header(by_age, diagnostics, args.source_commit, n_unreadable_employment_code))
+    _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE,
+           _age_header(by_age, diagnostics, args.source_commit, n_unreadable_employment_code))
     _write(by_size, args.out_dir / A.ABSENCE_HOUSEHOLD_TABLE,
            _size_header(by_size, diagnostics, args.source_commit, clustering, n_roster_checked))
     _write(composition, args.out_dir / A.ABSENCE_COMPOSITION_TABLE,

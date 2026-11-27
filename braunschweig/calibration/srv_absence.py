@@ -236,11 +236,21 @@ def _by_age_row(label: str, age_min: int, age_max: int, group: pd.DataFrame, stu
             "p_absent_non_student": _weighted_share(non_student["weight"], non_student["absent"])}
 
 
-def build_absence_by_age_band(prepared: pd.DataFrame, student_code: int) -> pd.DataFrame:
+#: ASSUMPTION: a share of unreadable V_ERW codes above this bound means a format mismatch (wrong
+#: column, wrong decimal or encoding), not a few non-answers; the committed extraction has 11 of
+#: 18,223 persons (0.06 %). The builder raises above it, so empty non-student columns never reach
+#: the CSV.
+MAX_UNREADABLE_EMPLOYMENT_CODE_SHARE = 0.05
+
+
+def build_absence_by_age_band(prepared: pd.DataFrame, student_code: int,
+                              max_unreadable_share: float = MAX_UNREADABLE_EMPLOYMENT_CODE_SHARE) -> pd.DataFrame:
     """Away-all-day share per age band for every person and, in three trailing columns, for the
     NON-STUDENT persons (``V_ERW`` readable and != ``student_code``; the code is the caller's, the
     definition of the SrV student tables). A person with a missing or negative ``V_ERW`` is in no
-    non-student column (never classed non-student); the exclusion is logged as a rate."""
+    non-student column (never classed non-student); the exclusion is logged as a rate and raises
+    when its share exceeds ``max_unreadable_share`` (default
+    :data:`MAX_UNREADABLE_EMPLOYMENT_CODE_SHARE`, an ASSUMPTION stated there)."""
     rows = []
     for band in AGE_BAND_LABELS:
         lo, hi = AGE_BAND_BOUNDS[band]
@@ -252,6 +262,10 @@ def build_absence_by_age_band(prepared: pd.DataFrame, student_code: int) -> pd.D
                 "(%.2f%%)", _LOG_TAG, n_total - n_unreadable, n_total,
                 100.0 * (n_total - n_unreadable) / n_total if n_total else float("nan"), n_unreadable,
                 100.0 * n_unreadable / n_total if n_total else float("nan"))
+    if n_total and n_unreadable / n_total > max_unreadable_share:
+        raise ValueError(f"{_LOG_TAG} {n_unreadable}/{n_total} persons ({100.0 * n_unreadable / n_total:.2f}%) have an "
+                         f"unreadable V_ERW, above the bound of {100.0 * max_unreadable_share:.2f}%; the column is "
+                         "probably misread (format mismatch), refusing to write empty non-student columns")
     return pd.DataFrame(rows, columns=BY_AGE_COLUMNS)
 
 
@@ -426,12 +440,25 @@ def check_invariants(by_age: pd.DataFrame, by_size: pd.DataFrame, composition: p
     all_row_n_unweighted = int(by_age.loc[by_age["band"] == ALL_BAND, "n_unweighted"].iloc[0])
     if int(bands["n_unweighted"].sum()) > all_row_n_unweighted:
         raise ValueError(f"{_LOG_TAG} band person counts exceed the 'all' row")
-    for name, table, col in (("by_age", by_age, "p_absent"), ("by_size", by_size, "p_all_absent"),
+    for name, table, col in (("by_age", by_age, "p_absent"), ("by_age", by_age, "p_absent_non_student"),
+                             ("by_size", by_size, "p_all_absent"),
                              ("by_size", by_size, "p_absent_person"),
                              ("by_size", by_size, "p_partial_absent")):
         shares = table[col].dropna()
         if ((shares < 0) | (shares > 1)).any():
             raise ValueError(f"{_LOG_TAG} {name}: {col} outside [0, 1]")
+    # Non-student columns (issue #140): a subset of the band's persons, a share only where the base is non-empty.
+    if (by_age["n_unweighted_non_student"] > by_age["n_unweighted"]).any():
+        raise ValueError(f"{_LOG_TAG} by_age: n_unweighted_non_student exceeds n_unweighted for at least one row")
+    if (by_age["n_absent_unweighted_non_student"] > by_age["n_absent_unweighted"]).any():
+        raise ValueError(f"{_LOG_TAG} by_age: n_absent_unweighted_non_student exceeds n_absent_unweighted "
+                         "for at least one row")
+    if (by_age["n_absent_unweighted_non_student"] > by_age["n_unweighted_non_student"]).any():
+        raise ValueError(f"{_LOG_TAG} by_age: n_absent_unweighted_non_student exceeds n_unweighted_non_student "
+                         "for at least one row")
+    if (by_age["p_absent_non_student"].isna() != (by_age["n_unweighted_non_student"] == 0)).any():
+        raise ValueError(f"{_LOG_TAG} by_age: p_absent_non_student must be NaN exactly where the non-student "
+                         "base is empty")
     if list(by_size["size_class"]) != list(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1)):
         raise ValueError(f"{_LOG_TAG} by-size table must carry size classes 1..{HOUSEHOLD_SIZE_CLASS_TOP}")
     # Person-level guards (issue #388): a size class can never report more absent persons than

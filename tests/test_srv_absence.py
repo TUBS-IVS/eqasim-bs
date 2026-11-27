@@ -109,7 +109,7 @@ def _persons_for_non_student_band():
 
 def test_non_student_columns_exclude_students_and_unreadable_codes():
     prepared, _ = A.prepare_absence_persons(_persons_for_non_student_band())
-    row = A.build_absence_by_age_band(prepared, STUDENT_CODE).set_index("band").loc["18-29"]
+    row = A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=0.5).set_index("band").loc["18-29"]
     assert row["n_unweighted_non_student"] == 3 and row["n_absent_unweighted_non_student"] == 1
     assert row["p_absent_non_student"] == pytest.approx(3.0 / 5.0)     # weights 3 (away), 1, 1
     # the legacy columns still describe EVERY person of the band, students and unreadable ones too
@@ -127,6 +127,29 @@ def test_non_student_columns_leave_the_legacy_columns_untouched():
     assert list(first.columns) == old_columns + ["n_unweighted_non_student",
                                                  "n_absent_unweighted_non_student", "p_absent_non_student"]
     pd.testing.assert_frame_equal(first[old_columns], second[old_columns])
+
+
+def test_builder_raises_when_too_many_employment_codes_are_unreadable_and_accepts_at_the_bound():
+    prepared, _ = A.prepare_absence_persons(_persons_for_non_student_band())   # 2 of 7 unreadable
+    with pytest.raises(ValueError, match="unreadable V_ERW"):
+        A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=0.25)
+    table = A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=2 / 7)   # at the bound
+    assert table.set_index("band").loc["all", "n_unweighted_non_student"] == 3
+
+
+def test_invariants_reject_inconsistent_non_student_columns():
+    by_age, by_size, _, _ = _all_tables()
+    for column, value, match in (("n_unweighted_non_student", 10 ** 6, "n_unweighted_non_student exceeds"),
+                                 ("n_absent_unweighted_non_student", 10 ** 6, "n_absent_unweighted_non_student"),
+                                 ("p_absent_non_student", 1.2, "p_absent_non_student")):
+        broken = by_age.copy()
+        broken.loc[3, column] = value   # row 3 = band 30-44, populated in the toy frame
+        with pytest.raises(ValueError, match=match):
+            A.check_invariants(broken, by_size)
+    nan_with_base = by_age.copy()
+    nan_with_base.loc[3, "p_absent_non_student"] = np.nan   # the base of 30-44 is non-empty
+    with pytest.raises(ValueError, match="NaN exactly"):
+        A.check_invariants(nan_with_base, by_size)
 
 
 def test_non_student_share_is_nan_not_zero_for_an_empty_base():
