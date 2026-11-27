@@ -1,0 +1,35 @@
+{
+  "clone": "~/i678_replay/eqasim-bs",
+  "jar": "~/i678_replay/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar",
+  "threads": 32,
+  "xmx": "56G",
+  "loop_settings": {
+    "isolate_outside_trips": false,
+    "max_tour_length": 11
+  },
+  "initial_settings": {
+    "isolate_outside_trips": true,
+    "max_tour_length": 11
+  },
+  "lift_all_modes": true,
+  "max_share_other_modes": 0.002,
+  "excluded_subpopulations": [],
+  "steps": {
+    "jar_check": {
+      "seconds": 36.8,
+      "persons_after": 1261590
+    },
+    "mode_choice_reach_apply": {
+      "changes": {
+        "maximumLength": [
+          "6",
+          "11"
+        ]
+      },
+      "seconds": 34.6,
+      "persons_after": 1261590
+    }
+  },
+  "persons_input": 1261590,
+  "error": "Traceback (most recent call last):\n  File \"~/i678_replay/i678_reach_replay.py\", line 108, in main\n    report = initial_mode_choice.run(context, CONFIG_NAME, (), reach=initial)\n  File \"~/i678_replay/eqasim-bs/braunschweig/matsim/initial_mode_choice.py\", line 203, in run\n    eqasim.run(context, RUNNER, arguments(config_file, relative_population, threads, excluded_subpopulations))\n  File \"~/i678_replay/eqasim-bs/matsim/runtime/eqasim.py\", line 267, in run\n    java.run(context, command, arguments, jar_path)\n  File \"~/i678_replay/eqasim-bs/matsim/runtime/java.py\", line 97, in run\n    raise sp.CalledProcessError(return_code, command_line)\nsubprocess.CalledProcessError: Command '['~/tools/jdk-25.0.3+9/bin/java', '-cp', '~/i678_replay/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar', '-Xmx56G', '-Djava.io.tmpdir=~/i678_replay/stage/__java_temp', '-Dmatsim.useLocalDtds=true', 'org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice', '--config-path', 'braunschweig_100pct_prod20261031_config_initial_mode_choice.xml', '--config:plans.inputPlansFile', 'braunschweig_100pct_prod20261031_population.xml.gz', '--config:standaloneModeChoice.outputDirectory', 'mode_choice', '--config:standaloneModeChoice.removePersonsWithNoValidAlternatives', 'true', '--config:global.numberOfThreads', '32', '--write-input-csv-trips', 'true', '--write-output-csv-trips', 'true', '--compression', 'gzip', '--skip-scenario-check', 'true', '--eqasim-configurator', 'org.eqasim.braunschweig.BraunschweigConfigurator']' returned non-zero exit status 143.\n"
+}

@@ -52,6 +52,8 @@ HUB_TABLE_COLUMNS = ("name", "stop_id", "x", "y", "inside_extent")
 _HELPER_MODULES = (_schedule, _cordon, _extent, eqasim, java)
 #: The schedule reader imports ``plan_check.parse_time_s``; the audit requires its import closure to be hashed too.
 _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.matsim.simulation.plan_check", "braunschweig.popsim.closure_dwell",
+                                 # plan_check imports mode_choice_reach, which imports config_modules (#678)
+                                 "braunschweig.matsim.simulation.mode_choice_reach", "braunschweig.matsim.config_modules",
                                  "braunschweig.popsim.plan_validation", "data.hts.hts",
                                  # Declared stages this stage runs as libraries, and their imports (ADR-0194): the DAG
                                  # edge covers their output, not this code.

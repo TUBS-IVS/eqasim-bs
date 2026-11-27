@@ -1,3 +1,5 @@
+import pytest
+
 from braunschweig.matsim.simulation import prepare
 
 
@@ -58,7 +60,12 @@ def test_boundary_link_defaults_are_declared_when_enabled():
     assert context._configs["freight_boundary_link_maximum_fallback_share"] == 0.05
 
 
-def test_inject_freight_passes_the_boundary_link_options(tmp_path, monkeypatch):
+#: The injector's summary as RunInjectFreight writes it: a header and one row per trip type, no total row.
+INJECTION_SUMMARY = "trip_type;injected_trips\ntransit;1\ninternal;2\n"
+
+
+def _inject(tmp_path, monkeypatch, summary=INJECTION_SUMMARY):
+    """Run _inject_freight with a faked injector that writes ``summary``; return (result, calls)."""
     import pandas as pd
 
     from braunschweig.freight.trips import TRIP_COLUMNS
@@ -86,13 +93,20 @@ def test_inject_freight_passes_the_boundary_link_options(tmp_path, monkeypatch):
     def fake_run(context, class_name, arguments):
         calls.append((class_name, [str(a) for a in arguments]))
         options = dict(zip(calls[-1][1][::2], calls[-1][1][1::2]))
-        (tmp_path / options["--summary-path"]).write_text("trip_type;injected_trips\ntransit;1\n", encoding="utf-8")
+        (tmp_path / options["--summary-path"]).write_text(summary, encoding="utf-8")
         (tmp_path / options["--boundary-link-summary-path"]).write_text(
             "endpoint_role;selected_link_endpoints;nearest_node_fallback_endpoints\nstart;1;0\nend;1;0\n",
             encoding="utf-8")
 
     monkeypatch.setattr(prepare.eqasim, "run", fake_run)
-    prepare._inject_freight(InjectContext(), "config.xml")
+    return prepare._inject_freight(InjectContext(), "config.xml"), calls
+
+
+def test_inject_freight_passes_the_boundary_link_options(tmp_path, monkeypatch):
+    result, calls = _inject(tmp_path, monkeypatch)
+    # The count comes from the injector's summary (1 + 2), not from the Python sample (1 trip): the initial mode
+    # choice names the freight subpopulation only when the injector wrote trips (#678 final review, finding 12).
+    assert result == 3
 
     class_name, arguments = calls[0]
     options = dict(zip(arguments[::2], arguments[1::2]))
@@ -107,3 +121,13 @@ def test_inject_freight_logs_the_boundary_fallback_rate(tmp_path, monkeypatch, c
     test_inject_freight_passes_the_boundary_link_options(tmp_path, monkeypatch)
     assert "[freight.injection] boundary links: selected 2 / 2, nearest-node fallback 0 (0.00 %)" \
         in capsys.readouterr().out
+
+
+def test_inject_freight_counts_zero_for_a_summary_without_rows(tmp_path, monkeypatch):
+    """A sample of zero trips: the injector writes only the header, so freight is not excluded (#678)."""
+    assert _inject(tmp_path, monkeypatch, summary="trip_type;injected_trips\n")[0] == 0
+
+
+def test_inject_freight_fails_clearly_without_the_injected_trips_column(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="injected_trips"):
+        _inject(tmp_path, monkeypatch, summary="trip_type;trips\ntransit;1\n")

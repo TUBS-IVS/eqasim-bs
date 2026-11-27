@@ -1074,8 +1074,25 @@ config:
   braunschweig.plan_check.fail_on_threshold: false
   # Long pt-as-walk trips (over plan_check.pt_as_walk_bound_min_distance_m) of frozen resident tours become one
   # car_passenger leg before the plan check (ADR-0189, #575). The lifted share is judged against
-  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lift has no bound of its own.
+  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lifted walk and bicycle trips have their own bound,
+  # braunschweig.frozen_pt_walk_lift.max_share_other_modes (ADR-0206).
   braunschweig.frozen_pt_walk_lift.enabled: true
+  # Which trips the mode choice can change (ADR-0206, #678). isolate_outside_trips: true selects the finer tour rule
+  # (tour finder IsolatedOutsideTrips, vehicle constraint BorderTourVehicleContinuity), so a trip of a tour that
+  # touches outside the region can be re-chosen on its own; max_tour_length is the longest tour (in trips) the
+  # mode choice still handles (tourFilter:TourLength). "initial" is the one standalone mode choice before iteration
+  # 0, "mode_choice" the MATSim loop. Values that restore today's behaviour: initial false and 6, loop false and 6.
+  braunschweig.initial_mode_choice.isolate_outside_trips: true
+  # Owner decision of 2026-11-25: the initial choice uses the loop's limit of 11, because a limit of 13 would add
+  # hours of computing time (timing manifest i678-long-tour-timing-prod100-2026-11-25); longer tours stay unreached.
+  braunschweig.initial_mode_choice.max_tour_length: 11
+  braunschweig.mode_choice.isolate_outside_trips: false
+  braunschweig.mode_choice.max_tour_length: 11
+  # The lift also repairs long walk and bicycle trips that the mode choice cannot reach, not only pt-as-walk
+  # (ADR-0206, #678); false restores today's behaviour (the pt rule alone). max_share_other_modes has no today value:
+  # it is the bound of this new walk/bicycle lift, as a share of all resident trips.
+  braunschweig.frozen_pt_walk_lift.all_modes: true
+  braunschweig.frozen_pt_walk_lift.max_share_other_modes: 0.002
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.

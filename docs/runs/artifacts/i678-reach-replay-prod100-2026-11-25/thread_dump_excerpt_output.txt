@@ -1,0 +1,9 @@
+"Thread-1" #101 [646566] prio=5 os_prio=0 cpu=175,00ms elapsed=3550,78s tid=0x00007f8a24ef1880 nid=646566 waiting on condition  [0x00007f7b29bda000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleepNanos0(java.base@25.0.3/Native Method)
+	at java.lang.Thread.sleepNanos(java.base@25.0.3/Thread.java:509)
+--
+"DestroyJavaVM" #263 [643406] prio=5 os_prio=0 cpu=671491,00ms elapsed=2094,35s tid=0x00007f8a2402ba20 nid=643406 waiting on condition  [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Attach Listener" #264 [671446] daemon prio=9 os_prio=0 cpu=3,51ms elapsed=0,12s tid=0x00007f7b90000eb0 nid=671446 waiting on condition  [0x0000000000000000]

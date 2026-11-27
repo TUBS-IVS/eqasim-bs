@@ -1,0 +1,12 @@
+23c23
+< 		<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />
+---
+> 		<param name="tourConstraints" value="FromTripBased, BorderTourVehicleContinuity" />
+29c29
+< 		<param name="tourFinder" value="ActivityBased" />
+---
+> 		<param name="tourFinder" value="IsolatedOutsideTrips" />
+67c67
+< 			<param name="maximumLength" value="6" />
+---
+> 			<param name="maximumLength" value="13" />

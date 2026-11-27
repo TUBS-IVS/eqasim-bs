@@ -63,6 +63,9 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.cordon.plans",
     "braunschweig.synthesis.portal_trips.config_keys",
     "braunschweig.analysis.stuck_agents",
+    # plan_check imports mode_choice_reach (ReachSettings), which imports config_modules (#678).
+    "braunschweig.matsim.config_modules",
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",

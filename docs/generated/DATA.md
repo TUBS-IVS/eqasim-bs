@@ -31,6 +31,11 @@ Restricted datasets are never committed or redistributed.
 | [genesis_svb_workplace](../registry/data/genesis_svb_workplace.yml) | control | manual_download | `data/braunschweig/13111-01-03-5.xlsx` | r/-/r | no |
 | [german_wide_freight_v3](../registry/data/german_wide_freight_v3.yml) | supply_input, network, assumption_basis | auto_script (`scripts/download_german_wide_freight.py`) | `data/braunschweig/freight/german-wide-freight-v3/` | -/r/r | no |
 | [gtfs_feed](../registry/data/gtfs_feed.yml) | supply_input | manual_download | `data/gtfs_cordon/de_full_2026-06-02.zip` | -/r/r | no |
+| [hbefa_emission_factors](../registry/data/hbefa_emission_factors.yml) | reference_table | restricted_delivery | `No fixed path. The four files are named by the config keys hbefa_cold_average_path,
+hbefa_warm_average_path, hbefa_cold_detailed_path and hbefa_warm_detailed_path, which have no default
+(stage braunschweig.data.hbefa). Keep the files outside the repository or under the gitignored
+; never commit them.
+` | -/-/o | YES |
 | [hsn_tsn_lookup](../registry/data/hsn_tsn_lookup.yml) | derived_input | scrape (`scripts/scrape_hsn_tsn.py`) | `data/braunschweig/kba/hsn_tsn_lookup.csv` | o/-/r | no |
 | [inkar_household_income](../registry/data/inkar_household_income.yml) | control, reference_table | manual_download | `data/braunschweig/E_Haushaltseinkommen.xls` | r/-/r | no |
 | [inkar_indicators](../registry/data/inkar_indicators.yml) | reference_table | manual_download | `data/braunschweig/E_*.xls` | o/-/o | no |

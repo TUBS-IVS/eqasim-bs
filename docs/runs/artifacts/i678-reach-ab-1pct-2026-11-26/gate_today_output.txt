@@ -1,0 +1,10 @@
+environment: conda 312/312 matched, pip 9/14 matched (1 git pin: presence only), 0 conda packages beyond the snapshot (info)
+WARNING: the environment of ~/miniforge3/envs/eqasim/bin/python differs from the snapshot of this run's commit: pip py-spy 0.4.2 wanted, not installed; pip pdfplumber 0.11.9 wanted, not installed; pip pdfminer.six 20251230 wanted, not installed; pip pypdfium2 5.7.1 wanted, not installed; pip cryptography 46.0.7 wanted, not installed. Fix: create a fresh conda env from the two snapshot files under another name (bootstrap_server.sh keeps an existing env: set EQASIM_CONDA_ENV, see scripts/bootstrap_server.sh), then gate with THAT env's python and launch with --conda-env <that name>; or pass --allow-environment-mismatch to run on this env knowingly (--allow-environment-mismatch: continuing, recorded in run.json)
+explain (~/i678_ab_today/logs/explain_20261126T205316.log): # 93 stages: 3 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 90 hits
+  STALE braunschweig.matsim.simulation.prepare
+  STALE matsim.output
+  STALE matsim.simulation.run
+inputs: every required input present (~/i678_ab_today/logs/inputs_20261126T205316.log)
+braunschweig.popsim.stage: HIT, PopulationSim stays cached
+gate list of 3 stages written to ~/i678_ab_today/run.yml
+next: python scripts/isolated_run.py launch ~/i678_ab_today

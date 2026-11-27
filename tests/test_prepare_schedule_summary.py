@@ -1,6 +1,7 @@
 import gzip
 
 from braunschweig.matsim.simulation import prepare
+from tests.stage_context import PREPARED_MINIMAL_CONFIG, prepare_reach_defaults
 from tests.test_transit_next_day import SCHEDULE
 
 
@@ -21,6 +22,7 @@ def test_schedule_summary_of_a_schedule_without_departures(tmp_path):
 
 def test_final_schedule_departures_are_logged_with_vrb_fares_off(tmp_path, monkeypatch, capsys):
     (tmp_path / "bs_transit_schedule.xml.gz").write_bytes(gzip.compress(SCHEDULE))
+    (tmp_path / "config.xml").write_text(PREPARED_MINIMAL_CONFIG, encoding="utf-8")  # the reach edit reads it
 
     class _Context:
         def path(self):
@@ -30,7 +32,7 @@ def test_final_schedule_departures_are_logged_with_vrb_fares_off(tmp_path, monke
             return {"output_prefix": "bs_", prepare.VRB_FARES_KEY: False, "cordon_enabled": False,
                     "freight_enabled": False, prepare.PARKING_KEY: False,
                     prepare.plan_check.KEY_ENABLED: False, prepare.initial_mode_choice.KEY_ENABLED: False,
-                    prepare.frozen_pt_walk_lift.KEY_ENABLED: False}[key]
+                    prepare.frozen_pt_walk_lift.KEY_ENABLED: False, **prepare_reach_defaults()}[key]
 
     monkeypatch.setattr(prepare.delegate, "execute", lambda context: "config.xml")
     monkeypatch.setattr(prepare.eqasim, "run", lambda *args, **kwargs: None)

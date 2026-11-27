@@ -31,6 +31,8 @@ _HELPER_MODULES = (delegate, transit_next_day)
 _DEFERRED_HELPER_MODULE_NAMES = (
     # transit_next_day reads parse_time_s from plan_check, which reads MAX_PLAN_TIME_SECONDS from
     # braunschweig.popsim.plan_validation (closure_dwell, data.hts.hts, population.methods, resources).
+    "braunschweig.matsim.config_modules",
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",
