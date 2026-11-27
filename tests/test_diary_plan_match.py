@@ -331,3 +331,88 @@ def test_reassign_holiday_source_with_unknown_anzwege1_counts_as_fallback(caplog
     rate_lines = [r for r in caplog.records
                   if r.getMessage().startswith("[diary_plan_match.holiday_source_anzwege1] primary 0/1")]
     assert len(rate_lines) == 1 and rate_lines[0].levelno == logging.WARNING, caplog.text
+
+
+# --- A1: the student status key in the diary re-draw (ADR-0211) --------------------------------------------
+
+def _student_donors(donor_taets=(10, 11, 11)):
+    """Two diary-less targets (a student H1, a pensioner H2) and realisable donors H5, H6, H7 with ``donor_taets``."""
+    taets = [10, 11] + list(donor_taets)
+    n = len(taets)
+    return pd.DataFrame({
+        "H_ID": list(range(1, n + 1)), "P_ID": [1] * n,
+        "anzwege1": [803, 803] + [2] * len(donor_taets), "mobil": [1] * n, "mobil_diff": [5, 5] + [1] * len(donor_taets),
+        "feiertag": [0] * n, "kernwo": [2] * n, "member_imputed": [False] * n,
+        "source_H_ID": list(range(1, n + 1)), "source_P_ID": [1] * n,
+        "P_GEW": [1.0] * n, "HP_ALTER": [22] * n, "HP_SEX": [2] * n,
+        "P_FSCHEIN": [1] * n, "P_TAET": taets, "P_FKARTE": [1] * n,
+    })
+
+
+def _student_wege(n_donors=3):
+    rows = [(h, w, z) for h in range(3, 3 + n_donors) for w, z in ((1, 1), (2, 8))]
+    return pd.DataFrame({
+        "H_ID": [r[0] for r in rows], "P_ID": 1, "W_ID": [r[1] for r in rows], "W_ZWECK": [r[2] for r in rows],
+        "W_RBW": 0, "W_SO1": [1 if r[1] == 1 else 809 for r in rows], "wegkm_imp": 3.0,
+    })
+
+
+def _run_students(donors, wege, seed, **kwargs):
+    facts = dfm.compute_diary_facts(wege)
+    return dpm.reassign_diaryless_plan_sources(
+        donors, donors, facts, rng=np.random.RandomState(seed), hard_employment=True,
+        fine_child_age_bands=True, **FLAGS, **kwargs)
+
+
+def test_student_key_gives_a_student_target_a_student_donor_and_leaves_other_targets_on_todays_donor():
+    donors, wege = _student_donors(), _student_wege()
+    differs_for_the_student = False
+    for seed in range(15):
+        off_out, off_trace, off_report = _run_students(donors, wege, seed)
+        on_out, on_trace, on_report = _run_students(donors, wege, seed, student_key=True)
+        # the student target (row 0) draws a student donor (H_ID 3 is the only student donor)
+        assert tuple(on_out.loc[0, ["source_H_ID", "source_P_ID"]]) == (3, 1)
+        differs_for_the_student |= tuple(off_out.loc[0, ["source_H_ID", "source_P_ID"]]) != (3, 1)
+        # the pensioner target (row 1) keeps today's donor: same candidate set, same stream position
+        assert tuple(on_out.loc[1, ["source_H_ID", "source_P_ID"]]) == tuple(off_out.loc[1, ["source_H_ID", "source_P_ID"]])
+        assert on_report.student_counts == dpm.StudentMatchCounts(1, 1, 0)
+        assert on_trace["target_is_student"].tolist()[:2] == [True, False]
+        assert on_trace["donor_is_student"].tolist()[0] is True and pd.isna(on_trace["donor_is_student"].iloc[1])
+        # the switch off carries no student column and no student count
+        assert off_report.student_counts is None
+        assert "target_is_student" not in off_trace.columns and "donor_is_student" not in off_trace.columns
+    assert differs_for_the_student    # without the key a non-student donor is drawn for some seed
+
+
+def test_student_key_off_is_byte_identical_to_the_call_without_the_argument():
+    donors, wege = _student_donors(), _student_wege()
+    a = _run_students(donors, wege, 4)
+    b = _run_students(donors, wege, 4, student_key=False, student_fallback_warn_share=0.5)
+    pd.testing.assert_frame_equal(a[0], b[0])
+    pd.testing.assert_frame_equal(a[1], b[1])
+    assert a[2] == b[2]
+
+
+def test_student_fallback_is_counted_and_logged_per_path_and_warns_only_above_a_set_bound(caplog):
+    donors, wege = _student_donors(donor_taets=(11, 11, 11)), _student_wege()   # no student donor at all
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        _out, _trace, report = _run_students(donors, wege, 1, student_key=True)
+    assert report.student_counts == dpm.StudentMatchCounts(1, 0, 1)
+    assert report.student_counts.fallback_share == 1.0
+    reported = [r for r in caplog.records if "diary_plan_match.student_donor" in r.getMessage()]
+    assert len(reported) == 1 and reported[0].levelno == logging.INFO          # no bound: report only
+    assert "primary 0/1" in reported[0].getMessage() and "fallback 1 (100.0%)" in reported[0].getMessage()
+    assert "warn bound not set" in reported[0].getMessage()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.diary_plan_match"):
+        _run_students(donors, wege, 1, student_key=True, student_fallback_warn_share=0.1)
+    reported = [r for r in caplog.records if "diary_plan_match.student_donor" in r.getMessage()]
+    assert len(reported) == 1 and reported[0].levelno == logging.WARNING
+
+
+def test_student_counts_for_a_path_without_student_targets_have_no_share():
+    counts = dpm.StudentMatchCounts(0, 0, 0)
+    assert counts.student_donor_share is None and counts.fallback_share is None
+    with pytest.raises(ValueError, match="does not add up"):
+        dpm.StudentMatchCounts(2, 1, 0)

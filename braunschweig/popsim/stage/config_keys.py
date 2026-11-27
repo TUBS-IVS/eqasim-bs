@@ -531,6 +531,18 @@ DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
 # mid_passenger_availability). Default ON; read ONLY by braunschweig.popsim.completed_donor.
 KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = "braunschweig.population.popsim.donor_match_lift_free_never_passenger"
 DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = True
+# A1 of the student design (ADR-0211): a household with a student, a student member and a student person
+# target re-drawing a plan source prefer a student donor, a key relaxed last; every other target keeps its
+# candidate set and every call still draws once. Counted per match path as primary (student donor) versus
+# fallback (non-student donor). Default ON; read ONLY by braunschweig.popsim.completed_donor. OFF is
+# byte-identical to the build before A1.
+KEY_DONOR_MATCH_STUDENT_STATUS = "braunschweig.population.popsim.donor_match_student_status"
+DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
+# Share of student targets relaxed to a non-student donor, per match path, above which the build logs a
+# WARNING. None = report only (no bound is set and the log says so): the bound comes from the one-batch smoke
+# of ADR-0211, never from a guess. Read ONLY by braunschweig.popsim.completed_donor.
+KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
+DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons

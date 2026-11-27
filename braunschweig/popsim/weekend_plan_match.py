@@ -774,6 +774,52 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
 
 
 @dataclass(frozen=True)
+class StudentMatchCounts:
+    """Primary-versus-fallback counts of one student match path (A1, ADR-0211).
+
+    Primary path = the student target got a STUDENT donor; fallback = it was relaxed to a non-student donor
+    (the student key is the last key the ladder gives up, so a fallback means the pool or the donor household
+    offered no student at all). ``n_student_targets`` counts every student target re-drawn on the path
+    (``P_TAET == STUDENT_TAET``, no age bound)."""
+
+    n_student_targets: int = 0
+    n_student_donor: int = 0
+    n_non_student_donor: int = 0
+
+    def __post_init__(self):
+        if self.n_student_donor + self.n_non_student_donor != self.n_student_targets:
+            raise ValueError(f"StudentMatchCounts: {self.n_student_donor} + {self.n_non_student_donor} "
+                             f"does not add up to {self.n_student_targets} student targets")
+
+    @property
+    def student_donor_share(self):
+        """Share of student targets with a student donor; ``None`` when the path had no student target."""
+        return self.n_student_donor / self.n_student_targets if self.n_student_targets else None
+
+    @property
+    def fallback_share(self):
+        """Share relaxed to a non-student donor; ``None`` when the path had no student target."""
+        return self.n_non_student_donor / self.n_student_targets if self.n_student_targets else None
+
+
+def log_student_match_counts(logger_, path: str, counts: StudentMatchCounts, *, warn_share=None) -> None:
+    """Log the primary-versus-fallback rate of one student match path as ``[<path>] primary P/N, fallback F``.
+
+    ``warn_share`` is the share of non-student donors above which the line is a WARNING. ``None`` (the
+    default until the one-batch smoke has measured a defensible value) means report only: no warning can
+    fire, and the line says so. The bound is never invented here (CLAUDE.md "Fallback transparency")."""
+    if warn_share is None:
+        log_fallback_rate(logger_, path, counts.n_non_student_donor, counts.n_student_targets,
+                          threshold=1.0,
+                          what="student targets relaxed to a non-student donor; warn bound not set "
+                               "(donor_match_student_fallback_warn_share is None): report only")
+    else:
+        log_fallback_rate(logger_, path, counts.n_non_student_donor, counts.n_student_targets,
+                          threshold=float(warn_share),
+                          what="student targets relaxed to a non-student donor")
+
+
+@dataclass(frozen=True)
 class WeekendMatchReport:
     """Result counts of :func:`reassign_weekend_plan_sources`.
 
@@ -803,11 +849,20 @@ class WeekendMatchReport:
     #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: exactly the pairs that
     #: took the ``any_free`` tier of :func:`align_members`.
     n_any_free_pairs: int = 0
+    #: A1 (ADR-0211), only with ``student_key``: :class:`StudentMatchCounts` per match path -- the keys are
+    #: ``household_pairs`` (student members of a household-aligned pair), ``person_fallback`` (surplus members
+    #: and unmatched households) and ``mixed_person_sweep``. ``None`` with the key off.
+    student_counts: "dict | None" = None
+
+
+#: The match paths of :attr:`WeekendMatchReport.student_counts`.
+STUDENT_PATHS_WEEKEND = ("household_pairs", "person_fallback", "mixed_person_sweep")
 
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
                                   fine_child_age_bands=True, precompute_matching=True,
-                                  passenger_key=False, car_passenger_diaries=None):
+                                  passenger_key=False, car_passenger_diaries=None,
+                                  student_key=False, student_fallback_warn_share=None):
     """Give every weekend-reporting donor a matched WEEKDAY plan source.
 
     ``fine_child_age_bands`` (default True, issue #386): band 6-13-year-olds finely
@@ -833,6 +888,17 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     handed-over diary -- the donor row's CURRENT plan source, which for a member-completion filler
     is its mirror -- is lift-free, in the member alignment and in every person-level match. The
     lift flag lives on an internal column that the returned frame does not carry.
+
+    ``student_key`` (default False, A1 of the student design, ADR-0211): a household with a student aged 18
+    or older prefers a donor household with one (:func:`match_household`), student members are paired with
+    student donor members first (:func:`align_members`) and every person-level match of a student target
+    prefers a student donor (:func:`match_person`). Every call still draws exactly once, so the key changes
+    WHICH donor is drawn for the student targets, never the draw sequence; with it off the function is
+    byte-identical to the one before A1 (frames, trace columns and report). With it on the trace gains
+    ``target_is_student`` and ``donor_is_student`` (the latter only for a student re-drawn in this pass),
+    the report gains :attr:`WeekendMatchReport.student_counts`, and each path logs its primary (student
+    donor) versus fallback (non-student donor) rate, a WARNING above ``student_fallback_warn_share``
+    (``None`` = report only).
     """
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
@@ -858,7 +924,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             persons, household_id_col=household_id, age_col="HP_ALTER")
         households = households.join(
             hh_type5.rename("hh_type5"), on=household_id)
-    feats = build_hh_features(households, persons)
+    feats = build_hh_features(households, persons, student_key=student_key)
 
     weekday_ids = hh_dt.index[hh_dt == "weekday"]
     weekend_ids = hh_dt.index[hh_dt == "weekend"]
@@ -882,7 +948,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         if key not in prepared_pools:
             prepared_pools[key] = prepare_person_pool(
                 weekday_pool, age_band_edges=edges, passenger_key=passenger_key,
-                lift_free_never=lift_free_never)
+                lift_free_never=lift_free_never, student_key=student_key)
         return prepared_pools[key]
 
     persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
@@ -896,6 +962,17 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_remapped = 0
     level_counts: dict = {}
     band_totals = np.zeros(5, dtype=int)  # pairs, coarse crossed, in split band, fine crossed, any_free
+    # A1: student targets re-drawn per path -> [targets, with a student donor]; only filled with student_key.
+    student_totals = {path: [0, 0] for path in STUDENT_PATHS_WEEKEND}
+    target_is_student = (persons["P_TAET"].eq(STUDENT_TAET).to_numpy() if student_key
+                         else np.zeros(len(persons), dtype=bool))
+    donor_is_student = pd.Series(pd.NA, index=persons.index, dtype="boolean")
+
+    def count_student(path, ridx, donor_student):
+        """Record one re-drawn student target on ``path`` (``donor_student`` is the donor's student status)."""
+        student_totals[path][0] += 1
+        student_totals[path][1] += int(bool(donor_student))
+        donor_is_student[ridx] = bool(donor_student)
 
     # Pre-group the weekday pool on the two HARD match keys (size, regiostar7) ONCE,
     # so match_household does an O(1) lookup per weekend household instead of
@@ -917,12 +994,13 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             )
         target_members = persons_by_hh[hid].reset_index()  # keeps original index in 'index'
         matched_id, level = match_household(
-            hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key)
+            hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key,
+            student_key=student_key)
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
             paired = align_members(target_members, donor_members,
                                    age_band_edges=age_band_edges, passenger_key=passenger_key,
-                                   lift_free_never=lift_free_never)
+                                   lift_free_never=lift_free_never, student_key=student_key)
             band_totals += count_pair_band_crossings(
                 target_members, donor_members, paired, age_band_edges=age_band_edges)
             for tpos, dpos in paired:
@@ -932,6 +1010,8 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 resolution[ridx] = "hh_match"
                 match_level[ridx] = level
                 n_remapped += 1
+                if student_key and target_members.loc[tpos, "P_TAET"] == STUDENT_TAET:
+                    count_student("household_pairs", ridx, donor_members.loc[dpos, "P_TAET"] == STUDENT_TAET)
             n_hh_matched += 1
             level_counts[level] = level_counts.get(level, 0) + 1
             # An UNFILLABLE donor keeps H_GR larger than its real person count, so
@@ -945,28 +1025,32 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                     continue
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
-                                              age_band_edges=age_band_edges,
-                                              prepared_pool=prepared_for(age_band_edges),
-                                              passenger_key=passenger_key, lift_free_never=lift_free_never)
+                sh, sp, plevel, *student_result = match_person(
+                    trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
+                    prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
+                    lift_free_never=lift_free_never, student_key=student_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
                 match_level[ridx] = plevel
                 n_remapped += 1
+                if student_result and student_result[0] is not None:
+                    count_student("person_fallback", ridx, student_result[0])
         else:
             for tpos in range(len(target_members)):
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(
+                sh, sp, plevel, *student_result = match_person(
                     trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
                     prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
-                    lift_free_never=lift_free_never)
+                    lift_free_never=lift_free_never, student_key=student_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
                 match_level[ridx] = plevel
                 n_remapped += 1
+                if student_result and student_result[0] is not None:
+                    count_student("person_fallback", ridx, student_result[0])
             n_person_fallback += 1
 
     # A2: Safety-net sweep: resolve every person's plan-source to its donor's kernwo;
@@ -998,21 +1082,23 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_swept = 0
     for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
         trow = persons.loc[ridx]
-        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
-                                      age_band_edges=age_band_edges,
-                                      prepared_pool=prepared_for(age_band_edges),
-                                      passenger_key=passenger_key, lift_free_never=lift_free_never)
+        sh, sp, plevel, *student_result = match_person(
+            trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
+            prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
+            lift_free_never=lift_free_never, student_key=student_key)
         persons.loc[ridx, "source_H_ID"] = sh
         persons.loc[ridx, "source_P_ID"] = sp
         resolution[ridx] = "mixed_person_sweep"
         match_level[ridx] = plevel
         n_remapped += 1
         n_swept += 1
+        if student_result and student_result[0] is not None:
+            count_student("mixed_person_sweep", ridx, student_result[0])
     # The full content check of the prepared pool, once after all match_person calls (it was
     # prepared on first use, so its preparation is the "before" check); match_person itself
     # checks only the O(1) binding per call.
     for edges, prepared in prepared_pools.items():
-        prepared.validate(weekday_pool, edges, passenger_key, lift_free_never)
+        prepared.validate(weekday_pool, edges, passenger_key, lift_free_never, student_key)
 
     if lift_free_never:
         persons = persons[output_columns]
@@ -1026,6 +1112,13 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         "plan_source_H_ID": persons["source_H_ID"].to_numpy(),
         "plan_source_P_ID": persons["source_P_ID"].to_numpy(),
     })
+    student_counts = None
+    if student_key:
+        trace["target_is_student"] = target_is_student
+        trace["donor_is_student"] = donor_is_student.to_numpy()
+        student_counts = {path: StudentMatchCounts(n_student_targets=t, n_student_donor=d,
+                                                   n_non_student_donor=t - d)
+                          for path, (t, d) in student_totals.items()}
     report = WeekendMatchReport(
         n_weekend_households=len(weekend_ids),
         n_hh_matched=n_hh_matched,
@@ -1038,7 +1131,11 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         n_paired_in_split_child_band=int(band_totals[2]),
         n_crossed_fine_child_age_band=int(band_totals[3]),
         n_any_free_pairs=int(band_totals[4]),
+        student_counts=student_counts,
     )
+    for path, counts in (student_counts or {}).items():
+        log_student_match_counts(logger, f"weekend_plan_match.student_donor.{path}", counts,
+                                 warn_share=student_fallback_warn_share)
     log_fallback_rate(
         logger, "weekend_plan_match.align_members_any_free", report.n_any_free_pairs,
         report.n_paired_members,

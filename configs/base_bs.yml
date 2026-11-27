@@ -424,6 +424,12 @@ config:
   # handed-over diary has no car-passenger trip (a "never" respondent may report a lift
   # themselves, and a household may have no "never" member in the age band).
   braunschweig.population.popsim.donor_match_lift_free_never_passenger: true
+  # ADR-0211 (#140, A1): a re-drawn plan of a student (a household with a student aged 18 or older, a
+  # student member, a student person target) comes from a student donor, a key relaxed last; every
+  # other target keeps its candidate set. Primary (student donor) vs fallback (non-student donor) is
+  # counted per match path. The warn bound (donor_match_student_fallback_warn_share) is unset
+  # (report only) until the one-batch smoke has measured it.
+  braunschweig.population.popsim.donor_match_student_status: true
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).

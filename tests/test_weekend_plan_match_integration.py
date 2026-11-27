@@ -14,6 +14,8 @@ no midnight crossing.
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 
@@ -123,3 +125,90 @@ def test_weekend_persons_receive_weekday_wege_through_trips_join():
         "Weekend person 'c_2_1' has no trip row; source-id join via source_H_ID "
         "did not propagate the weekday donor's Wege to the weekend person."
     )
+
+
+# --- A1: the student status key in the weekend pass (ADR-0211) ---------------------------------------------
+
+def _student_pass_frames():
+    """Weekday HH1 (worker + student), HH2 (two workers); weekend HH3 (student + worker, size 2) and HH4 (size 3,
+    no weekday household of that size, so the person-level fallback runs)."""
+    households = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4], "H_GR": [2, 2, 2, 3], "hh_type5": ["couple"] * 4, "oek_status": [3] * 4,
+        "RegioStaR7": [71] * 4, "H_ANZAUTO": [1] * 4, "H_GEW": [1.0] * 4,
+    })
+    rows = [  # H_ID, P_ID, age, sex, P_TAET, kernwo
+        (1, 1, 40, 1, 1, 2), (1, 2, 21, 2, 10, 2),
+        (2, 1, 40, 1, 1, 2), (2, 2, 38, 2, 1, 2),
+        (3, 1, 22, 2, 10, 6), (3, 2, 40, 1, 1, 6),
+        (4, 1, 20, 2, 10, 6), (4, 2, 41, 1, 1, 6), (4, 3, 8, 2, 9, 6),
+    ]
+    persons = pd.DataFrame({
+        "H_ID": [r[0] for r in rows], "P_ID": [r[1] for r in rows], "HP_ALTER": [r[2] for r in rows],
+        "HP_SEX": [r[3] for r in rows], "P_FSCHEIN": 1, "P_TAET": [r[4] for r in rows], "P_FKARTE": 1,
+        "kernwo": [r[5] for r in rows], "source_H_ID": [r[0] for r in rows], "source_P_ID": [r[1] for r in rows],
+        "member_imputed": False, "P_GEW": 1.0,
+    })
+    return households, persons
+
+
+def test_student_key_in_the_weekend_pass_pairs_students_counts_paths_and_changes_only_student_households():
+    differs = False
+    for seed in range(20):
+        households, persons = _student_pass_frames()
+        off_p, off_trace, off_report = wpm.reassign_weekend_plan_sources(
+            households, persons, rng=np.random.RandomState(seed))
+        on_p, on_trace, on_report = wpm.reassign_weekend_plan_sources(
+            households, persons, rng=np.random.RandomState(seed), student_key=True)
+        src = lambda frame, h, p: tuple(frame.loc[(frame["H_ID"] == h) & (frame["P_ID"] == p),
+                                                  ["source_H_ID", "source_P_ID"]].iloc[0])
+        # household path: the student household takes the household with a student, student paired with student
+        assert src(on_p, 3, 1) == (1, 2) and src(on_p, 3, 2) == (1, 1)
+        differs |= src(off_p, 3, 1) != (1, 2)
+        # person fallback (no weekday household of size 3): the student member still gets the student donor
+        assert src(on_p, 4, 1) == (1, 2)
+        # weekday households keep their own plan in both arms
+        for h, p in ((1, 1), (1, 2), (2, 1), (2, 2)):
+            assert src(on_p, h, p) == src(off_p, h, p) == (h, p)
+        counts = on_report.student_counts
+        assert counts["household_pairs"] == wpm.StudentMatchCounts(1, 1, 0)
+        assert counts["person_fallback"] == wpm.StudentMatchCounts(1, 1, 0)
+        assert counts["mixed_person_sweep"] == wpm.StudentMatchCounts(0, 0, 0)
+        assert on_trace["target_is_student"].sum() == 3     # the three students of the frame, weekday one included
+        assert on_trace.loc[on_trace["H_ID"].isin([3, 4]) & on_trace["target_is_student"], "donor_is_student"].tolist() \
+            == [True, True]
+        assert off_report.student_counts is None
+        assert "target_is_student" not in off_trace.columns
+    assert differs     # without the key the student household draws the household without a student for some seed
+
+
+def test_student_key_off_weekend_pass_is_byte_identical_with_and_without_the_arguments():
+    households, persons = _student_pass_frames()
+    a = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(5))
+    b = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(5),
+                                          student_key=False, student_fallback_warn_share=0.2)
+    pd.testing.assert_frame_equal(a[0], b[0])
+    pd.testing.assert_frame_equal(a[1], b[1])
+    assert a[2] == b[2]
+
+
+def test_weekend_student_fallback_is_logged_per_path_and_warns_above_the_bound(caplog):
+    households, persons = _student_pass_frames()
+    persons.loc[persons["H_ID"].isin([1]), "P_TAET"] = 1       # no student donor left in the weekday pool
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.weekend_plan_match"):
+        _p, _t, report = wpm.reassign_weekend_plan_sources(
+            households, persons, rng=np.random.RandomState(0), student_key=True)
+    assert report.student_counts["household_pairs"].n_non_student_donor == 1
+    assert report.student_counts["person_fallback"].n_non_student_donor == 1
+    paths = {r.getMessage().split("]")[0].lstrip("[") for r in caplog.records
+             if "weekend_plan_match.student_donor." in r.getMessage()}
+    assert paths == {f"weekend_plan_match.student_donor.{p}" for p in wpm.STUDENT_PATHS_WEEKEND}
+    assert not [r for r in caplog.records if "student_donor" in r.getMessage() and r.levelno >= logging.WARNING]
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.weekend_plan_match"):
+        wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(0), student_key=True,
+                                          student_fallback_warn_share=0.5)
+    warned = {r.getMessage().split("]")[0].lstrip("[") for r in caplog.records
+              if "student_donor" in r.getMessage() and r.levelno == logging.WARNING}
+    assert warned == {"weekend_plan_match.student_donor.household_pairs",
+                      "weekend_plan_match.student_donor.person_fallback"}
