@@ -502,3 +502,20 @@ def test_invariants_reject_a_children_row_that_is_not_the_sum_of_its_two_bands()
     broken.loc[children, "n_whole_household_unweighted"] += 1
     with pytest.raises(ValueError, match="0-17"):
         A.check_invariants(by_age, by_size, broken, partial_subset)
+
+
+# ---------------------------------------------------------------------------
+# The committed by-age table (written by scripts/extract_srv_absence.py from the local-only
+# delivery; the value below is the committed output, not an external reference).
+# ---------------------------------------------------------------------------
+
+def test_committed_by_age_table_keeps_its_columns_and_pins_the_non_student_young_adults():
+    from pathlib import Path
+    path = (Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "srv"
+            / A.ABSENCE_BY_AGE_TABLE)
+    table = pd.read_csv(path, comment="#").set_index("band")
+    assert list(table.columns) == A.BY_AGE_COLUMNS[1:]      # the first six are the pre-#140 columns, in order
+    assert table.loc["18-29", "n_unweighted"] == 1639 and table.loc["18-29", "p_absent"] == pytest.approx(0.08305189101)
+    young = table.loc["18-29"]
+    assert young["n_unweighted_non_student"] == 1164 and young["n_absent_unweighted_non_student"] == 78
+    assert young["p_absent_non_student"] == pytest.approx(0.06266962597)
