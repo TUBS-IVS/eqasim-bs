@@ -77,7 +77,7 @@ DEFAULT_ENABLED = True
 # frozen tours only, the population byte-identical to the lift before #678.
 KEY_ALL_MODES = "braunschweig.frozen_pt_walk_lift.all_modes"
 DEFAULT_ALL_MODES = True
-# Bound on lifted walk and bicycle trips / all resident trips (share, 0..1). ASSUMPTION and reason: the #678 design.
+# Bound on lifted walk and bicycle trips / all resident trips (share, 0..1). ASSUMPTION; reason: ADR-0206 Rationale.
 KEY_MAX_SHARE_OTHER_MODES = "braunschweig.frozen_pt_walk_lift.max_share_other_modes"
 DEFAULT_MAX_SHARE_OTHER_MODES = 0.002
 WALK_FALLBACK_POSITION = 2   # position of the walkFallbackFrom value in the plan_check leg tuples

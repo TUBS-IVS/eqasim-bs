@@ -1059,7 +1059,8 @@ config:
   braunschweig.plan_check.fail_on_threshold: false
   # Long pt-as-walk trips (over plan_check.pt_as_walk_bound_min_distance_m) of frozen resident tours become one
   # car_passenger leg before the plan check (ADR-0189, #575). The lifted share is judged against
-  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lift has no bound of its own.
+  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lifted walk and bicycle trips have their own bound,
+  # braunschweig.frozen_pt_walk_lift.max_share_other_modes (ADR-0206).
   braunschweig.frozen_pt_walk_lift.enabled: true
   # Which trips the mode choice can change (ADR-0206, #678). isolate_outside_trips: true selects the finer tour rule
   # (tour finder IsolatedOutsideTrips, vehicle constraint BorderTourVehicleContinuity), so a trip of a tour that
