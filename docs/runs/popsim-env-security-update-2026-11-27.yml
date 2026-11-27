@@ -1,0 +1,113 @@
+id: popsim-env-security-update-2026-11-27
+date: '2026-11-27'
+repository:
+  commit: 9424208a7321dc6398c13630e4aedf93162aca38
+  branch: chore/popsim-env-security-updates
+  notes: >-
+    PRE-REGISTRATION: this file is committed with the checks below before any run starts; only results,
+    artifacts and execution notes are added afterwards. The commit raises seven packages of the PopulationSim
+    environment (environments/populationsim, pyproject.toml constraints and uv.lock) to the versions that fix the
+    open Dependabot alerts; no other package of the lock moves and the PopulationSim fork stays at release
+    0.10.0+bs.3. Arm old = pyproject.toml and uv.lock of main at b7472c00 (the parent of that commit), arm new =
+    those of the commit. The question is whether the new environment produces the same synthetic population.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - the run overlay of prod100_20261031 (server-local), only as the configuration that produced the batch folders
+  notes: >-
+    The prepared batch folders of popsim-bs3-release-2026-11-25 with both run-time options on (production
+    settings: controlled rounding with the search integerizer, store_positive_weight_rows_only and fast_paths on,
+    numba on), read-only on the run server under ~/i646/ev: controlled_on/batch_000, controlled_on/batch_032 and
+    controlled_on_b028/batch_028. Each run works on its own copy of configs/ and data/ with an empty output/.
+sampling:
+  rate: 1.0
+  scope: >-
+    three of the 60 batches of prod100_20261031 with their full seed pool: batch_000, batch_032 and batch_028 (the
+    batch with the largest household target); one run per arm and batch.
+  notes: The rate is the share of each batch's cells simulated (all of them), not a population sampling rate.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run: PopulationSim started as the popsim stage starts it (`uv run --no-sync populationsim -w
+    <run folder>`, cwd = the uv project of the arm), BLAS and OpenMP threads pinned to 1, under GNU time.
+classification:
+- ab_test
+status:
+  execution: running
+  notes: >-
+    Pre-registered 2026-11-27 (commit before any run). Each arm is installed into its own copy of the uv project
+    under ~/seclock-2026-11-27/<arm> on the run server with `uv sync --frozen --python /usr/bin/python3.12`; no
+    PYTHONPATH, so each run imports PopulationSim from its own environment. All six runs start together.
+source: >-
+  run server, ~/seclock-2026-11-27 (environments, run copies, logs); removed after the artifacts are committed.
+environment: >-
+  run server, 64 cores, GNU time for wall time and peak RSS; uv 0.11 and Python 3.12 of the server.
+validation:
+- metric: >-
+    Check 1, identity: per batch, the sha256 of final_expanded_household_ids.csv, synthetic_households.csv and
+    synthetic_persons.csv of arm new equal those of arm old; bound: all nine pairs equal
+  reference: arm old on the same batch (model output)
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 2, reference to the released tool: the hashes of arm old (and so of arm new) equal the rows of arm
+    rc2_on (release 0.10.0+bs.3) in docs/runs/artifacts/popsim-bs3-release-2026-11-25/runs.csv; bound: equal. If
+    arm old fails this bound, check 1 is not interpreted before the cause is known.
+  reference: popsim-bs3-release-2026-11-25 (model output of the released tool)
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 3: every run exits 0; bound: 6 of 6
+  reference: none
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 4, no silent fallback: every run logs exactly one balancer summary line "balancer fast path: fast N of
+    N calls" with every fallback and re-run count 0, and exactly one line "households drawn in one batch"; bound:
+    6 of 6
+  reference: none
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 5, each arm ran its own environment: the imported populationsim file lies in the .venv of the arm, the
+    installed PopulationSim commit equals the commit the arm's uv.lock pins, and `uv pip freeze` of the arm lists
+    the uv.lock version of every package of that lock; bound: all three for both arms
+  reference: the uv.lock of each arm
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 6, ADR-0200 decision 5: the fork's tests/test_bs_balancer_fast_path.py at tag v0.10.0+bs.3 passes in
+    the environment of arm new on the run server (arm old is run as a control); bound: 0 failed and at least 1
+    passed in arm new
+  reference: none
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Check 7, the start check of the stage (`uv sync --frozen --check --offline`,
+    braunschweig.popsim.tool_version.require_environment_in_sync): it exits 0 in the project of arm old and of arm
+    new, and non-zero for the files of arm new over the installed environment of arm old (a stale server after
+    the merge); bound: all three. The same three calls without --offline are reported.
+  reference: none
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+- metric: >-
+    Reported, not a pass/fail bound: wall time and peak RSS per run, uptime load average, foreign java and
+    populationsim processes and available memory at the start. No statement of faster or slower is made.
+  reference: none
+  result: PENDING
+  artifact: docs/runs/artifacts/popsim-env-security-update-2026-11-27/runs.csv
+features:
+  note: >-
+    Evidence that a security update of packages around the PopulationSim fork leaves the synthetic population
+    unchanged; it says nothing about the quality of the population.
+artifacts:
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/setup_envs.sh
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/run_ab.sh
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/fork_test.sh
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/sync_check.sh
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/collect_runs.py
+- docs/runs/artifacts/popsim-env-security-update-2026-11-27/scripts/evaluate.py
+issues: []
+notes: >-
+  Identity of two runs of the same model is not validation against observed behaviour. Related records:
+  popsim-bs3-release-2026-11-25 (reference hashes and batch folders), popsim-run-performance-2026-11-18.
