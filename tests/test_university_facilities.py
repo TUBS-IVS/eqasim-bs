@@ -112,6 +112,25 @@ def test_off_validate_token_keeps_its_inputs_and_adds_no_flows_files(tmp_path):
                         "nds_hochschulen_path": "braunschweig/schools/nds_hochschulen.csv"})
     token = module.validate(context)
     assert set(token) == {"nds_hochschulen_csv_size", "helpers"}
+    # The code at e2c53326 returned exactly this: the size of the file and the source token of
+    # building_potential_attach alone (no regiostar, no flows helper, no deferred module).
+    from braunschweig import synpp_tokens
+    from braunschweig.data import building_potential_attach
+    assert token == {
+        "nds_hochschulen_csv_size": os.path.getsize(folder / "nds_hochschulen.csv"),
+        "helpers": synpp_tokens.source_token((building_potential_attach,), ())}
+    assert list(token["helpers"]["modules"]) == ["braunschweig.data.building_potential_attach"]
+
+
+def test_on_validate_token_holds_the_four_table_digests_and_the_flows_helpers():
+    from braunschweig.data.schools import university_facilities as module
+    context = _Context(
+        {"data_path": _repo_data_path(), module.KEY_FLOWS_ENABLED: True}
+        | {key: default for key, default in module._FLOWS_PATH_DEFAULTS.items()})
+    token = module.validate(context)
+    assert set(token) == {"flows_files", "helpers"}
+    assert set(token["flows_files"]) == set(module._FLOWS_PATH_DEFAULTS)
+    assert "braunschweig.data.education.student_flows_inputs" in token["helpers"]["modules"]
 
 
 def test_off_execute_reads_the_institution_file_and_returns_the_builder_output(tmp_path):
@@ -219,10 +238,11 @@ def test_site_facilities_hold_one_group_per_destination_with_the_enrollment():
     sur = gdf[gdf["scope"] == "surrounding"].set_index("destination_id")
     assert sur.loc["Uni Göttingen | 03159016", "capacity"] == 40.0
     assert sur.loc["Uni Göttingen | 03159016", "geometry"].equals(Point(564598.0, 5710630.0))
-    # a surrounding institution without out-commuters keeps its facility (capacity 0)
-    assert sur.loc["TiHo Hannover | 03241001", "capacity"] == 0.0
-    # exactly the destinations of the tables, each once as a group
-    assert set(gdf["destination_id"]) == set(_points()["destination_id"])
+    # a surrounding institution without an out-commuter has no share in T: no facility (counted)
+    assert "TiHo Hannover | 03241001" not in sur.index
+    assert (gdf["capacity"] > 0).all()
+    # exactly the destinations of the tables that have a share, each once as a group
+    assert set(gdf["destination_id"]) == set(_points()["destination_id"]) - {"TiHo Hannover | 03241001"}
     # the 3:1 split by area inside the commune
     tu = gdf[gdf["destination_id"] == "TU Alpha | 03101000"].sort_values("capacity")
     assert list(tu["capacity"]) == pytest.approx([250.0, 750.0])
@@ -277,13 +297,49 @@ def test_buildings_outside_the_site_communes_are_counted_and_get_no_capacity(cap
     assert not local["geometry"].apply(lambda g: g.equals(Point(550000, 5800000))).any()
 
 
-def test_destination_of_t_without_a_facility_raises():
+def test_destination_of_t_without_a_facility_raises_unless_it_is_a_counted_zero_share_one(capsys):
     from braunschweig.data.schools.university_facilities import check_destinations_covered
     gdf = _build()
-    od = pd.DataFrame({"destination_id": ["TU Alpha | 03101000", "Nowhere | 03000000"]})
-    with pytest.raises(ValueError, match="Nowhere"):
+    report = gdf.attrs["report"]
+    assert report["surrounding_left_out_zero_share"] == 1
+    assert report["surrounding_zero_share_destinations"] == ["TiHo Hannover | 03241001"]
+    assert report["surrounding_facilities"] == 1
+    assert "left out (no student of the region, no share in T) 1 (50.0%)" in capsys.readouterr().out
+    od = pd.DataFrame({"destination_id": ["TU Alpha | 03101000", "TiHo Hannover | 03241001"]})
+    # exactly the counted zero-share destination may lack a facility ...
+    check_destinations_covered(gdf, od, report["surrounding_zero_share_destinations"])
+    with pytest.raises(ValueError, match="TiHo Hannover"):
         check_destinations_covered(gdf, od)
-    check_destinations_covered(gdf, od.iloc[:1])
+    # ... any other missing destination still raises
+    od_other = pd.DataFrame({"destination_id": ["TU Alpha | 03101000", "Nowhere | 03000000"]})
+    with pytest.raises(ValueError, match="Nowhere"):
+        check_destinations_covered(gdf, od_other, report["surrounding_zero_share_destinations"])
+
+
+def test_a_local_site_without_enrollment_raises():
+    sites = _sites()
+    sites.loc[2, "enrollment_persons"] = 0.0
+    with pytest.raises(ValueError, match="without enrollment"):
+        _build(sites=sites)
+
+
+def test_a_building_of_weight_zero_gets_no_capacity_and_is_counted():
+    buildings = _buildings()
+    buildings.loc[1, "weight"] = 0.0
+    gdf = _build(buildings=buildings)
+    tu = gdf[gdf["destination_id"] == "TU Alpha | 03101000"]
+    assert list(tu["capacity"]) == [1000.0]                 # the whole enrollment on the other building
+    assert gdf.attrs["report"]["buildings_zero_weight_left_out"] == 2   # TU and the art academy
+    assert gdf["location_id"].is_unique
+
+
+def test_the_left_out_share_warns_only_above_the_configured_share(capsys):
+    # 1 of 4 buildings lies in a commune without a site: 25 %
+    _build(warn_share=0.05)
+    assert "WARNING: 25.0% of the OSM university buildings lie in a commune without a site" \
+        in capsys.readouterr().out
+    _build(warn_share=0.5)
+    assert "WARNING" not in capsys.readouterr().out
 
 
 def test_potential_weights_follow_the_same_unit_rule_as_the_old_path():
@@ -339,7 +395,11 @@ def test_on_stage_builds_the_facilities_of_every_destination_of_the_committed_t(
     assert context.read <= set(configure.declared)
 
     od = flows.load_od_table(os.path.join(schools, "student_od_table.csv"))
-    assert set(od["destination_id"]) <= set(gdf["destination_id"])      # none without a facility
+    report = json.loads((tmp_path / "university_facilities_report.json").read_text(encoding="utf-8"))
+    # none without a facility, except the counted zero-share destinations (execute() enforces it)
+    assert set(od["destination_id"]) - set(gdf["destination_id"]) <= set(
+        report["surrounding_zero_share_destinations"])
+    assert (gdf["capacity"] > 0).all()
     sites = pd.read_csv(os.path.join(schools, "student_balance_by_site.csv"), comment="#",
                         encoding="utf-8")
     by_destination = gdf.groupby("destination_id")["capacity"].sum()
@@ -347,6 +407,30 @@ def test_on_stage_builds_the_facilities_of_every_destination_of_the_committed_t(
         assert by_destination[destination] == pytest.approx(float(enrollment))
     assert gdf["location_id"].is_unique
     # primary path: every site was placed on the buildings of its own commune, nothing on a fallback
-    report = json.loads((tmp_path / "university_facilities_report.json").read_text(encoding="utf-8"))
     assert report["buildings_left_out"] == 1
     assert report["local_sites_placed"] == report["local_sites"] == len(sites)
+
+
+def test_the_stage_raises_when_the_placed_capacity_differs_from_the_table_sum(tmp_path, monkeypatch):
+    from braunschweig.data.schools import university_facilities as module
+    original = module.build_site_facilities
+
+    def _losing_students(*args, **kwargs):
+        gdf = original(*args, **kwargs)
+        gdf.loc[gdf["scope"] == "local", "capacity"] *= 0.5
+        return gdf
+
+    monkeypatch.setattr(module, "build_site_facilities", _losing_students)
+    points = pd.read_csv(os.path.join(_repo_data_path(), "braunschweig", "schools",
+                                      "student_destination_points.csv"),
+                         comment="#", encoding="utf-8", dtype={"site_ags8": str})
+    osm = _university_buildings_of_every_site_commune(points)
+    configure = _ConfigureContext()
+    module.configure(configure)
+    context = _Context(
+        configure.declared | {"data_path": _repo_data_path(), "education_building_distribution": False},
+        {"eqasim_common.locations.education": osm,
+         "data.spatial.municipalities": pd.DataFrame({"commune_id": sorted(set(osm["commune_id"]))})},
+        path=tmp_path)
+    with pytest.raises(ValueError, match="local capacity sum"):
+        module.execute(context)

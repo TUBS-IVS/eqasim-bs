@@ -28,13 +28,17 @@ university buildings of the commune, each with capacities by its own enrollment,
 building data do not say which building belongs to whom. Their facility rows share geometries and
 differ in ``destination_id`` and ``location_id``.
 
-University buildings in a commune without a site get no capacity: they are left out, counted and
-logged as a rate (and written to ``university_facilities_report.json``). A destination of T
-without a facility and a local site whose commune holds no university building raise.
+University buildings in a commune without a site, and buildings of weight 0, get no capacity: they
+are left out, counted and logged as a rate (and written to ``university_facilities_report.json``).
+A surrounding institution without an out-commuter of the region has no share in T (design B5): it
+gets no facility, is counted and named, and ``check_destinations_covered`` accepts exactly those
+destinations as missing. A destination of T without a facility otherwise, a local site whose
+commune holds no university building and a local site without enrollment raise.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 
@@ -58,6 +62,12 @@ from braunschweig.data.education.student_flows_inputs import KEY_FLOWS_ENABLED
 # ``attach_potential`` from the same module inside the function.
 _HELPER_MODULES = (
     _building_potential_attach,
+    _regiostar,
+    _student_flows_inputs,
+)
+# The helpers only the ON path runs: validate() leaves them (and the deferred names below) out of the
+# OFF token, so the OFF token stays the one of the code before the switch existed.
+_FLOWS_ONLY_HELPER_MODULES = (
     _regiostar,
     _student_flows_inputs,
 )
@@ -99,6 +109,9 @@ KEY_LEFT_OUT_WARN_SHARE = "braunschweig.students.university_left_out_warn_share"
 DEFAULT_LEFT_OUT_WARN_SHARE = FALLBACK_WARN_FRACTION
 
 REPORT_FILE = "university_facilities_report.json"
+# Tolerance of the check that the placed capacities add up to the table sums (floating point only).
+_SUM_REL_TOL = 1e-9
+_SUM_ABS_TOL = 1e-6
 _LOG_TAG = "[university_facilities]"
 _AGS8_PATTERN = re.compile(r"\d{8}")
 _SLUG_TRANSLITERATION = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
@@ -265,6 +278,10 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
                         (points, "destination points")):
         _require_unique(frame, "destination_id", what)
     _require_non_negative(sites["enrollment_persons"], "site balance enrollment_persons")
+    no_enrollment = sorted(sites.loc[sites["enrollment_persons"] <= 0, "destination_id"])
+    if no_enrollment:
+        raise ValueError("%s local site(s) without enrollment (a local site of T always has "
+                         "students): %s" % (_LOG_TAG, no_enrollment))
     _require_non_negative(surrounding["out_commuters_persons"],
                           "out-commuter balance out_commuters_persons")
     if not communes.index.equals(buildings.index):
@@ -321,6 +338,7 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
         return positions_of[commune]
 
     rows = []
+    zero_weight_buildings = 0
     for destination, enrollment in zip(sites["destination_id"], sites["enrollment_persons"]):
         commune = str(point_rows.loc[destination, "site_ags8"])
         if not _AGS8_PATTERN.fullmatch(commune):
@@ -329,11 +347,20 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
         positions, weights, _ = _unit(commune, destination)
         total = float(weights.sum())
         for n, (position, weight) in enumerate(zip(positions, weights)):
+            if not weight > 0:
+                # A building of weight 0 gets no capacity (counted; the site keeps its enrollment).
+                zero_weight_buildings += 1
+                continue
             rows.append(("uni_loc_%s_%d" % (slugs[destination], n),
                          float(enrollment) * float(weight) / total,
                          buildings.geometry.iloc[position], destination, "local", commune))
+    zero_share = []
     for destination, out_commuters in zip(surrounding["destination_id"],
                                           surrounding["out_commuters_persons"]):
+        if not out_commuters > 0:
+            # No student of the region attends it: no share in T, so no facility (design B5).
+            zero_share.append(destination)
+            continue
         row = point_rows.loc[destination]
         site_ags8 = row["site_ags8"]
         rows.append(("uni_sur_%s" % slugs[destination], float(out_commuters),
@@ -343,6 +370,10 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
     columns = ["location_id", "capacity", "geometry", "destination_id", "scope", "site_ags8"]
     gdf = gpd.GeoDataFrame(pd.DataFrame(rows, columns=columns), geometry="geometry",
                            crs=CRS_METRIC)[columns]
+    if gdf["location_id"].duplicated().any():
+        raise ValueError("%s location_id is not unique: %s"
+                         % (_LOG_TAG, sorted(set(gdf.loc[gdf["location_id"].duplicated(),
+                                                         "location_id"]))))
 
     # Buildings in a commune without a site get no capacity: counted, logged, reported.
     site_communes = set(point_rows.loc[local_ids, "site_ags8"].astype(str))
@@ -357,7 +388,11 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
         "left_out_communes": sorted(set(communes[~in_site_commune].dropna().astype(str))),
         "local_sites": len(local_ids),
         "local_sites_placed": len(local_ids),
-        "surrounding_facilities": len(surrounding_ids),
+        "buildings_zero_weight_left_out": zero_weight_buildings,
+        "surrounding_institutions": len(surrounding_ids),
+        "surrounding_facilities": len(surrounding_ids) - len(zero_share),
+        "surrounding_left_out_zero_share": len(zero_share),
+        "surrounding_zero_share_destinations": sorted(zero_share),
         "units_on_potentials": units_on_potentials,
         "units_on_area_weights": units_on_area,
         "left_out_warn_share": float(warn_share),
@@ -368,7 +403,18 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
           "(%.1f%%); local sites placed %d/%d, surrounding facilities %d"
           % (_LOG_TAG, total_buildings - left_out, total_buildings,
              100.0 * (1.0 - left_out_share) if total_buildings else 0.0, left_out,
-             100.0 * left_out_share, len(local_ids), len(local_ids), len(surrounding_ids)))
+             100.0 * left_out_share, len(local_ids), len(local_ids),
+             report["surrounding_facilities"]))
+    n_surrounding = len(surrounding_ids)
+    print("%s surrounding institutions with a share: placed %d/%d (%.1f%%), left out (no student "
+          "of the region, no share in T) %d (%.1f%%): %s; buildings of weight 0 left out %d"
+          % (_LOG_TAG, n_surrounding - len(zero_share), n_surrounding,
+             100.0 * (1.0 - len(zero_share) / n_surrounding) if n_surrounding else 0.0,
+             len(zero_share), 100.0 * len(zero_share) / n_surrounding if n_surrounding else 0.0,
+             report["surrounding_zero_share_destinations"], zero_weight_buildings))
+    if n_surrounding and len(zero_share) == n_surrounding:
+        print("%s WARNING: every surrounding institution is left out (no out-commuter of the "
+              "region): the out-commuter table is probably empty or mismatched" % _LOG_TAG)
     if left_out_share > warn_share:
         print("%s WARNING: %.1f%% of the OSM university buildings lie in a commune without a "
               "site (> %.1f%%): communes %s"
@@ -378,9 +424,15 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
     return gdf
 
 
-def check_destinations_covered(facilities, od):
-    """Raise unless every destination of the table T has a facility row."""
-    missing = sorted(set(od["destination_id"]) - set(facilities["destination_id"]))
+def check_destinations_covered(facilities, od, zero_share_destinations=()):
+    """Raise unless every destination of the table T has a facility row.
+
+    Exactly the counted zero-share destinations (``zero_share_destinations``: surrounding
+    institutions without an out-commuter of the region, left out by ``build_site_facilities``) may
+    lack one; any other missing destination raises.
+    """
+    missing = sorted(set(od["destination_id"]) - set(facilities["destination_id"])
+                     - set(zero_share_destinations))
     if missing:
         raise ValueError("%s destination(s) of the table T without a facility: %s"
                          % (_LOG_TAG, missing))
@@ -454,11 +506,22 @@ def _execute_flows(context):
         sites, surrounding, points, df_osm, communes, weight_column=weight_column,
         area_weight_column=area_weight_column,
         warn_share=float(context.config(KEY_LEFT_OUT_WARN_SHARE)))
-    check_destinations_covered(gdf, od)
     report = dict(gdf.attrs["report"])
+    check_destinations_covered(gdf, od, report["surrounding_zero_share_destinations"])
     report["destinations_of_t"] = int(od["destination_id"].nunique())
     report["capacity_sum_local"] = float(gdf.loc[gdf["scope"] == "local", "capacity"].sum())
     report["enrollment_sum_local"] = float(sites["enrollment_persons"].sum())
+    report["out_commuter_sum_surrounding"] = float(surrounding["out_commuters_persons"].sum())
+    report["capacity_sum_surrounding"] = float(
+        gdf.loc[gdf["scope"] == "surrounding", "capacity"].sum())
+    for placed, expected, what in (
+            (report["capacity_sum_local"], report["enrollment_sum_local"], "local capacity"),
+            (report["capacity_sum_surrounding"], report["out_commuter_sum_surrounding"],
+             "surrounding capacity")):
+        if not math.isclose(placed, expected, rel_tol=_SUM_REL_TOL, abs_tol=_SUM_ABS_TOL):
+            raise ValueError("%s %s sum %.6f differs from the table sum %.6f (tolerance rel %g, "
+                             "abs %g): students would be lost or created"
+                             % (_LOG_TAG, what, placed, expected, _SUM_REL_TOL, _SUM_ABS_TOL))
     with open(os.path.join(context.path(), REPORT_FILE), "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, sort_keys=True)
     print("%s %d facilities for %d destinations of T; capacity sum local %.0f of enrollment %.0f"
@@ -517,10 +580,14 @@ def execute(context):
 
 
 def validate(context):
+    flows_enabled = bool(context.config(KEY_FLOWS_ENABLED))
+    # OFF: the helpers the OFF path runs and nothing else, the token of the code before the switch.
+    helper_modules = _HELPER_MODULES if flows_enabled else tuple(
+        module for module in _HELPER_MODULES if module not in _FLOWS_ONLY_HELPER_MODULES)
+    deferred_names = _DEFERRED_HELPER_MODULE_NAMES if flows_enabled else ()
     helpers = synpp_tokens.source_token(
-        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-        stage_label=__name__ + ".validate()")
-    if context.config(KEY_FLOWS_ENABLED):
+        helper_modules, deferred_names, stage_label=__name__ + ".validate()")
+    if flows_enabled:
         # ON path: the four committed tables it reads (CRLF-neutral digests, as git stores them),
         # not nds_hochschulen.csv; a missing table stops the run at DAG time (ADR-0194).
         paths = _flows_paths(context)
