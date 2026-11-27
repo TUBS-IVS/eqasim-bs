@@ -214,8 +214,10 @@ INPUTS: List[Input] = [
         generated=True,
         rel_path="braunschweig/schools/lsn_university_sites.csv",
         source="Run python scripts/seed_lsn_university_sites.py (values pinned in SITE_ROWS, "
-               "hand-read from LSN-Online table K3100101)",
-        notes="dl-de/by-2-0 (LSN). Student in-commuter site table of #140; not read by a stage yet. "
+               "hand-read from LSN-Online table K3100101); it writes this file (WS 2025/26) and "
+               "braunschweig/schools/lsn_university_sites_ws2022_23.csv (WS 2022/23, census year)",
+        notes="dl-de/by-2-0 (LSN). Student in-commuter site table of #140 (two files, one per semester); "
+              "not read by a stage yet. "
               "nds_hochschulen.csv stays the file the OFF path reads.",
         optional=True,
     ),

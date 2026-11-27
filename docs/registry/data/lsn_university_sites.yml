@@ -1,7 +1,7 @@
 dataset: lsn_university_sites
 title: LSN university students per institution and site commune (K3100101, hand-read)
 provider: LSN
-vintage: WS 2024/25
+vintage: WS 2025/26 (model year) and WS 2022/23 (census year), two files
 geography: |
   Site communes (8-digit AGS) of universities in and around the study region; column scope
   separates sites in the study-region Kreise (local) from the rest (surrounding).
@@ -18,6 +18,8 @@ storage:
   expected_path: eqasim-data/data/braunschweig/schools/lsn_university_sites.csv
   committed: false
   local_only: true
+  notes: |
+    A second file, eqasim-data/data/braunschweig/schools/lsn_university_sites_ws2022_23.csv (WS 2022/23, the census year), is written by the same script and is local-only too.
 verification:
   verifier_entry: B14
 requirements:
@@ -29,11 +31,12 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: |
-  Sachsen-Anhalt institutions are not in LSN and stay curated in scripts/seed_nds_hochschulen.py.
+  Sachsen-Anhalt institutions are not in LSN and stay curated in scripts/seed_nds_hochschulen.py;
+  their students are pinned in the OUTSIDE_LSN_STUDENTS constant of the seed script (not rows of the CSVs).
 notes: |
   New file next to nds_hochschulen.csv; the OFF path keeps reading nds_hochschulen.csv.
   used_by lists synpp stages and stays empty: the script scripts/build_student_balance.py (Phase 2 of #140) reads
   this table, no stage does yet.
-  The values live in the SITE_ROWS constant of the seed script (semester in its SEMESTER
-  constant, pinned by tests/test_seed_student_reference_tables.py); the CSV header repeats
-  semester and access date.
+  The values live in the SITE_ROWS (SEMESTER) and CENSUS_YEAR_SITE_ROWS (CENSUS_YEAR_SEMESTER)
+  constants of the seed script, pinned by tests/test_seed_student_reference_tables.py against the
+  committed transcription of the LSN table; each CSV header repeats its semester and the access date.

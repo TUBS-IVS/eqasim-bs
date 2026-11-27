@@ -12,6 +12,11 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+SERIES = (ROOT / "docs/runs/artifacts/student-balance-2026-11-26/level_decision"
+          / "lsn_enrollment_by_site_and_semester.csv")
+POPULATION_SNAPSHOT = (ROOT / "docs/runs/artifacts/student-balance-2026-11-26/level_decision"
+                       / "lsn_population_20_29_by_kreis.csv")
+POPULATION = ROOT / "eqasim-data/data/braunschweig/popsim/lsn_population_20_29_by_kreis.csv"
 
 
 def _load(name):
@@ -49,6 +54,7 @@ def test_sites_main_refuses_while_the_site_list_is_empty(monkeypatch, tmp_path):
     out = tmp_path / "sites.csv"
     monkeypatch.setattr(sl, "SITE_ROWS", [])
     monkeypatch.setattr(sl, "OUTPUT_PATH", out)
+    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", tmp_path / "sites_census_year.csv")
     with pytest.raises(ValueError, match="empty"):
         sl.main([])
     assert not out.exists()
@@ -61,6 +67,9 @@ def test_sites_main_writes_comment_header_and_rows(monkeypatch, tmp_path):
     monkeypatch.setattr(sl, "SEMESTER", "WS 2000/01")
     monkeypatch.setattr(sl, "ACCESS_DATE", "2000-01-01")
     monkeypatch.setattr(sl, "OUTPUT_PATH", out)
+    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", tmp_path / "sites_census_year.csv")
+    monkeypatch.setattr(sl, "CENSUS_YEAR_SITE_ROWS", [("TU X", "Braunschweig", "03101000", 90),
+                                                      ("Hochschule Y", "Suderburg", "03360025", 12)])
     assert sl.main([]) == 0
     lines = out.read_text(encoding="utf-8").splitlines()
     header = [line for line in lines if line.startswith("#")]
@@ -250,13 +259,60 @@ REQUIRED_KREISE_2026_11_25 = (
 
 def test_pinned_lsn_rows_match_the_source():
     frame = sl.build_sites_frame(sl.SITE_ROWS, sl.SEMESTER)
-    assert sl.SEMESTER == "WS 2024/25"
+    assert sl.SEMESTER == "WS 2025/26"
     per_institution = frame.groupby("institution")["students_persons"].sum()
-    assert per_institution["TU Braunschweig"] == 15632
-    assert per_institution["TU Clausthal"] == 2759
-    wolfsburg = frame[(frame["institution"] == "HS Braunschweig/Wolfenbüttel")
-                      & (frame["site_ags8"] == "03103000")]
-    assert wolfsburg["students_persons"].item() == 2363
+    assert per_institution["TU Braunschweig"] == 15051
+    assert per_institution["TU Clausthal"] == 2802
+    assert frame[frame["scope"] == "local"]["students_persons"].sum() == 27952
+
+
+def test_pinned_census_year_rows_match_the_source():
+    frame = sl.build_sites_frame(sl.CENSUS_YEAR_SITE_ROWS, sl.CENSUS_YEAR_SEMESTER)
+    assert sl.CENSUS_YEAR_SEMESTER == "WS 2022/23"
+    assert frame[frame["scope"] == "local"]["students_persons"].sum() == 30453
+    keys = lambda rows: [(row[0], row[2]) for row in rows]
+    assert keys(sl.CENSUS_YEAR_SITE_ROWS) == keys(sl.SITE_ROWS)
+
+
+def test_seed_counts_equal_the_committed_transcription_of_the_lsn_table():
+    # Reads the committed transcription on purpose: a guard against two transcriptions drifting.
+    series = pd.read_csv(SERIES, comment="#", dtype=str).set_index("destination_id")
+    for rows, column in ((sl.SITE_ROWS, "ws2025_26"), (sl.CENSUS_YEAR_SITE_ROWS, "ws2022_23")):
+        for institution, _, ags8, students in rows:
+            assert int(series.loc[institution + " | " + ags8, column]) == students
+    column_of = {"WS 2025/26": "ws2025_26", "WS 2024/25": "ws2024_25", "WS 2022/23": "ws2022_23"}
+    for table_semester, institutions in sl.OUTSIDE_LSN_STUDENTS.items():
+        assert set(institutions) == {"OVGU Magdeburg", "Hochschule Magdeburg-Stendal", "Hochschule Harz"}
+        for name, (students, semester) in institutions.items():
+            assert int(series.loc[name + " | curated", column_of[semester]]) == students
+
+
+def test_sites_main_writes_both_semesters_into_the_redirected_paths(monkeypatch, tmp_path):
+    out, out_census = tmp_path / "sites.csv", tmp_path / "sites_census.csv"
+    monkeypatch.setattr(sl, "OUTPUT_PATH", out)
+    monkeypatch.setattr(sl, "CENSUS_YEAR_OUTPUT_PATH", out_census)
+    assert sl.main([]) == 0
+    for path, semester, rows in ((out, sl.SEMESTER, sl.SITE_ROWS),
+                                 (out_census, sl.CENSUS_YEAR_SEMESTER, sl.CENSUS_YEAR_SITE_ROWS)):
+        header = [line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
+        assert any(semester in line for line in header)
+        back = pd.read_csv(path, comment="#", dtype={"site_ags8": str})
+        assert set(back["semester"]) == {semester}
+        assert len(back) == len(rows)
+
+
+def test_population_table_is_the_snapshot_of_the_decision_aid():
+    table = pd.read_csv(POPULATION, comment="#", dtype={"district_ars5": str})
+    snapshot = pd.read_csv(POPULATION_SNAPSHOT, comment="#", dtype={"district_ars5": str})
+    pd.testing.assert_frame_equal(table, snapshot)
+    kreise = table[table["district_ars5"].isin(sl.ZGB_KREISE)]
+    assert kreise.groupby(["district_ars5", "date"]).size().eq(1).all()
+    assert len(kreise) == 8 * 4 and kreise["date"].nunique() == 4
+    by_date = kreise.groupby("date")["persons_20_29"].sum()
+    assert by_date["2022-12-31"] == 124835
+    assert by_date["2025-12-31"] == 122600
+    header = [line for line in POPULATION.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
+    assert header[0].startswith("# Table: lsn_population_20_29_by_kreis.csv (issue #140)")
 
 
 def test_pinned_che_rows_match_the_source():
@@ -281,3 +337,8 @@ def test_output_path_is_anchored_at_the_repository_root(module):
     """A cwd-relative OUTPUT_PATH writes the table wherever the script is started from."""
     assert module.OUTPUT_PATH.is_absolute()
     assert module.OUTPUT_PATH.is_relative_to(ROOT)
+
+
+def test_census_year_output_path_is_anchored_at_the_repository_root():
+    assert sl.CENSUS_YEAR_OUTPUT_PATH.is_absolute()
+    assert sl.CENSUS_YEAR_OUTPUT_PATH.is_relative_to(ROOT)
