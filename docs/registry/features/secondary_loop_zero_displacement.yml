@@ -1,0 +1,124 @@
+feature: secondary_loop_zero_displacement
+title: 'Strolls and dog walks are loops: a loop activity is placed at the place of the activity before it (#679)'
+area: secondary
+description: 'With the switch on, the secondary location stage takes the leisure legs that are loops (a walk or
+  bicycle leg with the MiD detail code 710 or 711, or drawn where the detail was not asked) out of the chain
+  before the solve and puts each loop activity back at the place of the activity it starts from (owner
+  decision of 2026-11-25; how this differs from the French eqasim pipeline, which has no loop rule: ADR-0207,
+  Context). A stroll that goes out from home and whose next diary trip goes home (out-and-back, owner decision
+  of 2026-11-26) is no loop: the solver places it like any leisure leg, and the stage marks it for the Java
+  stroll rule of the mode choice (column is_out_and_back_stroll, activity attribute outAndBackStroll; the
+  definitions, the path from the stage to the plans and the rule are in the detail_doc note). A second switch,
+  secondary_leisure_estimates_without_loops, leaves the loop legs as defined in the detail_doc note
+  (purpose_subtype.drop_loop_legs) out of the leisure subtype distance layers and of the leisure subtype
+  decider''s estimate, so the legs that remain are not assigned a subtype or a distance from estimates that
+  still count the loops. The trips the loop placement makes zero-length keep their survey diary length, which
+  reaches the plans (activity attributes loopStroll, loopTripDiaryDistanceKm) and the trips output, and the
+  analyses of trip distances count it (owner decision of 2026-11-27; rule and users: detail_doc note, section
+  "Loop lengths for analyses").'
+stages:
+- synthesis.population.spatial.secondary.locations
+- synthesis.population.spatial.locations
+- matsim.scenario.facilities
+- matsim.scenario.population
+- synthesis.population.spatial.secondary.distance_distributions
+- synthesis.output
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - secondary_loop_zero_displacement
+  - secondary_leisure_estimates_without_loops
+introduced:
+  issue: '#679'
+  pr: null
+  adr: ADR-0207
+detail_doc: docs/codebase/notes/leisure-loops.md
+code_paths:
+- braunschweig/synthesis/locations/secondary_chainsolvers/loops.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/__init__.py
+- braunschweig/synthesis/locations/secondary_chainsolvers/deciders.py
+- braunschweig/popsim/purpose_subtype.py
+- braunschweig/popsim/distance_distributions.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/matsim/scenario/facilities.py
+- braunschweig/synthesis/commute_day/spatial_locations_day.py
+- braunschweig/matsim/scenario/population.py
+- matsim/scenario/population.py
+- synthesis/output.py
+- braunschweig/analysis/loop_trip_distances.py
+- braunschweig/analysis/dashboard/run_metrics.py
+- braunschweig/analysis/dashboard/run_records.py
+- scripts/validate_bs_10pct/io.py
+- braunschweig/calibration/secondary_measurement.py
+- scripts/validate_secondary_distances.py
+- scripts/calibrate_detour_circuity.py
+- scripts/extract_mid_w_zwd_groups.py
+evidence:
+  tests:
+  - tests/test_secondary_loops.py
+  - tests/test_secondary_loops_stage.py
+  - tests/test_extract_mid_w_zwd_groups.py
+  - tests/test_population_stroll_attribute.py
+  - tests/test_population_loop_attributes.py
+  - tests/test_loop_trip_distances.py
+  - tests/test_dashboard_loop_trips.py
+  - tests/test_validate_bs_10pct_loop_distances.py
+  - tests/test_calibrate_detour_circuity_loops.py
+  - tests/test_purpose_subtype.py
+  - tests/test_distance_distributions_subtypes.py
+  - tests/test_secondary_chainsolvers_subtypes.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_secondary_loops_stage.py::test_the_key_off_gives_todays_result_without_the_loop_origin_column
+    note: 'The test fails if any loop function or the MiD loader runs with the key off, compares the stage result
+      with the solver output on the uncollapsed trips (no loop_origin column) and asserts that no report file is
+      written. It is a frame-level check on hand-made fixtures, not a comparison of two runs. It covers
+      secondary_loop_zero_displacement only; for secondary_leisure_estimates_without_loops the tests pin that both
+      stages default it to off and that the distance distributions report is written only while it is on.'
+  fallback_rate:
+    instrumented: true
+    log_marker: '[secondary_loops]'
+    note: 'Both fallbacks (cell to mode marginal; loops kept on the solver instead of collapsed, by reason: the
+      loop activity is anchored or linked, or the loop starts at an outside stay) are counted with a rate in the
+      log and the stage report, and legs without any detail code are counted too; see the detail_doc note, sections
+      "The flag (...)" (marginal fallback, missing detail code) and "The placement rule (...)" (the Report step).
+      The loop-free estimates count the legs they leave out per loop mode in both stage reports; a (mode,
+      travel-time band) cell of the decider that falls below the minimum takes the marginal, which the existing
+      thin-cell log and fallback count report, and a distance layer that loses all legs of a loop mode raises
+      instead of falling back (section "The loop-free leisure estimates").'
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
+    note: 'The loop-free variant of the W_ZWD group reference (data record
+      mid2023_w_zwd_group_reference_without_loops, which applies the rule of the loop-free estimates) is a
+      measurement reference only; no stage reads it as a target. The loop probability itself is estimated at run time from the MiD Wege table.'
+validation:
+  state: unvalidated
+  runs:
+  - i679-stroll-loops-ab-1pct-2026-11-25
+  metric: null
+  note: 'Evidence: the run manifest i679-stroll-loops-ab-1pct-2026-11-25 (a wiring proof and an A/B of model output).
+    Nothing compares the model with observed behaviour. The survey measurement behind the design is the run manifest
+    i679-stroll-loops-survey-probe-2026-11-25 (observed MiD donor data plus the cached tables of one earlier run; a
+    measurement, not a validation).'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: 'The owner''s assessment of the 1 % evidence (run manifest i679-stroll-loops-ab-1pct-2026-11-25,
+    including the loop legs that the mode choice gives a motorised mode) is pending, and so is the joint effect with
+    #678 at 100 %, which the next production run (#22) measures. ADR-0207 records the decision and its assumptions.'
+  source: ADR-0207
+notes: 'Toggling secondary_loop_zero_displacement recomputes the secondary location stage, the facilities stage, the
+  day-view location join and the plans writer wrapper, which all declare it (with it off no column
+  is_out_and_back_stroll and no attribute outAndBackStroll is written). Toggling secondary_leisure_estimates_without_loops recomputes the secondary location stage
+  and the distance distributions stage, which both declare it; it requires secondary_leisure_subtype_split and
+  secondary_loop_zero_displacement (both stages raise at configure time otherwise). production.enabled is true
+  only while BOTH flags are on, so turning off only the second switch makes the documentation checker report
+  this feature as disabled. The mode choice rules (a third switch, independent of both; the stroll rule reads the
+  marker this feature writes and is inert without it) are the feature record loop_trips_non_motorised.'

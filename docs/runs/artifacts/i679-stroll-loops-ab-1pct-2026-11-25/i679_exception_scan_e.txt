@@ -1,0 +1,70 @@
+# Exception and mode-choice feasibility scan of arm E (eqasim-bs 33abe12f, eqasim-java-bs e83ca961f), written 2026-11-26T18:19:49+01:00
+# grep -c per file; paths relative to the run directory
+i679_e logs/run_20261126T164639.log (arm E): Traceback=0 Exception_in_thread=0 Exception_any=1 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=66 lines_with_feasible_not_parking=60 Removing_persons_with_no_valid_alternative=0 lines=8998
+i679_e .../simulation_output/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=0 lines_with_feasible_not_parking=0 Removing_persons_with_no_valid_alternative=0 lines=0
+i679_e .../prepare/mode_choice/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=0 lines_with_feasible_not_parking=0 Removing_persons_with_no_valid_alternative=0 lines=0
+MATSim iterations in arm E: it.0 it.1 it.2 it.3 it.4 it.5 
+## lines containing feasible that are not parking lines (line number: text, first 200 characters)
+1442:16:54:57 │ INFO    │ data.kba.feasible_fuels │ [feasible_fuels] built feasibility for 1482 (brand, family) keys and 62 brand-level keys from HSN/TSN lookup.
+1454:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03241 petrol UNREACHABLE (under target) -- target 0.6080, max achievable 0.596
+1457:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03256 bev UNREACHABLE (under target) -- target 0.0150, max achievable 0.0000 (
+1460:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03257 bev UNREACHABLE (under target) -- target 0.0572, max achievable 0.0000 (
+1461:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03257 phev UNREACHABLE (under target) -- target 0.0208, max achievable 0.0000 
+1464:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03353 bev UNREACHABLE (under target) -- target 0.0293, max achievable 0.0000 (
+1466:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03354 bev UNREACHABLE (under target) -- target 0.0140, max achievable 0.0000 (
+1468:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03358 phev UNREACHABLE (under target) -- target 0.0213, max achievable 0.0000 
+1471:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03403 gas UNREACHABLE (under target) -- target 0.0211, max achievable 0.0000 (
+1472:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03403 bev UNREACHABLE (under target) -- target 0.0171, max achievable 0.0000 (
+1475:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03452 gas UNREACHABLE (under target) -- target 0.0101, max achievable 0.0000 (
+1476:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03452 bev UNREACHABLE (under target) -- target 0.0818, max achievable 0.0000 (
+1477:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 03452 phev UNREACHABLE (under target) -- target 0.0323, max achievable 0.0000 
+1478:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 04011 gas UNREACHABLE (under target) -- target 0.0108, max achievable 0.0000 (
+1481:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05114 gas UNREACHABLE (under target) -- target 0.0121, max achievable 0.0000 (
+1482:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05114 bev UNREACHABLE (under target) -- target 0.0814, max achievable 0.0000 (
+1483:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05114 phev UNREACHABLE (under target) -- target 0.0472, max achievable 0.0000 
+1485:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05315 petrol UNREACHABLE (under target) -- target 0.5244, max achievable 0.386
+1486:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05315 diesel UNREACHABLE (under target) -- target 0.2030, max achievable 0.099
+1489:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05315 phev UNREACHABLE (under target) -- target 0.0690, max achievable 0.0022 
+1490:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05315 hybrid UNREACHABLE (under target) -- target 0.1273, max achievable 0.012
+1493:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05566 gas UNREACHABLE (under target) -- target 0.0211, max achievable 0.0000 (
+1495:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05770 bev UNREACHABLE (under target) -- target 0.0302, max achievable 0.0000 (
+1498:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05911 bev UNREACHABLE (under target) -- target 0.0913, max achievable 0.0000 (
+1499:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05911 phev UNREACHABLE (under target) -- target 0.0517, max achievable 0.0000 
+1500:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05911 hybrid UNREACHABLE (under target) -- target 0.1323, max achievable 0.000
+1502:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05913 bev UNREACHABLE (under target) -- target 0.0206, max achievable 0.0000 (
+1503:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 05913 phev UNREACHABLE (under target) -- target 0.0183, max achievable 0.0000 
+1506:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06412 phev UNREACHABLE (under target) -- target 0.0581, max achievable 0.0000 
+1508:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06633 bev UNREACHABLE (under target) -- target 0.0139, max achievable 0.0000 (
+1510:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06634 diesel UNREACHABLE (under target) -- target 0.2944, max achievable 0.000
+1512:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 06634 hybrid UNREACHABLE (under target) -- target 0.0171, max achievable 0.000
+1515:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09161 bev UNREACHABLE (under target) -- target 0.1850, max achievable 0.0000 (
+1516:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09161 phev UNREACHABLE (under target) -- target 0.0813, max achievable 0.0000 
+1517:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09161 hybrid UNREACHABLE (under target) -- target 0.1744, max achievable 0.000
+1518:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09162 petrol UNREACHABLE (under target) -- target 0.6265, max achievable 0.613
+1520:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09162 bev UNREACHABLE (under target) -- target 0.0166, max achievable 0.0000 (
+1521:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09162 phev UNREACHABLE (under target) -- target 0.0201, max achievable 0.0000 
+1524:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09564 bev UNREACHABLE (under target) -- target 0.0304, max achievable 0.0000 (
+1525:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 09564 hybrid UNREACHABLE (under target) -- target 0.0563, max achievable 0.000
+1527:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 10041 hybrid UNREACHABLE (under target) -- target 0.0251, max achievable 0.000
+1529:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 12063 hybrid UNREACHABLE (under target) -- target 0.0129, max achievable 0.000
+1532:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13075 bev UNREACHABLE (under target) -- target 0.0107, max achievable 0.0000 (
+1533:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 13075 hybrid UNREACHABLE (under target) -- target 0.0371, max achievable 0.000
+1536:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14524 bev UNREACHABLE (under target) -- target 0.0146, max achievable 0.0000 (
+1537:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14524 hybrid UNREACHABLE (under target) -- target 0.0375, max achievable 0.000
+1540:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14612 bev UNREACHABLE (under target) -- target 0.0112, max achievable 0.0000 (
+1541:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14612 hybrid UNREACHABLE (under target) -- target 0.0309, max achievable 0.000
+1543:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 14713 bev UNREACHABLE (under target) -- target 0.0278, max achievable 0.0000 (
+1544:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15081 petrol UNREACHABLE (under target) -- target 0.5865, max achievable 0.561
+1545:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15081 diesel UNREACHABLE (under target) -- target 0.3520, max achievable 0.336
+1549:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15086 bev UNREACHABLE (under target) -- target 0.0496, max achievable 0.0000 (
+1550:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15089 petrol UNREACHABLE (under target) -- target 0.6586, max achievable 0.557
+1551:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15089 diesel UNREACHABLE (under target) -- target 0.2598, max achievable 0.219
+1553:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15090 petrol UNREACHABLE (under target) -- target 0.5942, max achievable 0.420
+1554:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 15090 diesel UNREACHABLE (under target) -- target 0.3320, max achievable 0.234
+1558:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16062 diesel UNREACHABLE (under target) -- target 0.2518, max achievable 0.000
+1559:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16062 bev UNREACHABLE (under target) -- target 0.0453, max achievable 0.0000 (
+1560:16:55:00 │ WARNING │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] Task 7 per-Kreis powertrain rake: Kreis 16062 phev UNREACHABLE (under target) -- target 0.0297, max achievable 0.0000 
+1576:16:55:02 │ INFO    │ synthesis.vehicles.fleet_sampling_de │ [fleet_de] model-feasible powertrain mask (consistency_v2, Bug 2): 502/507 vehicles (99.0%) model-constrained (tier1 exact-family
+## notes added 2026-11-26 on the laptop from the same log
+Exception_any=1 is log line 461, a Maven build warning of the runtime stage: "[WARNING]   - org.apache.logging.slf4j.SLF4JLoggingException" (one of 9 classes the build lists as defined by both log4j-slf4j-impl-2.26.0.jar and log4j-slf4j2-impl-2.25.3.jar, "overlapping classes"; the same line is in the log of the first launch of arm D), no thrown exception.
+arm E, lines from the preparation stage start (line 3470) on: lines_with_feasible_not_parking=0 (the 60 non-parking lines above are synthesis-stage lines: fleet sampling, feasible_fuels)

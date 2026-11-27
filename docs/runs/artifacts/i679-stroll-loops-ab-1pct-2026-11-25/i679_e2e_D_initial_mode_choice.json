@@ -1,0 +1,71 @@
+{
+  "loop_keys": 746,
+  "loop_trips_by_destination_type": {
+    "home": 2,
+    "leisure": 735,
+    "outside": 8,
+    "work": 1
+  },
+  "loop_trips_by_main_mode": {
+    "bicycle": 40,
+    "car": 6,
+    "car_passenger": 2,
+    "outside": 3,
+    "walk": 695
+  },
+  "loop_trips_by_origin_diary_mode_main_mode_length_alignment": {
+    "education|bicycle|walk|zero|aligned": 2,
+    "education|walk|walk|zero|aligned": 5,
+    "home|bicycle|bicycle|zero|aligned": 1,
+    "home|bicycle|walk|zero|aligned": 16,
+    "home|walk|bicycle|zero|aligned": 37,
+    "home|walk|car_passenger|zero|aligned": 1,
+    "home|walk|car|nonzero|misaligned": 2,
+    "home|walk|outside|nonzero|misaligned": 1,
+    "home|walk|walk|nonzero|misaligned": 4,
+    "home|walk|walk|zero|aligned": 531,
+    "secondary|bicycle|car|nonzero|aligned": 1,
+    "secondary|bicycle|walk|zero|aligned": 4,
+    "secondary|walk|bicycle|zero|aligned": 2,
+    "secondary|walk|car_passenger|zero|aligned": 1,
+    "secondary|walk|car|zero|aligned": 3,
+    "secondary|walk|outside|nonzero|misaligned": 2,
+    "secondary|walk|walk|nonzero|misaligned": 2,
+    "secondary|walk|walk|zero|aligned": 111,
+    "work|bicycle|walk|zero|aligned": 1,
+    "work|walk|walk|zero|aligned": 19
+  },
+  "loop_trips_found_in_plans": 746,
+  "loop_trips_zero_length_by_main_mode": {
+    "bicycle": 40,
+    "car": 3,
+    "car_passenger": 2,
+    "walk": 689
+  },
+  "persons_with_selected_plan": 12667,
+  "stuck": null,
+  "trips": 39187,
+  "zero_length_trips_by_destination_type": {
+    "education": 164,
+    "escort": 22,
+    "freight_end": 1,
+    "home": 1300,
+    "leisure": 777,
+    "other": 41,
+    "outside": 579,
+    "shop": 111,
+    "work": 640
+  },
+  "zero_length_trips_by_main_mode": {
+    "bicycle": 146,
+    "car": 318,
+    "car_passenger": 55,
+    "outside": 571,
+    "truck": 1,
+    "walk": 2544
+  },
+  "zero_length_trips_with_positive_route_distance_by_mode": {
+    "car": 316,
+    "car_passenger": 53
+  }
+}

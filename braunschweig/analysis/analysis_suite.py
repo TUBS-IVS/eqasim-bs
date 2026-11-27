@@ -90,6 +90,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.analysis.integerizer_quality.cell_geometry",
     "braunschweig.analysis.integerizer_quality.report",
     "braunschweig.analysis.integerizer_quality.zone_feasibility",
+    # The loop-length rule of the dashboard metrics (issue #679).
+    "braunschweig.analysis.loop_trip_distances",
     "braunschweig.analysis.noise_bands",
     "braunschweig.analysis.pipeline_trips_file",
     "braunschweig.analysis.popsim_validation.controls",

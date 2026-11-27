@@ -1,0 +1,70 @@
+feature: loop_trips_non_motorised
+title: 'Same-facility leisure trips and trips into an out-and-back stroll may only be walk or bicycle in the mode choice (#679)'
+area: matsim
+description: 'The prepare stage selects the eqasim-java-bs trip constraints SameFacilityLeisureNonMotorised and
+  StrollNonMotorised for the mode choice, before the initial mode choice. The rules are defined in the detail_doc
+  note (section "Mode choice") and ADR-0207 decision 6; the first reads the place, not the loop switch, the second
+  reads the activity attribute outAndBackStroll that the feature record secondary_loop_zero_displacement writes.
+  This record owns the mode choice switch; the placement of the loop activities and the marker are that feature
+  record.'
+stages:
+- matsim.simulation.prepare
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: active
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.mode_choice.loop_trips_non_motorised
+introduced:
+  issue: '#679'
+  pr: null
+  adr: ADR-0207
+detail_doc: docs/codebase/notes/leisure-loops.md
+code_paths:
+- braunschweig/matsim/simulation/loop_mode_rule.py
+- braunschweig/matsim/simulation/prepare.py
+evidence:
+  tests:
+  - tests/test_loop_mode_rule.py
+  - tests/test_prepare_plan_check_wiring.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_prepare_plan_check_wiring.py::test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initial_mode_choice
+    note: 'With the key off the test fails if the jar is read, the config edited or a report written; with it on it
+      checks the order jar check, config edit, report, initial mode choice. The edit itself keeps every other byte
+      (tests/test_loop_mode_rule.py). The Java constraint is covered by the tests of the eqasim-java-bs change, which
+      is not part of this repository.'
+  fallback_rate:
+    instrumented: false
+    note: 'Primary = a caught trip the mode choice evaluates, where the rule holds. A caught trip in a tour the mode
+      choice does not re-choose (a tour filter drops it) is not evaluated and keeps its mode; it is the part of the
+      rule that does not reach. The counts of caught, evaluated and not evaluated trips exist only in the Java log (docs/codebase/notes/leisure-loops.md,
+      "Mode choice"), no marker of this repository, so the rate is declared not instrumented here. The 1 % evidence measures the not-evaluated trips from the written populations: run manifest
+      docs/runs/i679-stroll-loops-ab-1pct-2026-11-25.yml, arm D for the first rule and arm E for both rules
+      (metrics "arm E - both Java rules, their selection and their own counts" and "arm E against arm D - modes
+      of the out-and-back stroll legs and their ways home after the initial mode choice and after iteration 5").'
+  reference:
+    kind: none
+    note: 'No reference value: the rule is a modelling decision of the owner (ADR-0207), not a calibration to
+      observed data.'
+validation:
+  state: unvalidated
+  runs:
+  - i679-stroll-loops-ab-1pct-2026-11-25
+  metric: null
+  note: 'Evidence: the run manifest i679-stroll-loops-ab-1pct-2026-11-25, arm D (same-facility rule) and arm E (both
+    rules; a wiring proof and an A/B of model output). Nothing compares the model with observed behaviour.'
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: 'The owner''s assessment of the 1 % evidence (run manifest i679-stroll-loops-ab-1pct-2026-11-25, arms
+    D and E) is pending. The eqasim-java-bs change must be merged and its jar built before a production run with the switch
+    on.'
+  source: ADR-0207
+notes: 'Toggling the key recomputes the prepare stage, which declares it. It requires an eqasim-java-bs jar that
+  contains SameFacilityLeisureTripConstraint and StrollTripConstraint; the stage refuses an older jar. The stroll
+  rule is inert while secondary_loop_zero_displacement is off, because no activity carries the marker.'

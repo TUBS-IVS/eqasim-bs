@@ -1,0 +1,75 @@
+{
+  "equality": {
+    "trips_final_identical": true,
+    "trips_simulated_identical": false,
+    "activities_simulated_identical": false,
+    "trips_final_by_purpose_equal": true,
+    "trips_simulated_by_purpose_equal": true,
+    "activities_simulated_by_purpose_equal": true,
+    "activities_final_by_purpose_equal": true,
+    "leisure_participation_equal": true
+  },
+  "differences": {
+    "trips_simulated_by_column": {
+      "preceding_purpose": {
+        "rows": 0,
+        "persons": 0
+      },
+      "following_purpose": {
+        "rows": 0,
+        "persons": 0
+      },
+      "departure_time": {
+        "rows": 38,
+        "persons": 11
+      },
+      "arrival_time": {
+        "rows": 38,
+        "persons": 11
+      },
+      "mode": {
+        "rows": 314,
+        "persons": 112
+      }
+    },
+    "trips_simulated_mode_transitions": {
+      "bicycle->car": 9,
+      "bicycle->car_passenger": 7,
+      "bicycle->walk": 2,
+      "car->bicycle": 14,
+      "car->car_passenger": 24,
+      "car->pt": 9,
+      "car->walk": 40,
+      "car_passenger->bicycle": 23,
+      "car_passenger->car": 35,
+      "car_passenger->pt": 17,
+      "car_passenger->walk": 29,
+      "pt->bicycle": 2,
+      "pt->car": 8,
+      "pt->car_passenger": 20,
+      "pt->walk": 6,
+      "walk->bicycle": 2,
+      "walk->car": 40,
+      "walk->car_passenger": 25,
+      "walk->pt": 2
+    },
+    "activities_simulated_by_column": {
+      "purpose": {
+        "rows": 0,
+        "persons": 0
+      },
+      "start_time": {
+        "rows": 38,
+        "persons": 11
+      },
+      "end_time": {
+        "rows": 38,
+        "persons": 11
+      }
+    },
+    "changed_trips_of_persons_with_outside_activity": {
+      "changed_trips": 333,
+      "of_persons_with_outside": 83
+    }
+  }
+}

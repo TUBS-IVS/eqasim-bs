@@ -145,8 +145,10 @@ def test_spatial_locations_day_hands_the_day_activities_to_the_vendored_stage(mo
                                    "purpose": ["home", "work"]})
     sampled = pd.DataFrame({"person_id": [1, 2], "household_id": [1, 2]})
     recorder = _recorder(LOCATIONS)
+    # The out-and-back stroll switch (issue #679) is off: this test is about the activities substitution.
     context = _StubContext(recorder, stages={DAY_ACTIVITIES_STAGE: day_activities,
-                                             "synthesis.population.sampled": sampled})
+                                             "synthesis.population.sampled": sampled},
+                           config={"secondary_loop_zero_displacement": False})
 
     execute_recorder = _ExecuteRecorder()
     monkeypatch.setattr(LOCATIONS.base, "execute", execute_recorder)

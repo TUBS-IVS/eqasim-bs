@@ -1,8 +1,12 @@
 """The prepare stage declares the plan-check keys, hashes the module and runs the check last (eqasim-bs#443)."""
+import re
+from pathlib import Path
+
 import pytest
 
 from braunschweig.matsim import initial_mode_choice as I
 from braunschweig.matsim.simulation import frozen_pt_walk_lift as L
+from braunschweig.matsim.simulation import loop_mode_rule as LR
 from braunschweig.matsim.simulation import mode_choice_reach as R
 from braunschweig.matsim.simulation import plan_check as C
 from braunschweig.matsim.simulation import prepare
@@ -20,6 +24,8 @@ def _no_config_edit(monkeypatch):
     # Stubs ``apply`` for the whole file; test_execute_with_todays_values_does_not_edit_the_config runs the real edit.
     """The older tests use a config name that is no file: the reach edit is a no-op there (tested below)."""
     monkeypatch.setattr(R, "apply", lambda config_path, settings: {})
+
+LOOP_KEY = LR.KEY_ENABLED
 
 
 class _RecordingContext:
@@ -93,7 +99,8 @@ def test_execute_runs_the_plan_check_last_and_only_when_enabled(monkeypatch):
             self._values = {**_REACH_VALUES, prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": True,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: enabled,
                             I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -121,7 +128,8 @@ def test_execute_writes_the_parking_inputs_before_the_plan_check(monkeypatch):
     class _Context:
         _values = {**_REACH_VALUES, prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: True, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -146,7 +154,8 @@ def test_execute_skips_the_walk_fallback_stamp_guard_when_the_plan_check_is_disa
     class _Context:
         _values = {**_REACH_VALUES, prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -179,7 +188,8 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
         def __init__(self, enabled):
             self._values = {**_REACH_VALUES, prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": False,
                             prepare.PARKING_KEY: False, C.KEY_ENABLED: True, I.KEY_ENABLED: False,
-                            "braunschweig.frozen_pt_walk_lift.enabled": enabled}
+                            "braunschweig.frozen_pt_walk_lift.enabled": enabled,
+                            LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
@@ -192,6 +202,83 @@ def test_execute_runs_the_frozen_pt_walk_lift_after_the_cut_and_before_the_plan_
     seen.clear()
     assert prepare.execute(_Context(False)) == "cut_config.xml"
     assert seen == ["cut", ("check", "cut_config.xml", None)]
+
+
+def test_configure_declares_the_loop_mode_rule_switch_off_by_default():
+    context = _RecordingContext({"cordon_enabled": False, "freight_enabled": False})
+    prepare.configure(context)
+    assert context.calls[LOOP_KEY] is False
+    assert L in prepare._HELPER_MODULES
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_execute_selects_the_loop_mode_rule_in_the_final_config_before_the_initial_mode_choice(
+        monkeypatch, tmp_path, enabled):
+    """On: its jar check, then its config edit, both after the reach jar check and before the reach edit, all before
+    the mode choice. Off: no loop rule jar read, no loop rule edit (#679, ADR-0207)."""
+    seen = []
+    _record_steps(monkeypatch, seen)
+    monkeypatch.setattr(LR, "require_constraint_in_jar", lambda jar: seen.append(("loop jar", jar)))
+    monkeypatch.setattr(LR, "apply", lambda config: seen.append(("loop apply", str(config))) or ("a", "a,b"))
+    monkeypatch.setattr(LR, "write_report", lambda *args: seen.append("loop report"))
+    assert prepare.execute(_ReachContext(tmp_path, **{LOOP_KEY: enabled})) == "config.xml"
+    jar = str(tmp_path) + "/eqasim.jar"
+    loop_steps = [("loop jar", jar), ("loop apply", str(tmp_path / "config.xml")), "loop report"] if enabled else []
+    assert seen == [("jar", jar), *loop_steps, ("apply", R.ReachSettings(False, R.DEFAULT_LOOP_MAX_TOUR_LENGTH)),
+                    ("initial", R.ReachSettings(True, R.DEFAULT_INITIAL_MAX_TOUR_LENGTH)), "lift", "plan_check"]
+
+
+# The DiscreteModeChoice module as a prepared config carries it, parameter sets included (see test_loop_mode_rule.py).
+_REAL_MODULE = (Path(__file__).parent / "fixtures" / "dmc_module_real.xml").read_bytes().decode("utf-8")
+_DMC_CONFIG = '<?xml version="1.0" encoding="utf-8"?>\n<config>\n' + _REAL_MODULE + '</config>\n'
+_OLD = "OutsideConstraint, TransitWalk"
+
+
+@pytest.mark.parametrize("with_class", [True, False])
+def test_select_loop_mode_rule_end_to_end_with_a_stub_jar(monkeypatch, tmp_path, with_class):
+    """Real jar check, real config edit, real report: the config carries the constraint and the report says so; a jar
+    without the class raises and leaves the config bytes and the stage folder as they were."""
+    import json
+    import zipfile
+    stage = tmp_path / "prepare"
+    jar_directory = tmp_path / "matsim.runtime.eqasim"
+    stage.mkdir()
+    jar_directory.mkdir()
+    (stage / "config.xml").write_bytes(_DMC_CONFIG.encode("utf-8"))
+    with zipfile.ZipFile(jar_directory / "eqasim.jar", "w") as jar:
+        for name in (LR.CONSTRAINT_CLASSES if with_class else LR.CONSTRAINT_CLASSES[:1] + ("other/Class.class",)):
+            jar.writestr(name, b"\xca\xfe\xba\xbe")
+    before_files = sorted(path.name for path in stage.iterdir())
+
+    class _Context:
+        def path(self, name=None):
+            return str(jar_directory if name == "matsim.runtime.eqasim" else stage)
+
+        def stage(self, name):
+            return "eqasim.jar"
+
+    if not with_class:
+        with pytest.raises(RuntimeError, match=re.escape(LR.CONSTRAINT_CLASSES[1])):
+            prepare._select_loop_mode_rule(_Context(), "config.xml")
+        assert (stage / "config.xml").read_bytes() == _DMC_CONFIG.encode("utf-8")
+        assert sorted(path.name for path in stage.iterdir()) == before_files
+        return
+    prepare._select_loop_mode_rule(_Context(), "config.xml")
+    expected = _OLD + ", SameFacilityLeisureNonMotorised, StrollNonMotorised"
+    assert (stage / "config.xml").read_bytes().decode("utf-8") == _DMC_CONFIG.replace(
+        'value="%s" />' % _OLD, 'value="%s" />' % expected)
+    report = json.loads((stage / LR.REPORT_FILE_NAME).read_text(encoding="utf-8"))
+    assert report == {
+        "constraints": ["SameFacilityLeisureNonMotorised", "StrollNonMotorised"],
+        "constraint_classes_checked": list(LR.CONSTRAINT_CLASSES),
+        "jar_file_name": "eqasim.jar", "module": "DiscreteModeChoice", "parameter": "tripConstraints",
+        "trip_constraints_before": _OLD,
+        "trip_constraints_after": expected, "already_selected": False}
+    # A second run (a re-prepare of an already selected config) changes nothing and says so.
+    prepare._select_loop_mode_rule(_Context(), "config.xml")
+    again = json.loads((stage / LR.REPORT_FILE_NAME).read_text(encoding="utf-8"))
+    assert again["already_selected"] is True
+    assert again["trip_constraints_before"] == again["trip_constraints_after"] == expected
 
 
 def test_configure_declares_the_reach_and_repair_keys():
@@ -212,7 +299,7 @@ class _ReachContext:
         self._tmp_path = tmp_path
         self._values = {**_REACH_VALUES, prepare.VRB_FARES_KEY: True, "cordon_enabled": False,
                         "freight_enabled": False, prepare.PARKING_KEY: False, C.KEY_ENABLED: True,
-                        I.KEY_ENABLED: True, L.KEY_ENABLED: True, **overrides}
+                        I.KEY_ENABLED: True, L.KEY_ENABLED: True, LOOP_KEY: False, **overrides}
 
     def config(self, key):
         return self._values[key]

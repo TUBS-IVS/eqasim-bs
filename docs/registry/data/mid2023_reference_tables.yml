@@ -38,7 +38,8 @@ notes: |
   MiD aggregates DERIVED in-repo from the raw B1 delivery; those that carry their own provenance,
   universe and consumers have their own record and are not described here:
   mid2023_license_by_sex_cohort, mid2023_workday_location, mid2023_cars_by_rs7_haustyp,
-  mid2023_bikes_by_rs7_haustyp, mid2023_w_zweck_by_hwzweck1 and mid2023_w_zwd_group_reference.
+  mid2023_bikes_by_rs7_haustyp, mid2023_w_zweck_by_hwzweck1, mid2023_w_zwd_group_reference and
+  mid2023_w_zwd_group_reference_without_loops.
 
   mid2023_escort_w_zweck_split.csv (script scripts/derive_escort_w_zweck_split.py, W_GEW-weighted
   over the MiD escort legs of the WEEKDAY reporting days the PopulationSim seed keeps, n = 42,069)

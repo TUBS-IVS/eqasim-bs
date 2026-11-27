@@ -62,4 +62,4 @@ notes: 'popsim_open deliberately keeps the eqasim ENTD distance CDFs -- ENTD is 
   raw MiD W_ZWECK code rather than by W_ZWD and has its own record
   leisure_unspecified_subtype (issue #373, ADR-0115), which owns its flag, its layer and its
   evidence. The W_ZWD group boundaries themselves are owned by w_zwd_codeplan_sentinels (#242,
-  ADR-0113).'
+  ADR-0113). Strolls and dog walks (#679, ADR-0207): the loop flag and the placement rule live in docs/codebase/notes/leisure-loops.md; feature record secondary_loop_zero_displacement.'

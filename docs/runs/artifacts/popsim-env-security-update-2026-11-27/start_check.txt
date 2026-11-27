@@ -1,0 +1,27 @@
+== case old, offline: exit 0
+Would use project environment at: .venv
+Checked 45 packages in 1ms
+Would make no changes
+== case new, offline: exit 0
+Would use project environment at: .venv
+Checked 45 packages in 1ms
+Would make no changes
+== case stale, offline: exit 1
+Would use project environment at: .venv
+Would uninstall 7 packages
+Would install 7 packages
+ - certifi==2026.1.4
+ + certifi==2026.10.19
+ - idna==3.11
+ + idna==3.15
+ - msgpack==1.1.2
+ + msgpack==1.2.3
+ - pyarrow==23.0.0
+ + pyarrow==23.0.1
+ - requests==2.32.5
+ + requests==2.33.0
+ - setuptools==80.10.1
+ + setuptools==84.1.0
+ - urllib3==2.6.3
+ + urllib3==2.8.0
+The environment is outdated; run `uv sync` to update the environment

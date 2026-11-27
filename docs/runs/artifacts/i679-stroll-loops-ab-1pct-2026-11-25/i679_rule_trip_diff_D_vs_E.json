@@ -1,0 +1,136 @@
+{
+  "between_arms_C_vs_D": {
+    "iteration5": {
+      "caught": {
+        "net_mode_change_c_to_d": {
+          "bicycle": 69,
+          "car": -53,
+          "car_passenger": 4,
+          "outside": 4,
+          "pt": -4,
+          "walk": -20
+        },
+        "trips": 247
+      },
+      "common_trips": 36566,
+      "not_caught": {
+        "in_a_tour_with_a_caught_trip": 141,
+        "net_mode_change_c_to_d": {
+          "bicycle": 110,
+          "car": 10,
+          "car_passenger": -37,
+          "outside": -9,
+          "pt": -21,
+          "walk": -53
+        },
+        "of_a_person_with_a_caught_trip": 251,
+        "transitions": {
+          "bicycle->car": 144,
+          "bicycle->car_passenger": 146,
+          "bicycle->outside": 6,
+          "bicycle->pt": 83,
+          "bicycle->walk": 139,
+          "car->bicycle": 163,
+          "car->car_passenger": 154,
+          "car->outside": 142,
+          "car->pt": 72,
+          "car->walk": 326,
+          "car_passenger->bicycle": 164,
+          "car_passenger->car": 174,
+          "car_passenger->outside": 34,
+          "car_passenger->pt": 146,
+          "car_passenger->walk": 191,
+          "outside->bicycle": 10,
+          "outside->car": 143,
+          "outside->car_passenger": 38,
+          "outside->pt": 10,
+          "outside->walk": 18,
+          "pt->bicycle": 109,
+          "pt->car": 64,
+          "pt->car_passenger": 142,
+          "pt->outside": 9,
+          "pt->walk": 119,
+          "walk->bicycle": 182,
+          "walk->car": 342,
+          "walk->car_passenger": 192,
+          "walk->outside": 19,
+          "walk->pt": 111
+        },
+        "trips": 3592
+      },
+      "trips_with_different_mode": 3839
+    },
+    "prepared": {
+      "caught": {
+        "net_mode_change_c_to_d": {
+          "bicycle": 69,
+          "car": -53,
+          "car_passenger": 4,
+          "outside": 4,
+          "pt": -4,
+          "walk": -20
+        },
+        "trips": 247
+      },
+      "common_trips": 36566,
+      "not_caught": {
+        "in_a_tour_with_a_caught_trip": 139,
+        "net_mode_change_c_to_d": {
+          "bicycle": 105,
+          "car": 13,
+          "car_passenger": -35,
+          "outside": -9,
+          "pt": -31,
+          "walk": -43
+        },
+        "of_a_person_with_a_caught_trip": 249,
+        "transitions": {
+          "bicycle->car": 132,
+          "bicycle->car_passenger": 148,
+          "bicycle->outside": 6,
+          "bicycle->pt": 82,
+          "bicycle->walk": 139,
+          "car->bicycle": 159,
+          "car->car_passenger": 152,
+          "car->outside": 142,
+          "car->pt": 58,
+          "car->walk": 321,
+          "car_passenger->bicycle": 159,
+          "car_passenger->car": 175,
+          "car_passenger->outside": 35,
+          "car_passenger->pt": 138,
+          "car_passenger->walk": 195,
+          "outside->bicycle": 10,
+          "outside->car": 144,
+          "outside->car_passenger": 38,
+          "outside->pt": 10,
+          "outside->walk": 17,
+          "pt->bicycle": 105,
+          "pt->car": 56,
+          "pt->car_passenger": 139,
+          "pt->outside": 8,
+          "pt->walk": 119,
+          "walk->bicycle": 179,
+          "walk->car": 338,
+          "walk->car_passenger": 190,
+          "walk->outside": 19,
+          "walk->pt": 108
+        },
+        "trips": 3521
+      },
+      "trips_with_different_mode": 3768
+    }
+  },
+  "within_arm_prepared_vs_iteration5": {
+    "C": {
+      "caught_trips": 1152,
+      "caught_trips_with_changed_mode": 0,
+      "transitions": {}
+    },
+    "D": {
+      "caught_trips": 1038,
+      "caught_trips_with_changed_mode": 0,
+      "transitions": {}
+    }
+  }
+}

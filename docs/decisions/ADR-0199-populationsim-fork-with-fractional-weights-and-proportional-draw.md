@@ -44,6 +44,7 @@ ADR-0056 keeps integer sub-balance seeds (`SUB_BALANCE_WITH_FLOAT_SEED_WEIGHTS` 
 - The production values of the two options live in `configs/base_bs.yml`; the evidence and its limits for them are in the arm-1 manifest.
 - `populationsim_version` is a new required key of the popsim stage config.
 - The tag `v0.10.0+bs.1` was cut on the commit arm 1 ran with, after arm 1 passed; `environments/populationsim` pins that tag (procedure in the note).
+- 2026-11-27: the start check also compares every package installed in the project environment with `uv.lock` ([populationsim-fork.md](../codebase/notes/populationsim-fork.md), section The tracked environment).
 
 ## Evidence
 
