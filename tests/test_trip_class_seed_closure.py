@@ -164,3 +164,35 @@ def test_counts_closure_zero_direct_legs_not_incremented():
     })
     out = P.derive_trip_class_seed(persons, rng=np.random.RandomState(0), counts_closure=True)
     assert out.loc[0, "trip_class"] == 0
+
+
+def _kept_open_persons(keeps=(True, False, False)):
+    """Person 0 and 1 end away from home (2 and 3 realised trips); person 2 ends at home."""
+    return pd.DataFrame({
+        "H_ID": [1, 2, 3], "P_ID": [1, 1, 1], "member_imputed": [False] * 3,
+        "source_H_ID": [1, 2, 3], "source_P_ID": [1, 1, 1],
+        "anzwege1": [2, 3, 4], "alter_gr1": [3, 3, 3], "mobil": [1, 1, 1],
+        "src_ends_at_home": [False, False, True], "src_n_direct_legs": [2, 3, 4],
+        "src_starts_arriving_home": [False, False, False],
+        "src_keeps_open_end": list(keeps),
+    })
+
+
+def test_kept_open_donor_gets_no_plus_one():
+    out = P.derive_trip_class_seed(_kept_open_persons(), rng=np.random.RandomState(0),
+                                   counts_closure=True, keep_overnight_open_ends=True)
+    assert out.loc[0, "trip_class"] == 1      # kept open: 2 trips stay 2 -> class 1 (1-2), not 3 -> class 2
+
+
+def test_closed_open_end_donor_still_gets_plus_one():
+    out = P.derive_trip_class_seed(_kept_open_persons(), rng=np.random.RandomState(0),
+                                   counts_closure=True, keep_overnight_open_ends=True)
+    assert out.loc[1, "trip_class"] == 2
+    assert out.loc[2, "trip_class"] == 2      # ends at home, unchanged
+
+
+def test_keep_open_requires_src_column():
+    with pytest.raises(KeyError, match="src_keeps_open_end"):
+        P.derive_trip_class_seed(_kept_open_persons().drop(columns=["src_keeps_open_end"]),
+                                 rng=np.random.RandomState(0), counts_closure=True,
+                                 keep_overnight_open_ends=True)

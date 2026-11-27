@@ -1306,6 +1306,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE: False,
         popsim_stage.KEY_DIARY_PLAN_MATCH: False,
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
+        popsim_stage.KEY_KEEP_OVERNIGHT_OPEN_ENDS: False,
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
         popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,

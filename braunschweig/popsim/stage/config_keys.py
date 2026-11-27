@@ -551,6 +551,15 @@ DEFAULT_EXCLUDE_RBW_LEGS = True
 # and plan count different days again.
 KEY_DROP_LEADING_ARRIVE_HOME_LEG = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
 DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG = True
+# Keep the day OPEN (no invented return-home trip) for MiD donors who report an
+# overnight trip on the reporting day (P_STREISE; decision in
+# braunschweig.popsim.overnight_open_end). Default ON (project rule: new features
+# default on). Read by braunschweig.popsim.stage (the trip_class seed counts +0
+# instead of +1 for a kept-open donor), by braunschweig.popsim.trips_stage (no
+# closure is appended) and by braunschweig.synthesis.commute_day.home_office_donors_stage
+# -- all readers must see the SAME value, or seed and plan count different days.
+KEY_KEEP_OVERNIGHT_OPEN_ENDS = "braunschweig.population.popsim.keep_overnight_open_ends"
+DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS = True
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
 # the closing dwell duration from the observed distribution of the same purpose

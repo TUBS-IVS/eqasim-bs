@@ -57,7 +57,8 @@ logger = logging.getLogger(__name__)
 
 def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID",
                             counts_closure: bool = False, forbid_no_diary_sources: bool = False,
-                            drop_leading_arrive_home_leg: bool = False):
+                            drop_leading_arrive_home_leg: bool = False,
+                            keep_overnight_open_ends: bool = False):
     """Derive the ``trip_class`` control seed from each person's REALISED weekday plan.
 
     A synthetic person executes the MiD plan identified by ``(source_H_ID, source_P_ID)``.
@@ -153,6 +154,13 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
             appended before the resample, and with ``exclude_rbw_legs`` OFF the
             last DIRECT leg (which ``src_ends_at_home`` describes) need not be
             the realised last purpose.
+        keep_overnight_open_ends: when True AND ``counts_closure`` is True, a plan
+            source whose open day end is KEPT (``src_keeps_open_end``, from
+            ``braunschweig.popsim.overnight_open_end.attach_src_keeps_open_end``) gets
+            +0 instead of +1: the trip build appends no return-home trip to it, so the
+            realised day has no closing leg to count. Requires ``src_keeps_open_end``
+            (raises ``KeyError`` naming it -- no silent no-op). Ignored when
+            ``counts_closure`` is False. Default False (byte-identical).
     """
     has_source = "source_H_ID" in persons.columns and "source_P_ID" in persons.columns
     if not has_source:
@@ -241,6 +249,21 @@ def derive_trip_class_seed(persons, *, rng, household_id="H_ID", person_id="P_ID
         # count must include it. 803/804 codes (~codes already False for a resolved
         # count) and sources with zero direct legs never qualify.
         open_end = (~persons["src_ends_at_home"].astype(bool)) & (persons["src_n_direct_legs"] > 0) & ~codes
+        n_open_end_total = int(open_end.sum())
+        if keep_overnight_open_ends:
+            if "src_keeps_open_end" not in persons.columns:
+                raise KeyError(
+                    "derive_trip_class_seed(counts_closure=True, keep_overnight_open_ends=True) "
+                    "requires 'src_keeps_open_end' from overnight_open_end.attach_src_keeps_open_end; "
+                    f"absent from the person frame (has {list(persons.columns)}).")
+            open_end = open_end & ~persons["src_keeps_open_end"].astype(bool)
+            n_closed = int(open_end.sum())
+            logger.info(
+                "[popsim.mid] trip_class seed overnight open ends: %d open-end sources, closed "
+                "(+1) %d (%.1f%%), kept open (+0) %d (%.1f%%).",
+                n_open_end_total, n_closed, 100.0 * n_closed / max(n_open_end_total, 1),
+                n_open_end_total - n_closed,
+                100.0 * (n_open_end_total - n_closed) / max(n_open_end_total, 1))
         # Clip at 50 (controller ruling R11): attributes.map_trip_class's value_map only
         # enumerates anzwege1 0..50 (the MiD codebook's valid range), so an anzwege1==50
         # source with an open-ended diary would otherwise become 51 -- an unenumerated
