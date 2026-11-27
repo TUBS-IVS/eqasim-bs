@@ -99,7 +99,8 @@ CENSUS_YEAR_SITE_ROWS: list[tuple[str, str, str, int]] = [
 # Source: Statistisches Landesamt Sachsen-Anhalt, GENESIS-Online table 21311-0003, read 2026-11-27, and
 # for Magdeburg university in 2025/26 press release 186/2026 of 2026-07-17. Magdeburg-Stendal and Harz
 # have no published figure for WS 2025/26 yet: their last published winter semester, 2024/25, is
-# used (a counted fallback in the consumer, 2 of 21 institutions). These figures are not rows of the
+# used (a counted fallback in the consumer: 2 of the 3 institutions outside the LSN table, which with the
+# 18 LSN sites make 21 sites of 16 institutions). These figures are not rows of the
 # site CSVs written below.
 OUTSIDE_LSN_STUDENTS: dict[str, dict[str, tuple[int, str]]] = {
     "WS 2025/26": {"OVGU Magdeburg": (13121, "WS 2025/26"),

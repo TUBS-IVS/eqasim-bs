@@ -259,7 +259,25 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path, caplog):
                     "students_living_census_year_persons", "level_total_persons", "population_base_date",
                     "population_model_date"):
             script.read_header_value(path, key)  # raises when the key is absent or occurs twice
+    # The model semester is read back once from each of the seven files that carry it.
+    for path in [*committed, artifact_dir / "student_level_gate.csv",
+                 artifact_dir / "student_employed_target_precheck.csv"]:
+        assert script.read_header_value(path, "enrollment_semester") == "WS_2025/26", path.name
+    # The two builds of T differ: the census-year build (A12) is not the build of the balance, and it equals the
+    # balance of a run whose --sites is the census-year table (a second --sites overrides the first).
+    level_path = popsim / "student_level_table.csv"
+    census_year_total = float(script.read_header_value(level_path, "students_living_census_year_persons"))
+    level_total = float(script.read_header_value(level_path, "level_total_persons"))
+    assert census_year_total != pytest.approx(level_total, rel=1e-3)
+    census_run_dir = tmp_path / "census_run"
+    assert script.main([*balance, "--sites", world["sites_census_year"], "--label", "census_sites",
+                        "--artifact-dir", str(census_run_dir)]) == 0
+    census_run_level = census_run_dir / "options" / "census_sites" / "student_level_table.csv"
+    assert float(script.read_header_value(census_run_level, "level_total_persons")) == pytest.approx(
+        census_year_total, rel=1e-8)
+    assert script.read_header_value(census_run_level, "enrollment_semester") == "WS_2022/23"
     gate_header = "\n".join(_header(artifact_dir / "student_level_gate.csv"))
+    assert "level_census_year_students_20_29_persons is the same share" in gate_header
     assert re.search(r"gate_triggered=(True|False)", gate_header)
     assert re.search(r"gate_triggered_area_consistent=(True|False)", gate_header)
     assert "ONE value" in gate_header                            # the away-share note of student_level_table

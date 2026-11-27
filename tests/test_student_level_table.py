@@ -149,14 +149,14 @@ def test_population_change_by_hand_and_refuses_gaps():
     change = L.population_change(frame, "2022-12-31", "2025-12-31")
     assert list(change.index) == list(ZGB)
     assert change["03101"] == pytest.approx(0.9) and change["03102"] == pytest.approx(1.1)
-    with pytest.raises(ValueError, match="03158"):
+    with pytest.raises(ValueError, match="03158.*missing at date 2025-12-31"):
         L.population_change(frame[~((frame.district_ars5 == "03158") & (frame.date == "2025-12-31"))],
                             "2022-12-31", "2025-12-31")
     zero = frame.assign(persons_20_29=frame["persons_20_29"].where(frame["district_ars5"] != "03102", 0))
-    with pytest.raises(ValueError, match="03102"):
+    with pytest.raises(ValueError, match="non-positive.*at date 2022-12-31.*03102"):
         L.population_change(zero, "2022-12-31", "2025-12-31")
     doubled = pd.concat([frame, frame[(frame.district_ars5 == "03154") & (frame.date == "2022-12-31")]])
-    with pytest.raises(ValueError, match="03154"):
+    with pytest.raises(ValueError, match="duplicated.*03154.*2022-12-31"):
         L.population_change(doubled, "2022-12-31", "2025-12-31")
 
 

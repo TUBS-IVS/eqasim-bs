@@ -122,6 +122,14 @@ SRV_COVERAGE_NOTE = (
     "municipalities of a Kreis (gate_triggered); srv_estimate_students_20_29_persons covers the whole Kreis "
     "(SrV student share 20-29 times the Zensus population 20-29) but applies the share of the surveyed "
     "municipalities to all of them (gate_triggered_area_consistent).")
+# What the three level columns of the gate hold. The CLI writes it into the header of the gate table
+# (this module is the one owner of the wording).
+LEVEL_COLUMNS_NOTE = (
+    "level_students_persons is the adopted level of the model year (the pooled row is the sum over the "
+    "surveyed Kreise); level_students_20_29_persons is it times the share of the age groups 20_24 and 25_29; "
+    "level_census_year_students_20_29_persons is the same share applied to the level of the census year, "
+    "i.e. the students living in the Kreis under the enrollment of the census-year semester (the figure the "
+    "run manifest compares with the school-corrected SrV count and the census extrapolation).")
 # Note on one gate column. The CLI task writes it into the header of the gate table (this module
 # is the one owner of the wording).
 AWAY_SHARE_COLUMN_NOTE = (
@@ -728,6 +736,8 @@ def _triggered(gate: pd.DataFrame, flag: str) -> bool:
     absent = [code for code in needed if code not in keyed.index]
     if absent:
         raise ValueError("gate: row(s) %s missing; the trigger reads %s" % (absent, needed))
-    triggered = bool(keyed.loc[needed, flag].astype(bool).any())
-    logger.info("%s gate triggered on %s: %s (rows %s)", _LOG_TAG, flag, triggered, needed)
+    beyond = [code for code in needed if bool(keyed.loc[code, flag])]
+    triggered = bool(beyond)
+    logger.info("%s gate triggered on %s: %s (rows read %s, rows beyond the limit %s)",
+                _LOG_TAG, flag, triggered, needed, beyond)
     return triggered

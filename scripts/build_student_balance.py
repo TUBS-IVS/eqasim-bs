@@ -913,7 +913,7 @@ def _run_balance(args) -> int:
         "# Population change (A19): population_base_date=%s, population_model_date=%s, persons aged 20 to 29 on "
         "the model date over the base date per Kreis: %s (%s)." % (
             args.population_base_date, args.population_model_date,
-            json.dumps(level_parts["population_change"], separators=(",", ":")), POPULATION_DEFAULT.name),
+            json.dumps(level_parts["population_change"], separators=(",", ":")), Path(args.population).name),
         "# Age and sex (A9): the cell is the Kreis level times the joint share of (sex, age group) among the adult "
         "students of Germany, %s (area %s), the same mix in every Kreis; the age shares are %s." % (
             Path(args.mid_age_sex).name, REGION_GERMANY,
@@ -927,6 +927,7 @@ def _run_balance(args) -> int:
                  "column beyond_two_se_20_29)." % triggered_area_consistent,
                  "# " + LV.SRV_COVERAGE_NOTE,
                  "# " + LV.AWAY_SHARE_COLUMN_NOTE,
+                 "# " + LV.LEVEL_COLUMNS_NOTE,
                  "# The SrV standard error is that of the student share; the away share's own sampling error is ignored.",
                  "# model_today_students_persons: model_students_expanded_persons of the Phase 1 measurement; the "
                  "pooled row is the sum over the surveyed Kreise."]
