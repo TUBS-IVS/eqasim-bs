@@ -1,0 +1,91 @@
+2026-11-27 17:40:04,017 INFO braunschweig: [config-merge] working_directory: (added) ../cache
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] run: (added) ['braunschweig.analysis.synthesis.students_vs_srv']
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.sampling_rate: (added) 1.0
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.output_path: (added) ../output
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.output_prefix: (added) braunschweig_100pct_popsim20261120_
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.matsim_last_iteration: (added) 0
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.num_workers: (added) auto
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.cache_share_enabled: True -> False
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.cache_share_export: (added) False
+2026-11-27 17:40:04,018 INFO braunschweig: [config-merge] config.cache_share_recompute: (added) []
+2026-11-27 17:40:04,019 INFO braunschweig: [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-27 17:40:04,019 INFO braunschweig: [config-merge] composed configs/base_bs.yml + ../run.yml: 2 overridden, 12 added
+2026-11-27 17:40:04,022 INFO braunschweig.synpp_deterministic: [synpp deterministic] patched synpp 1.6.2 process_stages: implicit config propagation now topological and order-independent (stage hashes stable across processes)
+2026-11-27 17:40:04,380 INFO numexpr.utils: Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-27 17:40:04,381 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+2026-11-27 17:40:07,143 INFO run_stage_readonly: target braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66; 5 dependencies, missing in the source cache: []
+2026-11-27 17:40:07,156 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv: 66 rows
+2026-11-27 17:40:07,159 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_student_share_by_kreis.csv: 9 rows
+2026-11-27 17:40:07,162 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_young_adult_status_by_kreis.csv: 27 rows
+2026-11-27 17:40:07,165 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_student_parameters_by_area.csv: 132 rows
+2026-11-27 17:40:07,167 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] SrV table eqasim-data/data/braunschweig/srv/srv2023_education_leg_by_student_status.csv: 22 rows
+2026-11-27 17:40:07,170 INFO run_stage_readonly: Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+2026-11-27 17:40:09,524 INFO run_stage_readonly: Loading cache for braunschweig.synthesis.commute_day.trips_day_stage__6a49e835d1a2b7551a8224092075bb75 ...
+2026-11-27 17:40:32,987 INFO run_stage_readonly: Loading cache for braunschweig.synthesis.day_absence.absence_stage__05a64177e87d82da2651643af5d12910 ...
+2026-11-27 17:40:33,608 INFO run_stage_readonly: Loading cache for braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852 ...
+2026-11-27 17:40:34,771 INFO run_stage_readonly: Loading cache for braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434 ...
+2026-11-27 17:40:35,020 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] sampling_rate=1.0, max_unmatched_home_share=0.05, portal_layer_enabled=True; writing to ../output/analysis/students_vs_srv
+2026-11-27 17:40:36,218 INFO braunschweig.analysis.spatial: Extracted vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg from RUN_DIR/eqasim-bs/eqasim-data/data/germany/vg250-ew_12-31.utm32s.gpkg.ebenen.zip (sha256 51a31279653edc1488c98484ddbc346dcd9f77cf0b1d6a75cd2179da57ed962f) into RUN_DIR/eqasim-bs/.cache/vg250/DE_VG250.gpkg
+2026-11-27 17:40:43,073 INFO braunschweig.analysis.spatial: assign_geographies: 558179 homes; Kreis matched 558177 (100.00%), unmatched 2; Gemeinde unmatched 2
+2026-11-27 17:40:43,953 WARNING braunschweig.analysis.student_measurement: [student measurement] readable P_TAET (99 / missing is never 'not a student'): primary 1127877/1129395 (99.9%), excluded 1518 (0.1%)
+2026-11-27 17:40:43,961 INFO braunschweig.analysis.student_measurement: [student measurement] students with a known age (no age, no adult): primary 27657/27657 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:47,404 INFO braunschweig.popsim.attributes: [braunschweig.popsim.attributes] map_pt_ticket_group: deutschlandticket 3854 (14.16%), other_flatrate 17670 (64.93%), not_flatrate 5689 (20.91%) [four-group split of not_flatrate, percentages of all persons: never_pt 1124 (4.13%), occasional_ticket 4565 (16.78%)]
+2026-11-27 17:40:47,429 INFO braunschweig.analysis.student_measurement: [student measurement] household_type (a household member of unknown age leaves it undetermined): primary 27213/27213 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:47,434 INFO braunschweig.analysis.student_measurement: [student measurement] lives_with_person_18_years_older (a household member of unknown age leaves it undetermined): primary 27213/27213 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,089 INFO braunschweig.analysis.plan_structure: [plan structure model] home Kreis resolved for 27213/27213 persons (100.00%), unresolved 0 (0.00%)
+2026-11-27 17:40:48,191 INFO braunschweig.analysis.plan_structure: [plan structure model] harmonised 27213 persons (22307 mobile, 81.97%; 2070 away from home, 7.61%) and 82897 trips; invalid departure time 0, invalid arrival time 0
+2026-11-27 17:40:48,431 INFO braunschweig.calibration.student_parameters: [student_parameters] first_departure_hour: primary 22307/22307 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,434 INFO braunschweig.calibration.student_parameters: [student_parameters] last_arrival_home_hour: primary 22307/22307 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,436 INFO braunschweig.calibration.student_parameters: [student_parameters] time_at_education: primary 9598/9598 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,438 INFO braunschweig.calibration.student_parameters: [student_parameters] arrival_band: primary 9598/9598 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,441 INFO braunschweig.analysis.student_measurement: [student measurement] first_departure_hour (a missing or negative time excludes the student from this parameter only): primary 22307/22307 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,441 INFO braunschweig.analysis.student_measurement: [student measurement] last_arrival_home_hour (a missing or negative time excludes the student from this parameter only): primary 22307/22307 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,441 INFO braunschweig.analysis.student_measurement: [student measurement] time_at_education (a missing or negative time excludes the student from this parameter only): primary 9598/9598 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,441 INFO braunschweig.analysis.student_measurement: [student measurement] arrival_band (a missing or negative time excludes the student from this parameter only): primary 9598/9598 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:48,558 INFO braunschweig.analysis.student_measurement: [student measurement] home Kreis: primary 27213/27213 adult students (100.0%), no home Kreis 0 (0.0%)
+2026-11-27 17:40:48,561 INFO braunschweig.analysis.student_measurement: [student measurement] 27213 adult students (25143 present, 2070 away all day) of 1129395 persons; per Kreis {'03101': 10179, '03102': 2605, '03103': 2940, '03151': 2905, '03153': 2822, '03154': 1492, '03157': 2203, '03158': 2067}
+2026-11-27 17:40:48,789 INFO braunschweig.analysis.student_measurement: [student measurement] comparison universe: 24273/27213 adult students (89.2%) live in the 7 surveyed Kreise; Wolfsburg (model only) 2940, no home Kreis 0, other 0
+2026-11-27 17:40:49,073 INFO braunschweig.analysis.student_measurement: [student measurement] cells (region): 66 in the vocabulary; missing from the SrV table 0 (NaN SrV columns), SrV only by design (bases ['other_adults_all']) 2
+2026-11-27 17:40:49,221 INFO braunschweig.analysis.student_measurement: [student measurement] comparison by area: adult students per home area {'braunschweig': 10179, 'surrounding': 14094, 'wolfsburg': 2940}, without a home Kreis 0
+2026-11-27 17:40:49,430 INFO braunschweig.analysis.student_measurement: [student measurement] cells (area braunschweig): 66 in the vocabulary; missing from the SrV table 0 (NaN SrV columns), SrV only by design (bases ['other_adults_all']) 2
+2026-11-27 17:40:49,693 INFO braunschweig.analysis.student_measurement: [student measurement] cells (area surrounding): 66 in the vocabulary; missing from the SrV table 0 (NaN SrV columns), SrV only by design (bases ['other_adults_all']) 2
+2026-11-27 17:40:49,865 INFO braunschweig.analysis.student_measurement: [student measurement] cells (area wolfsburg): 66 in the vocabulary; not surveyed by SrV, SrV columns NaN by design
+2026-11-27 17:40:50,935 INFO braunschweig.analysis.student_measurement: [student measurement] adult education leg: known age (no age, no adult): primary 1129395/1129395 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:40:50,940 WARNING braunschweig.analysis.student_measurement: [student measurement] adult education leg: readable P_TAET among the adults (99 / missing answers nothing about the activity): primary 941359/942846 (99.8%), excluded 1487 (0.2%)
+2026-11-27 17:41:11,530 INFO braunschweig.analysis.plan_structure: [plan structure model] home Kreis resolved for 941356/941359 persons (100.00%), unresolved 3 (0.00%)
+2026-11-27 17:41:11,531 WARNING braunschweig.analysis.plan_structure: [plan structure model] 3 persons have no resolvable home Kreis; they are KEPT in the harmonised frame (dropping them here would shrink the model side invisibly), but the comparison stage excludes them from the head-to-head universe and raises above its configured unmatched-home share
+2026-11-27 17:41:16,618 INFO braunschweig.analysis.plan_structure: [plan structure model] harmonised 941359 persons (771993 mobile, 82.01%; 52356 away from home, 5.56%) and 2846369 trips; invalid departure time 0, invalid arrival time 0
+2026-11-27 17:41:26,141 INFO braunschweig.calibration.student_parameters: [student_parameters] first_departure_hour: primary 771993/771993 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:26,198 INFO braunschweig.calibration.student_parameters: [student_parameters] last_arrival_home_hour: primary 771993/771993 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:26,206 INFO braunschweig.calibration.student_parameters: [student_parameters] time_at_education: primary 40484/40484 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:26,214 INFO braunschweig.calibration.student_parameters: [student_parameters] arrival_band: primary 40484/40484 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:28,328 WARNING braunschweig.analysis.student_measurement: [student measurement] adult education leg: home Kreis (an adult without one is in no table row): primary 941356/941359 (100.0%), excluded 3 (0.0%)
+2026-11-27 17:41:28,333 INFO braunschweig.analysis.student_measurement: [student measurement] adult education leg: 941359 adults (27213 students, 889003 present, 52356 away all day); with an education leg 40484
+2026-11-27 17:41:29,823 INFO braunschweig.analysis.student_measurement: [student measurement] education leg by status: 941359 adults, of them without a home Kreis 3 (in no row), away all day 52356 (outside the base); 889000 present adults counted
+2026-11-27 17:41:30,746 INFO braunschweig.analysis.student_measurement: [student measurement] education leg by status: 0 surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) []
+2026-11-27 17:41:30,753 INFO braunschweig.analysis.student_measurement: [student measurement] education leg by status, region 03ZGB: student model 0.3812 (n 22412) vs SrV 0.3706; other_adult model 0.0356 (n 767462) vs SrV 0.0333
+2026-11-27 17:41:32,198 INFO braunschweig.analysis.student_measurement: [student measurement] student level: known age: primary 1129395/1129395 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:32,205 WARNING braunschweig.analysis.student_measurement: [student measurement] student level: readable P_TAET among the adults (99 / missing answers nothing about the activity): primary 941359/942846 (99.8%), excluded 1487 (0.2%)
+2026-11-27 17:41:32,295 WARNING braunschweig.analysis.student_measurement: [student measurement] student level: home Kreis: primary 941356/941359 (100.0%), excluded 3 (0.0%)
+2026-11-27 17:41:33,121 INFO braunschweig.analysis.student_measurement: [student measurement] student level: 0 surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) []
+2026-11-27 17:41:33,128 INFO braunschweig.analysis.student_measurement: [student measurement] student level, region 03ZGB: 24273 adult students of 836457 adults, 24273 persons expanded at sampling rate 1.0; present: share 0.0284
+2026-11-27 17:41:33,747 INFO braunschweig.analysis.student_measurement: [student measurement] young-adult status: known age: primary 1129395/1129395 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:33,753 WARNING braunschweig.analysis.student_measurement: [student measurement] young-adult status: readable P_TAET among the adults (99 / missing answers nothing about the activity): primary 941359/942846 (99.8%), excluded 1487 (0.2%)
+2026-11-27 17:41:33,838 WARNING braunschweig.analysis.student_measurement: [student measurement] young-adult status: home Kreis: primary 941356/941359 (100.0%), excluded 3 (0.0%)
+2026-11-27 17:41:34,017 INFO braunschweig.analysis.student_measurement: [student measurement] Zensus employed 20-29: ZGB Kreise found (missing []; NaN there): primary 8/8 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:34,294 INFO braunschweig.analysis.student_measurement: [student measurement] young-adult status: 0 surveyed Kreis / region code(s) missing from the SrV table (NaN SrV columns) []
+2026-11-27 17:41:34,308 INFO braunschweig.analysis.student_measurement: [student measurement] young-adult status: 110570 persons aged 20 to 29 in the surveyed Kreise (101416 present)
+2026-11-27 17:41:34,378 WARNING braunschweig.analysis.student_measurement: [student measurement] readable P_TAET (99 / missing is never 'not a student'): primary 1127877/1129395 (99.9%), excluded 1518 (0.1%)
+2026-11-27 17:41:34,387 INFO braunschweig.analysis.student_measurement: [student measurement] students with a known age (no age, no adult): primary 27657/27657 (100.0%), excluded 0 (0.0%)
+2026-11-27 17:41:34,478 INFO braunschweig.analysis.student_measurement: [student measurement] work class of 27213 adult students: employed 0 (0.0%); not employed but in an employed class ['vollzeit', 'teilzeit', 'geringfuegig', 'in_ausbildung'] of the work control 0 (0.0%)
+2026-11-27 17:41:34,637 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] weekend trace <run server home>/popsim100_20261120/cache/braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434.cache/weekend_plan_match_trace.parquet: 485709 rows
+2026-11-27 17:41:34,768 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] diary trace <run server home>/popsim100_20261120/cache/braunschweig.popsim.completed_donor__693b5a0a42bac73ddcc522d33254e434.cache/diary_plan_match_trace.parquet: 485709 rows
+2026-11-27 17:41:37,109 INFO braunschweig.analysis.student_measurement: [student measurement] plan source, match path of the re-drawn plans: primary 9638/9638 (100.0%), unresolved 0 (0.0%)
+2026-11-27 17:41:37,109 WARNING braunschweig.analysis.student_measurement: [student measurement] plan source, donor of the re-drawn plans found with a readable P_TAET (not found 0, unreadable 1): primary 9637/9638 (100.0%), excluded 1 (0.0%)
+2026-11-27 17:41:37,471 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] exclusion report: RUN_DIR/stage_cache/students_vs_srv_report.json
+2026-11-27 17:41:37,471 INFO braunschweig.analysis.synthesis.students_vs_srv: [students_vs_srv] wrote 7 tables, summary.md and provenance.json to ../output/analysis/students_vs_srv (measurement, not validation)
+2026-11-27 17:41:37,514 INFO run_stage_readonly: executed braunschweig.analysis.synthesis.students_vs_srv__d9f39616321eb1fcdbed6b8237916e66; stage cache path RUN_DIR/stage_cache
+Codeplan

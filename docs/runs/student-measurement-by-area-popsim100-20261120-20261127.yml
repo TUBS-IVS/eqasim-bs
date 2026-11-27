@@ -45,7 +45,9 @@ pipeline:
     The committed driver scripts/run_stage_readonly.py (in the artifacts directory) then executed the stage through
     synpp's ExecuteContext, reading the dependency pickles of that cache read-only (readonly_dependencies.json lists
     them) and writing its own cache path and outputs elsewhere. Afterwards no file of the source cache was newer than
-    the driver (find -newer, empty) and its pipeline.json kept its modification time of 2026-11-20. Log
+    the driver (find -newer, empty) and its pipeline.json kept its modification time of 2026-11-20; evidence in
+    source_cache_readonly_check.txt. Both logs (explain_readonly.log, run_readonly.log) are force-added although *.log is
+    gitignored. Log
     run_readonly.log: exit 0, 2026-11-27, about two minutes. Artifacts were copied to
     docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/ with run directory, host and user
     replaced by placeholders (RUN_DIR, <run server home>, <run server>); run.json lists the 51 excluded unrelated server
@@ -66,7 +68,7 @@ pipeline:
     e546df124e68fbc90a5196e098f7c5fbe546c46c9b2e25193012b385ced8cc0a, run_readonly.log
     98101389c91c0a15ea09e820a3994561fabfd4f317b92c573b1e98776d661ced, readonly_dependencies.json
     1c483e2c06f6ef31c39068c4e833fc4c2c5e8475279df73de2792e47aaba5b3b, scripts/run_stage_readonly.py
-    47f919a365861d3bfe831e6dfea69c4ce19e0e4bbcd0406d016fbd0e76a2264a. Inputs (sha256 as in provenance.json, LF
+    4b31e584438be2fca146f803d1067b396cd635cadcef3772896d8f43a8bfab44 (docstring updated after the run, code unchanged), source_cache_readonly_check.txt 554ae8aedfe4e7ed144d6b8399a9cdaf7bdac74a65b753909f220d463ceba7f7. Inputs (sha256 as in provenance.json, LF
     normalised): srv2023_student_parameters_by_area.csv 064a22e6aa2609f3c6d38ad0ce930caeb2a184122dcbb13a941a155606d66cd8,
     srv2023_education_leg_by_student_status.csv 4c2deec204afd738994f829a61b12793702383df3ac8df88658d4cd6261f66b3,
     srv2023_student_parameters.csv 865f5d697a98e89951608b18203f7c3e57fd9d190a513765458343249919e459,
@@ -108,7 +110,7 @@ validation:
     Read from docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/student_behaviour_by_area.csv
     (columns beyond_two_se and srv_cell_ok; rule 1 = both True; present students, away_all_day over all students;
     model_n_base of braunschweig 9408 present and 10179 all, of surrounding 13004 and 14094, of wolfsburg 2731 and
-    2940). Across all rows of the table 31 cells meet rule 1. BRAUNSCHWEIG meets rule 1: season_ticket / flatrate model
+    2940). Across all rows of the table 31 rows (label rows; complementary labels counted separately) meet rule 1: Braunschweig 11, surrounding 20, Wolfsburg 0. The listing below is a selection of the nine cells named in the plan, not the full set of those rows. BRAUNSCHWEIG meets rule 1: season_ticket / flatrate model
     0.8267431973 against SrV 0.9330748615 (srv_n 203), difference_in_se -4.123323072; work_leg / yes model 0.102997449
     against 0.194638224 (srv_n 52), -2.242935666; lives_with_person_18_years_older / yes model 0.262542517 against
     0.1718692499 (srv_n 44), 2.32899392. BRAUNSCHWEIG does not meet it: education_leg / yes model 0.4144345238 against

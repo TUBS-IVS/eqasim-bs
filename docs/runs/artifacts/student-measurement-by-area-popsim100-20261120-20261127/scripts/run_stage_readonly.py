@@ -3,7 +3,7 @@
 
 Why: the isolated-run tool copies the whole cache (cp -a) before a run, and on 2026-11-27 the run
 server had less free disk than the cache of popsim100_20261120 takes. The analysis stage
-braunschweig.analysis.synthesis.students_vs_srv only READS the pickles of its dependencies, so this
+braunschweig.analysis.synthesis.students_vs_srv only READS the pickles of its dependencies and the completed_donor cache directory, so this
 driver builds the synpp registry for the composed config exactly as the launcher does
 (braunschweig.synpp_fork.registry), checks that every dependency of the target stage is cached in
 the source cache under the hash the registry computes (synpp's stage hash covers the stage name and
@@ -11,6 +11,8 @@ its config; the CODE of the upstream stages is checked separately by running
 scripts/explain_stale_stages.py on the same config and source cache first, which must report every
 dependency as a HIT), and calls the stage's execute() through synpp's own ExecuteContext. The source cache is only opened
 for reading; the stage's own cache path and its outputs go to --stage-cache-dir and output_path.
+The driver does not write into the source cache by design (it passes the source only as synpp's working
+directory for loading); this was verified afterwards with find -newer, see source_cache_readonly_check.txt.
 
     python run_stage_readonly.py --base configs/base_bs.yml --overlay RUN/run.yml \
         --source-cache <run cache> --stage-cache-dir <new dir> --stage <descriptor>
