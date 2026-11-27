@@ -29,9 +29,11 @@ from braunschweig.synthesis.day_absence.absence import STATE_ABSENT_INDIVIDUAL, 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMITTED_SRV_DIR = os.path.join(REPO_ROOT, "eqasim-data", "data", "braunschweig", "srv")
-SRV_TABLES = (R.PARAMETER_TABLE, R.STUDENT_SHARE_TABLE, R.YOUNG_ADULT_STATUS_TABLE)
+SRV_TABLES = (R.PARAMETER_TABLE, R.STUDENT_SHARE_TABLE, R.YOUNG_ADULT_STATUS_TABLE,
+              R.PARAMETER_BY_AREA_TABLE, R.EDUCATION_LEG_BY_STATUS_TABLE)
 OUTPUTS = ("student_level_by_kreis.csv", "young_adult_status_by_kreis.csv",
            "student_work_class.csv", "student_behaviour_vs_srv.csv", "student_plan_source.csv",
+           "student_behaviour_by_area.csv", "education_leg_by_student_status.csv",
            "summary.md", "provenance.json")
 HOUR_S = 3600.0
 COMPLETED_DONOR = "braunschweig.popsim.completed_donor"
@@ -270,6 +272,25 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
     behaviour = _read(out, "student_behaviour_vs_srv.csv")
     assert list(behaviour.columns) == M.COMPARISON_COLUMNS
 
+    # Phase 3: the area view (students 1, 2 in 03101; 4 in 03102 away all day; 5 in Wolfsburg) and
+    # the education leg by status (present adults of the surveyed Kreise: students 1, 2 with a
+    # leg; others 3 and 6 without)
+    by_area = _read(out, "student_behaviour_by_area.csv")
+    assert list(by_area.columns) == ["area", *M.COMPARISON_COLUMNS]
+    assert set(by_area["area"]) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING, R.AREA_WOLFSBURG}
+    wolfsburg = by_area[by_area["area"] == R.AREA_WOLFSBURG]
+    assert wolfsburg["srv_share"].isna().all() and wolfsburg["model_share"].notna().any()
+    assert provenance["n_missing_srv_cells_by_area"] == 0
+    by_status = _read(out, "education_leg_by_student_status.csv")
+    assert list(by_status.columns) == M.EDUCATION_LEG_BY_STATUS_COLUMNS
+    region = by_status[(by_status["code"] == M.REGION_CODE) & (by_status["age_range"] == "18plus")
+                       ].set_index("group")
+    assert region.loc["student", ["model_n_present", "model_n_present_with_leg"]].tolist() == [2, 2]
+    assert region.loc["other_adult", "model_share"] == 0.0
+    assert region.loc["student", "model_persons_with_leg_expanded"] == pytest.approx(2 / 0.25)
+    for table in ("student_behaviour_by_area", "education_leg_by_student_status"):
+        assert isinstance(provenance["diagnostics"][table], dict), table
+
     summary = (out / "summary.md").read_text(encoding="utf-8")
     assert "measurement, not validation" in summary
     assert M.REGION_SCOPE_NOTE in summary
@@ -293,9 +314,9 @@ def test_execute_writes_all_outputs_on_synthetic_stages(tmp_path, stubbed_geogra
     assert report["rates"]["adult_students_absent"] == pytest.approx(0.25)
     assert report["rates"]["adult_students_no_home_kreis"] == 0.0
     assert report["rates"]["plan_source_unresolved"] == 0.0
+    assert report["rates"]["adults_no_home_kreis_education_leg"] == 0.0
     assert report["trace_available"] == {"weekend": True, "diary": True}
     assert report["diagnostics"] == provenance["diagnostics"]
-
 
 def test_a_missing_trace_is_recorded_and_its_paths_stay_unresolved(tmp_path, stubbed_geographies):
     context = _context(tmp_path, _data_path(tmp_path))

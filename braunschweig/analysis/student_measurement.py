@@ -88,9 +88,14 @@ from braunschweig.calibration.srv_distance_targets import WOLFSBURG_KREIS, ZGB_K
 from braunschweig.calibration.srv_participation_universe import (LEVEL_KREIS, LEVEL_TOTAL,
                                                                  REGION_CODE)
 from braunschweig.calibration.srv_student_reference import (AGE_BAND_20_29, AGE_GROUP_EDGES,
-                                                            OLDER_PERSON_GAP_YEARS, SHARE_COLUMNS,
+                                                            AREA_WOLFSBURG, EDUCATION_AGE_RANGES,
+                                                            GROUP_OTHER_ADULT, GROUP_STUDENT,
+                                                            HOME_AREAS, OLDER_PERSON_GAP_YEARS,
+                                                            SHARE_COLUMNS,
                                                             YOUNG_ADULT_STATUS_COLUMNS,
-                                                            YOUNG_ADULT_STATUSES)
+                                                            YOUNG_ADULT_STATUSES, area_of_kreis)
+from braunschweig.calibration.srv_student_reference import \
+    EDUCATION_LEG_BY_STATUS_COLUMNS as SRV_EDUCATION_LEG_BY_STATUS_COLUMNS
 from braunschweig.calibration.student_behaviour_labels import MAX_EXCLUSION_RATE, MIN_ADULT_AGE
 from braunschweig.calibration.student_control_evidence import (MIN_DIFFERENCE_STANDARD_ERRORS,
                                                                MIN_RESPONDENTS_PER_CELL)
@@ -353,6 +358,33 @@ def _attribute_labels(students: pd.DataFrame, persons: pd.DataFrame) -> tuple[pd
     return frame, diagnostics
 
 
+def _require_model_inputs(persons: pd.DataFrame, trips: pd.DataFrame,
+                          homes_with_ars5: pd.DataFrame, absence: pd.DataFrame,
+                          person_columns) -> None:
+    """The input checks both model frames share: columns, unique and known person ids, a
+    household on every person and a documented absence state on every absence row."""
+    _require_columns(persons, person_columns, "persons")
+    _require_columns(trips, P.MODEL_TRIP_COLUMNS, "trips")
+    _require_columns(homes_with_ars5, ("household_id", P.KREIS_COLUMN), "homes")
+    _require_columns(absence, ABSENCE_COLUMNS, "absence")
+    _require_unique_person_ids(persons, "persons")
+    if persons["household_id"].isna().any():
+        raise ValueError("persons: %d row(s) without a household_id"
+                         % int(persons["household_id"].isna().sum()))
+    _require_unique_person_ids(absence, "absence")
+    known = set(persons["person_id"])
+    _require_known_person_ids(trips["person_id"], known, "trips")
+    _require_known_person_ids(absence["person_id"], known, "absence")
+    # absent_person_ids reads every state other than "present" as absent, so a missing or
+    # unknown state would silently become an absent person.
+    state = absence["day_absence_state"]
+    odd_state = state.isna() | ~state.isin(STATES)
+    if odd_state.any():
+        raise ValueError("absence: column day_absence_state carries %d value(s) outside %s, "
+                         "e.g. %s" % (int(odd_state.sum()), list(STATES),
+                                      state[odd_state].astype(str).unique()[:5].tolist()))
+
+
 def model_student_frame(persons: pd.DataFrame, trips: pd.DataFrame,
                         homes_with_ars5: pd.DataFrame, absence: pd.DataFrame, *,
                         max_unmatched_home_share: float) -> tuple[pd.DataFrame, dict]:
@@ -379,29 +411,10 @@ def model_student_frame(persons: pd.DataFrame, trips: pd.DataFrame,
     undetermined, or a day parameter lost to a missing or negative time, over its base) above
     ``MAX_EXCLUSION_RATE``, or an unmatched-home share above ``max_unmatched_home_share``.
     """
-    _require_columns(persons, MODEL_PERSON_COLUMNS, "persons")
-    _require_columns(trips, P.MODEL_TRIP_COLUMNS, "trips")
-    _require_columns(homes_with_ars5, ("household_id", P.KREIS_COLUMN), "homes")
-    _require_columns(absence, ABSENCE_COLUMNS, "absence")
     if not 0.0 <= float(max_unmatched_home_share) <= 1.0:
         raise ValueError("max_unmatched_home_share must be in [0, 1], got %r"
                          % max_unmatched_home_share)
-    _require_unique_person_ids(persons, "persons")
-    if persons["household_id"].isna().any():
-        raise ValueError("persons: %d row(s) without a household_id"
-                         % int(persons["household_id"].isna().sum()))
-    _require_unique_person_ids(absence, "absence")
-    known = set(persons["person_id"])
-    _require_known_person_ids(trips["person_id"], known, "trips")
-    _require_known_person_ids(absence["person_id"], known, "absence")
-    # absent_person_ids reads every state other than "present" as absent, so a missing or
-    # unknown state would silently become an absent student.
-    state = absence["day_absence_state"]
-    odd_state = state.isna() | ~state.isin(STATES)
-    if odd_state.any():
-        raise ValueError("absence: column day_absence_state carries %d value(s) outside %s, "
-                         "e.g. %s" % (int(odd_state.sum()), list(STATES),
-                                      state[odd_state].astype(str).unique()[:5].tolist()))
+    _require_model_inputs(persons, trips, homes_with_ars5, absence, MODEL_PERSON_COLUMNS)
 
     students, diagnostics = _adult_students(persons)
     without_absence = students.loc[~students["person_id"].isin(set(absence["person_id"])),
@@ -510,9 +523,9 @@ def _validated_srv_table(srv_parameters: pd.DataFrame) -> pd.DataFrame:
                          "srv_se_share": pd.to_numeric(table["se_share"]).astype(float)})
 
 
-def _model_rows(model_students: pd.DataFrame) -> pd.DataFrame:
-    """Model counts and shares per cell over the seven surveyed Kreise (unweighted)."""
-    in_scope = model_students[model_students["kreis"].isin(SURVEYED_KREISE).to_numpy()]
+def _model_rows(model_students: pd.DataFrame, kreise=SURVEYED_KREISE) -> pd.DataFrame:
+    """Model counts and shares per cell over the given Kreise (default: the seven surveyed)."""
+    in_scope = model_students[model_students["kreis"].isin(kreise).to_numpy()]
     present = in_scope[in_scope["present"].to_numpy()]
     frames = []
     for parameter, spec in SP.PARAMETERS.items():
@@ -566,18 +579,7 @@ def compare_parameters(model_students: pd.DataFrame,
     ``person_id``, a non-boolean ``present``, a label outside the vocabulary on either side or a
     duplicated SrV cell.
     """
-    _require_columns(model_students, MODEL_STUDENT_COLUMNS, "model students")
-    _require_unique_person_ids(model_students, "model students")
-    present = model_students["present"]
-    if present.isna().any() or not present.isin([True, False]).all():
-        raise ValueError("model students: column present must be boolean without missing values")
-    for parameter in ATTRIBUTE_PARAMETERS + DAY_PARAMETERS:
-        labels = model_students[parameter].dropna().astype(str)
-        outside = sorted(set(labels) - set(SP.PARAMETERS[parameter].labels))
-        if outside:
-            raise ValueError("model students: parameter %r carries label(s) %s outside the "
-                             "vocabulary %s" % (parameter, outside,
-                                                list(SP.PARAMETERS[parameter].labels)))
+    model_students = _checked_model_students(model_students)
     srv = _validated_srv_table(srv_parameters)
 
     kreis = model_students["kreis"]
@@ -590,15 +592,45 @@ def compare_parameters(model_students: pd.DataFrame,
              n_total, _rate(n_scope, n_total), len(SURVEYED_KREISE), n_wolfsburg, n_no_kreis,
              n_total - n_scope - n_wolfsburg - n_no_kreis)
 
-    out = _grid().merge(_model_rows(model_students.assign(present=present.astype(bool))),
-                        on=_KEY, how="left", validate="1:1")
+    return _compare_cells(model_students, srv, SURVEYED_KREISE, "region")
+
+
+def _checked_model_students(model_students: pd.DataFrame) -> pd.DataFrame:
+    """The model student frame with a validated boolean ``present`` and labels in the vocabulary."""
+    _require_columns(model_students, MODEL_STUDENT_COLUMNS, "model students")
+    _require_unique_person_ids(model_students, "model students")
+    present = model_students["present"]
+    if present.isna().any() or not present.isin([True, False]).all():
+        raise ValueError("model students: column present must be boolean without missing values")
+    for parameter in ATTRIBUTE_PARAMETERS + DAY_PARAMETERS:
+        labels = model_students[parameter].dropna().astype(str)
+        outside = sorted(set(labels) - set(SP.PARAMETERS[parameter].labels))
+        if outside:
+            raise ValueError("model students: parameter %r carries label(s) %s outside the "
+                             "vocabulary %s" % (parameter, outside,
+                                                list(SP.PARAMETERS[parameter].labels)))
+    return model_students.assign(present=present.astype(bool))
+
+
+def _compare_cells(model_students: pd.DataFrame, srv: pd.DataFrame, kreise, scope: str,
+                   srv_expected: bool = True) -> pd.DataFrame:
+    """The comparison table of one scope: the model students of ``kreise`` against ``srv``.
+
+    ``srv`` is :func:`_validated_srv_table` output (empty for a scope SrV does not survey, with
+    ``srv_expected`` False: its NaN SrV columns are by design and not logged as missing cells).
+    """
+    out = _grid().merge(_model_rows(model_students, kreise), on=_KEY, how="left", validate="1:1")
     out = out.merge(srv, on=_KEY, how="left", validate="1:1")
     n_missing_srv = count_missing_srv_cells(out)
     n_unmeasured = int(out["base"].isin(MODEL_UNMEASURED_BASES).sum())
-    (LOG.warning if n_missing_srv else LOG.info)(
-        "%s cells: %d in the vocabulary; missing from the SrV table %d (NaN SrV columns), "
-        "SrV only by design (bases %s) %d", _LOG_TAG, len(out), n_missing_srv,
-        list(MODEL_UNMEASURED_BASES), n_unmeasured)
+    if srv_expected:
+        (LOG.warning if n_missing_srv else LOG.info)(
+            "%s cells (%s): %d in the vocabulary; missing from the SrV table %d (NaN SrV "
+            "columns), SrV only by design (bases %s) %d", _LOG_TAG, scope, len(out),
+            n_missing_srv, list(MODEL_UNMEASURED_BASES), n_unmeasured)
+    else:
+        LOG.info("%s cells (%s): %d in the vocabulary; not surveyed by SrV, SrV columns NaN by "
+                 "design", _LOG_TAG, scope, len(out))
 
     difference = out["model_share"] - out["srv_share"]
     se = out["srv_se_share"].where(out["srv_se_share"] > 0)
@@ -613,6 +645,47 @@ def compare_parameters(model_students: pd.DataFrame,
     beyond[out["difference_in_se"].isna().to_numpy()] = pd.NA
     out["beyond_two_se"] = beyond
     return out[COMPARISON_COLUMNS]
+
+
+def compare_parameters_by_area(model_students: pd.DataFrame,
+                               srv_by_area: pd.DataFrame) -> pd.DataFrame:
+    """:func:`compare_parameters` once per home area of :data:`srv_student_reference.HOME_AREAS`.
+
+    ``srv_by_area`` is the committed ``srv2023_student_parameters_by_area.csv`` (column ``area``
+    plus :data:`student_parameters.PARAMETER_COLUMNS`). The two surveyed areas (``braunschweig``,
+    ``surrounding``) are compared with their SrV rows exactly as the region is; the model
+    students of an area are those whose home Kreis is in ``HOME_AREAS[area]`` (the one mapping,
+    never restated here). ``wolfsburg`` (:data:`srv_student_reference.AREA_WOLFSBURG`) is
+    reported on the model side only: its SrV columns are NaN by design (SrV surveys no person
+    there) and it never counts as a missing SrV cell. A student without a home Kreis is in no
+    area, a home Kreis outside the ZGB raises (:func:`srv_student_reference.area_of_kreis`).
+
+    Returns ``["area", *COMPARISON_COLUMNS]``: the surveyed areas in ``HOME_AREAS`` order, then
+    Wolfsburg. Raises ``ValueError`` for a missing ``area`` column, a row without an area or with
+    one outside ``HOME_AREAS`` (Wolfsburg included: it has no SrV rows), and for everything
+    :func:`compare_parameters` raises for.
+    """
+    model_students = _checked_model_students(model_students)
+    _require_columns(srv_by_area, ["area", *SP.PARAMETER_COLUMNS], "SrV parameter table by area")
+    areas = srv_by_area["area"]
+    outside = sorted(set(areas.dropna().astype(str)) - set(HOME_AREAS))
+    if outside or areas.isna().any():
+        raise ValueError("SrV parameter table by area: column area carries value(s) %s outside "
+                         "the surveyed home areas %s" % (outside or "NaN", list(HOME_AREAS)))
+    student_area = area_of_kreis(model_students["kreis"])
+    LOG.info("%s comparison by area: adult students per home area %s, without a home Kreis %d",
+             _LOG_TAG, student_area.value_counts().sort_index().to_dict(),
+             int(student_area.isna().sum()))
+    no_srv = _validated_srv_table(pd.DataFrame(columns=SP.PARAMETER_COLUMNS))
+    scopes = [(area, kreise, True) for area, kreise in HOME_AREAS.items()]
+    scopes.append((AREA_WOLFSBURG, (WOLFSBURG_KREIS,), False))
+    frames = []
+    for area, kreise, surveyed in scopes:
+        srv = (_validated_srv_table(srv_by_area[(areas == area).to_numpy()]) if surveyed
+               else no_srv)
+        cells = _compare_cells(model_students, srv, kreise, "area " + area, srv_expected=surveyed)
+        frames.append(cells.assign(area=area)[["area", *COMPARISON_COLUMNS]])
+    return pd.concat(frames, ignore_index=True)
 
 
 # --------------------------------------------------------------------------- level and status
@@ -1003,6 +1076,205 @@ def student_work_class_table(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]
     diagnostics.update(n_adult_students_employed=n_employed,
                        n_adult_students_not_employed_in_employed_class=n_breaking)
     return table[WORK_CLASS_COLUMNS].reset_index(drop=True), diagnostics
+
+
+# --------------------------------------------------------------------------- education leg
+#: Columns of :func:`adult_education_leg_frame`.
+ADULT_EDUCATION_LEG_COLUMNS = ["person_id", "kreis", "age", "student", "present",
+                               "education_leg"]
+#: Columns the adult frame needs on the enriched persons (a subset of ``MODEL_PERSON_COLUMNS``).
+ADULT_PERSON_COLUMNS = (*P.MODEL_PERSON_COLUMNS, "P_TAET")
+#: ``model_*`` counts are over the PRESENT adults of the row (the SrV universe); the SrV columns
+#: are the committed table's, ``srv_weight_sum`` the weight of the SrV persons WITH a leg.
+EDUCATION_LEG_BY_STATUS_COLUMNS = [
+    "code", "level", "group", "age_range", "model_n_present", "model_n_present_with_leg",
+    "model_share", "model_persons_with_leg_expanded", "srv_n_unweighted", "srv_share",
+    "srv_se_share", "srv_weight_sum", "difference_in_se"]
+_EDUCATION_SRV_COLUMNS = {"n_unweighted": "srv_n_unweighted", "share": "srv_share",
+                          "se_share": "srv_se_share", "weight_sum": "srv_weight_sum"}
+
+
+def adult_education_leg_frame(persons: pd.DataFrame, trips: pd.DataFrame,
+                              homes_with_ars5: pd.DataFrame,
+                              absence: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """One row per adult model person with the education leg of the reporting day.
+
+    Inputs as for :func:`model_student_frame` (``persons`` needs :data:`ADULT_PERSON_COLUMNS`
+    only; the student attribute columns are not read). Adult = ``age >= MIN_ADULT_AGE`` with a
+    readable ``P_TAET`` (99 / missing answers nothing about the activity: excluded, counted,
+    never "not a student"); ``student`` = ``P_TAET == STUDENT_P_TAET``. ``education_leg`` comes
+    from the SAME harmonisation and :func:`student_parameters.person_day_labels` as the student
+    frame (``education_leg == "yes"``), so the students' share here and in
+    :func:`compare_parameters` is one definition. ``present`` is False for a person
+    :func:`absent_person_ids` marks away all day; every adult needs an absence row.
+
+    Columns :data:`ADULT_EDUCATION_LEG_COLUMNS` (``education_leg``, ``student`` and ``present``
+    are booleans, ``kreis`` the five-digit home Kreis or NaN). Adults without a home Kreis stay
+    in the frame (counted, logged, in no table row). Vectorised throughout: no per-person loop
+    (a 100 % run has about a million adults).
+
+    Raises ``ValueError`` for a missing column, a duplicated ``person_id``, a trip or absence
+    row of an unknown person, an adult without an absence row, a code outside its documented
+    set, a home Kreis outside ``ZGB_KREISE`` or an exclusion above ``MAX_EXCLUSION_RATE``.
+    """
+    _require_model_inputs(persons, trips, homes_with_ars5, absence, ADULT_PERSON_COLUMNS)
+    code, unreadable = _p_taet_codes(persons)
+    age = pd.to_numeric(persons["age"], errors="coerce")
+    no_age = age.isna() | (age < 0)
+    n_persons = len(persons)
+    _log_exclusion("adult education leg: known age (no age, no adult)", int(no_age.sum()),
+                   n_persons)
+    adult = (~no_age & (age >= MIN_ADULT_AGE)).to_numpy()
+    n_adults_with_age = int(adult.sum())
+    n_unreadable = int((adult & unreadable.to_numpy()).sum())
+    _log_exclusion("adult education leg: readable P_TAET among the adults (99 / missing "
+                   "answers nothing about the activity)", n_unreadable, n_adults_with_age)
+    keep = adult & ~unreadable.to_numpy()
+    adults = persons.loc[keep].reset_index(drop=True)
+    if adults.empty:
+        raise ValueError("persons: no adult with a readable P_TAET (age >= %d) among %d persons"
+                         % (MIN_ADULT_AGE, n_persons))
+    without_absence = adults.loc[~adults["person_id"].isin(set(absence["person_id"])),
+                                 "person_id"]
+    if len(without_absence):
+        raise ValueError("absence: %d adult(s) have no row, their presence on the reporting day "
+                         "is unknown (person_id e.g. %s)"
+                         % (len(without_absence), sorted(without_absence.tolist())[:5]))
+    absent_ids = absent_person_ids(absence)
+
+    adult_trips = trips[trips["person_id"].isin(set(adults["person_id"]))]
+    harmonised_persons, harmonised_trips = P.harmonise_model(
+        adults, adult_trips, homes_with_ars5, absent_person_ids=absent_ids)
+    day_labels, day_diagnostics = SP.person_day_labels(harmonised_persons, harmonised_trips)
+    frame = pd.DataFrame({
+        "person_id": adults["person_id"].to_numpy(),
+        "age": pd.to_numeric(adults["age"]).to_numpy(),
+        "student": (code[keep] == STUDENT_P_TAET).to_numpy(),
+        "present": ~adults["person_id"].isin(absent_ids).to_numpy()})
+    frame = frame.merge(harmonised_persons[["pid", "kreis"]].rename(columns={"pid": "person_id"}),
+                        on="person_id", how="left", validate="1:1")
+    frame = frame.merge(day_labels[["pid", "education_leg"]].rename(columns={"pid": "person_id"}),
+                        on="person_id", how="left", validate="1:1")
+    if frame["education_leg"].isna().any():
+        raise ValueError("the harmonised frames lost %d adult(s): no day labels"
+                         % int(frame["education_leg"].isna().sum()))
+    frame["education_leg"] = (frame["education_leg"] == "yes").to_numpy()
+
+    kreis = frame["kreis"].where(frame["kreis"].isna(), frame["kreis"].astype(str))
+    outside = sorted(set(kreis.dropna()) - set(ZGB_KREISE))
+    if outside:
+        raise ValueError("homes: column %s carries Kreis code(s) %s outside ZGB_KREISE %s"
+                         % (P.KREIS_COLUMN, outside, list(ZGB_KREISE)))
+    frame["kreis"] = kreis.astype(object)
+    n_no_kreis = int(kreis.isna().sum())
+    _log_exclusion("adult education leg: home Kreis (an adult without one is in no table row)",
+                   n_no_kreis, len(frame))
+    n_absent = int((~frame["present"]).sum())
+    LOG.info("%s adult education leg: %d adults (%d students, %d present, %d away all day); "
+             "with an education leg %d", _LOG_TAG, len(frame), int(frame["student"].sum()),
+             len(frame) - n_absent, n_absent, int(frame["education_leg"].sum()))
+    diagnostics = {"n_persons": int(n_persons), "n_missing_age": int(no_age.sum()),
+                   "n_adults_with_age": n_adults_with_age,
+                   "n_adults_unreadable_p_taet": n_unreadable,
+                   "n_adults_counted": int(len(frame)), "n_adults_no_home_kreis": n_no_kreis,
+                   "n_adults_counted_absent": n_absent,
+                   **{"day_%s" % key: value for key, value in day_diagnostics.items()}}
+    return frame[ADULT_EDUCATION_LEG_COLUMNS], diagnostics
+
+
+def education_leg_by_status_table(adults: pd.DataFrame, srv_status: pd.DataFrame,
+                                  sampling_rate: float) -> tuple[pd.DataFrame, dict]:
+    """The education-leg share of students and other adults, model against SrV (adults, 18plus).
+
+    ``adults`` is :func:`adult_education_leg_frame`; ``srv_status`` the committed
+    ``srv2023_education_leg_by_student_status.csv``
+    (:data:`srv_student_reference.EDUCATION_LEG_BY_STATUS_COLUMNS`, codes as strings);
+    ``sampling_rate`` the run's rate in (0, 1].
+
+    Rows (:data:`EDUCATION_LEG_BY_STATUS_COLUMNS`): per ``ZGB_KREISE`` Kreis the age range
+    ``18plus``, and for :data:`REGION_CODE` (the seven surveyed Kreise, :data:`REGION_SCOPE_NOTE`)
+    every range of :data:`srv_student_reference.EDUCATION_AGE_RANGES` (bounds inclusive), each per
+    group ``student`` / ``other_adult``. ``model_n_present`` counts the PRESENT adults of the row
+    (the SrV universe: persons at home at some point of the reporting day), ``model_share`` is
+    the share of them with an education leg (NaN on an empty base),
+    ``model_persons_with_leg_expanded`` those with a leg divided by ``sampling_rate`` (the
+    like-for-like count of ``srv_weight_sum``). Wolfsburg is model only: its SrV columns are NaN
+    by design. ``difference_in_se = (model_share - srv_share) / srv_se_share`` (NaN where that
+    standard error is 0 or NaN); a measurement, not a verdict.
+
+    Adults without a home Kreis (counted, in no row) and adults away all day (outside the base)
+    are reported in the diagnostics together with ``missing_srv_codes`` / ``n_missing_srv_rows``.
+    Raises ``ValueError`` for a missing column, a non-boolean flag, a duplicated ``person_id``,
+    a Kreis that is not a ZGB string code, or an invalid SrV row.
+    """
+    rate = _require_sampling_rate(sampling_rate)
+    _require_columns(adults, ADULT_EDUCATION_LEG_COLUMNS, "adults")
+    _require_unique_person_ids(adults, "adults")
+    flags = {column: _flags(adults, column) for column in ("student", "present", "education_leg")}
+    _require_string_codes(adults["kreis"], "adults", "kreis")
+    outside = sorted(set(adults["kreis"].dropna()) - set(ZGB_KREISE))
+    if outside:
+        raise ValueError("adults: column kreis carries code(s) %s outside ZGB_KREISE %s"
+                         % (outside, list(ZGB_KREISE)))
+    age = pd.to_numeric(adults["age"], errors="coerce")
+    if age.isna().any() or (age < MIN_ADULT_AGE).any():
+        raise ValueError("adults: %d row(s) with a missing age or an age below %d"
+                         % (int((age.isna() | (age < MIN_ADULT_AGE)).sum()), MIN_ADULT_AGE))
+    ranges = {name: (low, high) for name, low, high in EDUCATION_AGE_RANGES}
+    srv = _validated_srv_rows(
+        srv_status, SRV_EDUCATION_LEG_BY_STATUS_COLUMNS, ["code", "group", "age_range"],
+        "SrV education leg by student status",
+        {"group": [GROUP_STUDENT, GROUP_OTHER_ADULT], "age_range": list(ranges)})
+
+    frame = pd.DataFrame({"kreis": adults["kreis"].to_numpy(dtype=object),
+                          "age": age.to_numpy(), "student": flags["student"].to_numpy(),
+                          "present": flags["present"].to_numpy(),
+                          "leg": flags["education_leg"].to_numpy()})
+    n_no_kreis = int(frame["kreis"].isna().sum())
+    n_absent = int((~frame["present"] & frame["kreis"].notna()).sum())
+    frame = frame[frame["present"].to_numpy() & frame["kreis"].notna().to_numpy()]
+    LOG.info("%s education leg by status: %d adults, of them without a home Kreis %d (in no "
+             "row), away all day %d (outside the base); %d present adults counted", _LOG_TAG,
+             len(adults), n_no_kreis, n_absent, len(frame))
+
+    rows = []
+    scopes = [(LEVEL_KREIS, kreis, frame[(frame["kreis"] == kreis).to_numpy()],
+               [EDUCATION_AGE_RANGES[0][0]]) for kreis in ZGB_KREISE]
+    scopes.append((LEVEL_TOTAL, REGION_CODE, frame[frame["kreis"].isin(SURVEYED_KREISE).to_numpy()],
+                   list(ranges)))
+    for level, code, group_frame, range_names in scopes:
+        for range_name in range_names:
+            low, high = ranges[range_name]
+            in_range = group_frame[group_frame["age"].between(low, high).to_numpy()]
+            for group, is_student in ((GROUP_STUDENT, True), (GROUP_OTHER_ADULT, False)):
+                members = in_range[(in_range["student"] == is_student).to_numpy()]
+                n_with_leg = int(members["leg"].sum())
+                rows.append({"code": code, "level": level, "group": group,
+                             "age_range": range_name, "model_n_present": int(len(members)),
+                             "model_n_present_with_leg": n_with_leg,
+                             "model_share": _share(n_with_leg, len(members)),
+                             "model_persons_with_leg_expanded": n_with_leg / rate})
+    key = ["code", "group", "age_range"]
+    out = pd.DataFrame(rows).merge(
+        srv[[*key, *_EDUCATION_SRV_COLUMNS]].rename(columns=_EDUCATION_SRV_COLUMNS), on=key,
+        how="left", validate="1:1", indicator="_srv")
+    missing = _missing_srv_codes(out, "_srv", "education leg by status")
+    srv_columns = list(_EDUCATION_SRV_COLUMNS.values())
+    out[srv_columns] = out[srv_columns].astype(float)
+    out.loc[out["code"] == WOLFSBURG_KREIS, srv_columns] = np.nan
+    out["difference_in_se"] = _difference_in_se(out["model_share"], out["srv_share"],
+                                                out["srv_se_share"])
+    diagnostics = {"n_adults": int(len(adults)), "n_adults_no_home_kreis": n_no_kreis,
+                   "n_adults_away_all_day": n_absent, "n_adults_counted_present": int(len(frame)),
+                   "missing_srv_codes": missing,
+                   "n_missing_srv_rows": int(((out["_srv"] == "left_only")
+                                              & (out["code"] != WOLFSBURG_KREIS)).sum())}
+    region = out[(out["code"] == REGION_CODE) & (out["age_range"] == EDUCATION_AGE_RANGES[0][0])]
+    LOG.info("%s education leg by status, region %s: %s", _LOG_TAG, REGION_CODE,
+             "; ".join("%s model %.4f (n %d) vs SrV %.4f" % (
+                 row["group"], row["model_share"], row["model_n_present"], row["srv_share"])
+                 for _, row in region.iterrows()))
+    return out[EDUCATION_LEG_BY_STATUS_COLUMNS], diagnostics
 
 
 # --------------------------------------------------------------------------- plan source

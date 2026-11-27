@@ -20,7 +20,13 @@ adults, the presence universe, the region scope, the label vocabulary, every exc
   work-control class;
 * :func:`~braunschweig.analysis.student_measurement.plan_source_table` -> own diary or re-drawn
   plan, its match path and the donor's activity, from ``CompletedDonor.persons`` and the two
-  trace files the completed-donor stage writes into its cache directory.
+  trace files the completed-donor stage writes into its cache directory;
+* :func:`~braunschweig.analysis.student_measurement.compare_parameters_by_area` -> the parameter
+  cells once per home area against ``srv2023_student_parameters_by_area.csv`` (Phase 3);
+* :func:`~braunschweig.analysis.student_measurement.adult_education_leg_frame` and
+  :func:`~braunschweig.analysis.student_measurement.education_leg_by_status_table` -> the
+  education-leg share of the students and of the other adults against
+  ``srv2023_education_leg_by_student_status.csv`` (Phase 3).
 
 Inputs and refusals (no silent fallback)
 ----------------------------------------
@@ -39,7 +45,8 @@ Inputs and refusals (no silent fallback)
 
 Outputs, under ``<output_path>/<students_vs_srv_output_subdir>/``: ``student_level_by_kreis.csv``,
 ``young_adult_status_by_kreis.csv``, ``student_work_class.csv``, ``student_behaviour_vs_srv.csv``,
-``student_plan_source.csv`` (plain CSVs, LF, ``%.10g``, as the sibling stages write them; the
+``student_plan_source.csv``, ``student_behaviour_by_area.csv``,
+``education_leg_by_student_status.csv`` (plain CSVs, LF, ``%.10g``, as the sibling stages write them; the
 provenance lives in ``provenance.json`` and at the top of ``summary.md``), ``summary.md`` and
 ``provenance.json`` (git commit, parameters, SrV table and Zensus paths relative to
 ``data_path`` with their sha256, the trace file names, every diagnostics dict,
@@ -96,12 +103,16 @@ COMPLETED_DONOR_STAGE = "braunschweig.popsim.completed_donor"
 WEEKEND_TRACE_FILE = "weekend_plan_match_trace.parquet"
 DIARY_TRACE_FILE = "diary_plan_match_trace.parquet"
 #: The committed SrV tables this stage reads, below ``<data_path>/braunschweig/srv/``.
-SRV_TABLES = (R.PARAMETER_TABLE, R.STUDENT_SHARE_TABLE, R.YOUNG_ADULT_STATUS_TABLE)
+SRV_TABLES = (R.PARAMETER_TABLE, R.STUDENT_SHARE_TABLE, R.YOUNG_ADULT_STATUS_TABLE,
+              R.PARAMETER_BY_AREA_TABLE, R.EDUCATION_LEG_BY_STATUS_TABLE)
 #: Columns of the SrV tables that hold codes or labels and must stay strings (a code read as
 #: a number loses its leading zero, a label like ``0`` would no longer match the vocabulary).
 _SRV_STRING_COLUMNS = {R.PARAMETER_TABLE: {"label": str},
                        R.STUDENT_SHARE_TABLE: {"code": str},
-                       R.YOUNG_ADULT_STATUS_TABLE: {"code": str}}
+                       R.YOUNG_ADULT_STATUS_TABLE: {"code": str},
+                       R.PARAMETER_BY_AREA_TABLE: {"label": str, "area": str},
+                       R.EDUCATION_LEG_BY_STATUS_TABLE: {"code": str, "group": str,
+                                                         "age_range": str}}
 ZENSUS_SUBDIR = ("braunschweig", "popsim")
 
 STATUS = "measurement, not validation"
@@ -112,7 +123,9 @@ OUTPUT_FILES = {"student_level": "student_level_by_kreis.csv",
                 "young_adult_status": "young_adult_status_by_kreis.csv",
                 "student_work_class": "student_work_class.csv",
                 "student_behaviour": "student_behaviour_vs_srv.csv",
-                "plan_source": "student_plan_source.csv"}
+                "plan_source": "student_plan_source.csv",
+                "student_behaviour_by_area": "student_behaviour_by_area.csv",
+                "education_leg_by_student_status": "education_leg_by_student_status.csv"}
 
 #: Repository root, for the git commit in ``provenance.json`` (this file sits at
 #: <root>/braunschweig/analysis/synthesis/).
@@ -181,7 +194,7 @@ def _require_file(path: str, what: str) -> None:
 
 
 def _input_digests(data_path: str) -> dict:
-    """sha256 of the three committed SrV tables (CRLF-neutral, as git stores them) and of the
+    """sha256 of the committed SrV tables (CRLF-neutral, as git stores them) and of the
     local Zensus file; a missing file raises ``FileNotFoundError``."""
     digests = {}
     for name in SRV_TABLES:
@@ -198,7 +211,7 @@ def _input_digests(data_path: str) -> dict:
 
 def validate(context):
     """synpp validation token: the helper modules' source plus ``files``: the VG250 / RegioStaR
-    digests of ``spatial`` and the sha256 of the three committed SrV tables and the Zensus
+    digests of ``spatial`` and the sha256 of the committed SrV tables and the Zensus
     file, so a changed reference never serves a cached comparison."""
     token = synpp_tokens.source_token(
         _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES, stage_label=__name__ + ".validate()")
@@ -234,7 +247,7 @@ def configure(context):
 # --------------------------------------------------------------------------- inputs
 
 def load_srv_tables(data_path: str) -> dict:
-    """The three committed SrV tables, codes and labels as strings; a missing one raises."""
+    """The committed SrV tables (SRV_TABLES), codes and labels as strings; a missing one raises."""
     tables = {}
     for name in SRV_TABLES:
         path = srv_table_path(data_path, name)
@@ -322,6 +335,11 @@ def summary_markdown(tables: dict, provenance: dict) -> str:
     beyond = behaviour["beyond_two_se"].fillna(False).astype(bool)
     level = tables["student_level"].set_index("code")
     region = level.loc[M.REGION_CODE]
+    education = tables["education_leg_by_student_status"]
+    education = education[(education["code"] == M.REGION_CODE)
+                          & (education["age_range"] == R.AGE_RANGE_ALL_ADULTS)].set_index("group")
+    education_student, education_other = (education.loc[R.GROUP_STUDENT],
+                                          education.loc[R.GROUP_OTHER_ADULT])
     lines = [
         "# University students: synthetic population vs SrV 2023",
         "",
@@ -369,6 +387,18 @@ def summary_markdown(tables: dict, provenance: dict) -> str:
         "activity; share_of_students over all adult students, the leg shares "
         "(share_with_education_leg, share_with_work_leg) over the present students of the row. "
         f"Trace files available: {provenance['plan_source']['trace_available']}.",
+        f"* {OUTPUT_FILES['student_behaviour_by_area']}: the parameter cells once per home area "
+        f"({', '.join(R.HOME_AREAS)} against their SrV rows, {R.AREA_WOLFSBURG} model only with "
+        f"NaN SrV columns); {provenance['n_missing_srv_cells_by_area']} cell(s) of the surveyed "
+        "areas missing from the SrV table.",
+        f"* {OUTPUT_FILES['education_leg_by_student_status']}: share of the present adults with "
+        f"an education leg, students and other adults, per Kreis and (region) age range; region "
+        f"18plus students model {_fmt(education_student['model_share'])} vs SrV "
+        f"{_fmt(education_student['srv_share'])} (difference "
+        f"{_fmt(education_student['difference_in_se'], 2)} SrV standard errors), other adults "
+        f"model {_fmt(education_other['model_share'])} vs SrV "
+        f"{_fmt(education_other['srv_share'])} (difference "
+        f"{_fmt(education_other['difference_in_se'], 2)}).",
         "",
     ]
     return "\n".join(lines) + "\n"
@@ -387,6 +417,7 @@ def exclusion_report(provenance: dict) -> dict:
     diagnostics = provenance["diagnostics"]
     frame, level = diagnostics["student_frame"], diagnostics["student_level"]
     plan = diagnostics["plan_source"]
+    adult_leg = diagnostics["adult_education_leg"]
     n_students = (frame["n_adult_students_present"] + frame["n_adult_students_absent"])
     traces = provenance["plan_source"]["traces"]
     return {
@@ -395,6 +426,7 @@ def exclusion_report(provenance: dict) -> dict:
         "sampling_rate": provenance["parameters"]["sampling_rate"],
         "trace_available": {name: entry["trace_available"] for name, entry in traces.items()},
         "n_missing_srv_cells": provenance["n_missing_srv_cells"],
+        "n_missing_srv_cells_by_area": provenance["n_missing_srv_cells_by_area"],
         "rates": {
             "adult_students_no_home_kreis": frame["unmatched_home_share"],
             "adult_students_absent": _rate(frame["n_adult_students_absent"], n_students),
@@ -404,6 +436,12 @@ def exclusion_report(provenance: dict) -> dict:
             "adults_no_home_kreis": _rate(level["n_adults_no_home_kreis"],
                                           level["n_adults_with_age"]
                                           - level["n_adults_unreadable_p_taet"]),
+            "adults_unreadable_p_taet_education_leg": _rate(
+                adult_leg["n_adults_unreadable_p_taet"], adult_leg["n_adults_with_age"]),
+            "adults_no_home_kreis_education_leg": _rate(adult_leg["n_adults_no_home_kreis"],
+                                                        adult_leg["n_adults_counted"]),
+            "adults_away_all_day_education_leg": _rate(adult_leg["n_adults_counted_absent"],
+                                                       adult_leg["n_adults_counted"]),
             "plan_source_unresolved": _rate(plan["n_unresolved"], plan["n_students"]),
             "plan_source_redrawn_unresolved": _rate(plan["n_redrawn_unresolved"],
                                                     plan["n_redrawn"]),
@@ -415,7 +453,7 @@ def exclusion_report(provenance: dict) -> dict:
 
 
 def write_outputs(directory: str, tables: dict, provenance: dict) -> None:
-    """Write the five CSVs (header-free, LF, ``%.10g``), ``provenance.json`` (strict JSON) and
+    """Write the seven CSVs (header-free, LF, ``%.10g``), ``provenance.json`` (strict JSON) and
     ``summary.md`` into ``directory`` (created if absent)."""
     os.makedirs(directory, exist_ok=True)
     for key, file_name in OUTPUT_FILES.items():
@@ -464,6 +502,13 @@ def execute(context):
         persons, trips, homes, absence, max_unmatched_home_share=max_unmatched_home_share)
     behaviour = M.compare_parameters(students, srv[R.PARAMETER_TABLE])
     n_missing_srv_cells = M.count_missing_srv_cells(behaviour)
+    behaviour_by_area = M.compare_parameters_by_area(students, srv[R.PARAMETER_BY_AREA_TABLE])
+    # Wolfsburg is model only (NaN SrV columns by design), so only the surveyed areas can miss.
+    n_missing_srv_cells_by_area = M.count_missing_srv_cells(
+        behaviour_by_area[behaviour_by_area["area"] != R.AREA_WOLFSBURG])
+    adults, adult_diagnostics = M.adult_education_leg_frame(persons, trips, homes, absence)
+    education_by_status, education_diagnostics = M.education_leg_by_status_table(
+        adults, srv[R.EDUCATION_LEG_BY_STATUS_TABLE], sampling_rate)
 
     absent_ids = _day_absence.absent_person_ids(absence)
     with_kreis = persons_with_kreis(persons, homes, absent_ids)
@@ -481,7 +526,8 @@ def execute(context):
 
     tables = {"student_level": level, "young_adult_status": status,
               "student_work_class": work_class, "student_behaviour": behaviour,
-              "plan_source": plan_source}
+              "plan_source": plan_source, "student_behaviour_by_area": behaviour_by_area,
+              "education_leg_by_student_status": education_by_status}
     zensus_file = _zensus_employment_age.KREIS_EMPLOYED_BY_AGE_FILE
     provenance = {
         "status": STATUS,
@@ -506,6 +552,7 @@ def execute(context):
         },
         "region_scope": M.REGION_SCOPE_NOTE,
         "n_missing_srv_cells": n_missing_srv_cells,
+        "n_missing_srv_cells_by_area": n_missing_srv_cells_by_area,
         "plan_source": {
             "trace_available": bool(weekend_entry["trace_available"]
                                     and diary_entry["trace_available"]),
@@ -517,6 +564,12 @@ def execute(context):
             "young_adult_status": status_diagnostics,
             "student_work_class": work_class_diagnostics,
             "plan_source": plan_diagnostics,
+            "student_behaviour_by_area": {
+                "n_missing_srv_cells": n_missing_srv_cells_by_area,
+                "area_cells_with_difference": int(
+                    behaviour_by_area["difference_in_se"].notna().sum())},
+            "adult_education_leg": adult_diagnostics,
+            "education_leg_by_student_status": education_diagnostics,
         },
     }
     write_outputs(out_dir, tables, provenance)

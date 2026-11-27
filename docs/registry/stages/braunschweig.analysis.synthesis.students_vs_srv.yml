@@ -50,7 +50,11 @@ notes: 'Writes under <output_path>/analysis/students_vs_srv/: student_behaviour_
   (against srv2023_student_share_by_kreis.csv), young_adult_status_by_kreis.csv (against
   srv2023_young_adult_status_by_kreis.csv, plus the Zensus employed count read from
   <data_path>/braunschweig/popsim/zensus2022_employed_by_age_kreis.csv), student_work_class.csv,
-  student_plan_source.csv, summary.md and provenance.json (git commit, parameters, path relative
+  student_plan_source.csv, student_behaviour_by_area.csv (the parameter cells per home area,
+  against srv2023_student_parameters_by_area.csv; Wolfsburg model only),
+  education_leg_by_student_status.csv (education-leg share of students and other adults,
+  against srv2023_education_leg_by_student_status.csv), summary.md and provenance.json (git
+  commit, parameters, path relative
   to data_path and sha256 of every input table, the trace file names, every diagnostics dict,
   sampling_rate; no output carries an absolute path). The stage''s own cache directory gets
   students_vs_srv_report.json with the exclusion and fallback counts and rates. Column
@@ -63,7 +67,7 @@ notes: 'Writes under <output_path>/analysis/students_vs_srv/: student_behaviour_
   unresolved (counted); a missing committed SrV table or Zensus file raises FileNotFoundError.
 
   validate() hashes the measurement modules and their import closure, the VG250 and RegioStaR
-  digests, and the sha256 of the three SrV tables and the Zensus file, so a changed reference
+  digests, and the sha256 of the SrV tables and the Zensus file, so a changed reference
   never serves a cached report. Measured values live in the run manifests of issue #140; the
   method and the design behind the parameters are linked from that issue. Unit tests:
   tests/test_students_vs_srv.py (stage wiring, against copies of the committed SrV tables) and

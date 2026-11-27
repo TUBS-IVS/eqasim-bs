@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.analysis import student_measurement as M
+from braunschweig.calibration import srv_student_reference as R
 from braunschweig.calibration import student_parameters as SP
 from braunschweig.calibration.srv_student_reference import (SHARE_COLUMNS,
                                                             YOUNG_ADULT_STATUS_COLUMNS,
@@ -753,3 +754,142 @@ def test_weekend_resolutions_are_the_literals_the_weekend_match_writes():
     literals, others = _resolution_assignments(Path(W.__file__).read_text(encoding="utf-8"))
     assert others == [], "non-literal resolution assignment(s): import the constants instead"
     assert literals == set(M.WEEKEND_RESOLUTIONS)
+
+
+# ------------------------------------------------------------------ Phase 3: area view, status
+def _srv_by_area():
+    """The synthetic SrV table once per surveyed home area (column ``area`` first)."""
+    frames = [_srv_table().assign(area=area)[["area", *SP.PARAMETER_COLUMNS]]
+              for area in R.HOME_AREAS]
+    return pd.concat(frames, ignore_index=True)
+
+
+def _srv_status_table():
+    """The SrV education-leg-by-status table: every committed row key, share 0.5, se 0.05."""
+    keys = [(code, "kreis", "18plus") for code in M.ZGB_KREISE]
+    keys += [(M.REGION_CODE, "total", age_range) for age_range, _, _ in R.EDUCATION_AGE_RANGES]
+    rows = [{"code": code, "level": level, "group": group, "age_range": age_range,
+             "n_unweighted": 30, "n_with_leg_unweighted": 15, "weight_sum": 400.0, "share": 0.5,
+             "n_effective": 25.0, "se_share": 0.05}
+            for code, level, age_range in keys
+            for group in (R.GROUP_STUDENT, R.GROUP_OTHER_ADULT)]
+    return pd.DataFrame(rows, columns=R.EDUCATION_LEG_BY_STATUS_COLUMNS)
+
+
+def test_compare_by_area_keeps_wolfsburg_model_only():
+    # household 30 (students 5 and 6) moves to 03102: braunschweig 1, 2; surrounding 5, 6;
+    # wolfsburg 7
+    students, _ = _student_frame(_home_kreis(30, "03102")(*_build()))
+    out = M.compare_parameters_by_area(students, _srv_by_area())
+    assert list(out.columns) == ["area", *M.COMPARISON_COLUMNS]
+    assert set(out["area"]) == {R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING, R.AREA_WOLFSBURG}
+
+    def cell(area, parameter, label, base=None):
+        return _row(out[out["area"] == area], parameter, label, base)
+
+    # present students with an education leg: braunschweig 1, 2 of 2; surrounding 0 of 1 (5; the
+    # student 6 is absent); Wolfsburg 1 of 1
+    assert [(cell(area, "education_leg", "yes")["model_n"],
+             cell(area, "education_leg", "yes")["model_n_base"])
+            for area in (R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING, R.AREA_WOLFSBURG)] == [
+        (2, 2), (0, 1), (1, 1)]
+    # a student sits in exactly one area
+    assert [cell(area, "away_all_day", "yes", SP.BASE_STUDENTS_ALL)["model_n_base"]
+            for area in (R.AREA_BRAUNSCHWEIG, R.AREA_SURROUNDING, R.AREA_WOLFSBURG)] == [2, 2, 1]
+    wolfsburg = out[out["area"] == R.AREA_WOLFSBURG]
+    assert wolfsburg["srv_n_unweighted"].isna().all() and wolfsburg["srv_share"].isna().all()
+    assert wolfsburg["difference_in_se"].isna().all()
+    # Wolfsburg has no SrV rows by design: only the surveyed areas can miss SrV cells
+    assert M.count_missing_srv_cells(out[out["area"] != R.AREA_WOLFSBURG]) == 0
+
+
+def test_compare_by_area_regional_output_unchanged():
+    # Every surveyed student of the default fixture lives in 03101, so the braunschweig rows are
+    # the regional comparison row for row: the refactor of the shared core did not change
+    # compare_parameters.
+    students, _ = _student_frame(_build())
+    regional = M.compare_parameters(students, _srv_table())
+    by_area = M.compare_parameters_by_area(students, _srv_by_area())
+    one_area = by_area[by_area["area"] == R.AREA_BRAUNSCHWEIG].drop(columns="area")
+    pd.testing.assert_frame_equal(one_area.reset_index(drop=True), regional)
+
+
+def test_compare_by_area_refuses_a_foreign_area_row():
+    students, _ = _student_frame(_build())
+    srv = _srv_by_area()
+    srv.loc[0, "area"] = R.AREA_WOLFSBURG
+    with pytest.raises(ValueError, match="area"):
+        M.compare_parameters_by_area(students, srv)
+
+
+def test_adult_education_leg_frame_by_hand(frames):
+    adults, diagnostics = M.adult_education_leg_frame(*frames)
+    assert list(adults.columns) == ["person_id", "kreis", "age", "student", "present",
+                                    "education_leg"]
+    by_id = adults.set_index("person_id")
+    assert sorted(by_id.index) == [1, 2, 3, 5, 6, 7, 8]          # the minor 4 is no adult
+    assert by_id["student"].to_dict() == {1: True, 2: True, 3: False, 5: True, 6: True, 7: True,
+                                          8: False}
+    assert by_id["present"].to_dict() == {1: True, 2: True, 3: True, 5: True, 6: False, 7: True,
+                                          8: True}
+    # an education trip: persons 1, 2, 6 (absent), 7 and the adult pupil 8
+    assert by_id["education_leg"].to_dict() == {1: True, 2: True, 3: False, 5: False, 6: True,
+                                                7: True, 8: True}
+    assert by_id["kreis"].to_dict() == {1: "03101", 2: "03101", 3: "03101", 5: "03101",
+                                        6: "03101", 7: "03103", 8: "03101"}
+    assert (diagnostics["n_adults_counted"], diagnostics["n_adults_no_home_kreis"]) == (7, 0)
+
+
+def test_adult_education_leg_frame_counts_unreadable_activity_and_missing_home():
+    persons, trips, homes, absence = _build()
+    persons = persons.assign(P_TAET=persons["P_TAET"].astype(object))
+    persons.loc[persons["person_id"] == 3, "P_TAET"] = 99          # answers nothing: no adult row
+    homes = homes[homes["household_id"] != 50]                     # adult 8 has no home Kreis
+    adults, diagnostics = M.adult_education_leg_frame(persons, trips, homes, absence)
+    assert sorted(adults["person_id"]) == [1, 2, 5, 6, 7, 8]
+    assert diagnostics["n_adults_unreadable_p_taet"] == 1
+    assert diagnostics["n_adults_no_home_kreis"] == 1
+    assert pd.isna(adults.set_index("person_id").loc[8, "kreis"])
+
+
+def test_status_table_student_row_matches_behaviour_share(frames):
+    students, _ = _student_frame(frames)
+    behaviour = _row(M.compare_parameters(students, _srv_table()), "education_leg", "yes")
+    adults, _ = M.adult_education_leg_frame(*frames)
+    table, _ = M.education_leg_by_status_table(adults, _srv_status_table(), 0.25)
+    region = table[(table["code"] == M.REGION_CODE) & (table["age_range"] == "18plus")
+                   ].set_index("group")
+    assert region.loc["student", "model_share"] == pytest.approx(behaviour["model_share"])
+    assert region.loc["student", "model_n_present"] == behaviour["model_n_base"]
+
+
+def test_education_leg_by_status_counts_present_adults_only(frames):
+    adults, diagnostics = M.adult_education_leg_frame(*frames)
+    table, _ = M.education_leg_by_status_table(adults, _srv_status_table(), 0.25)
+    assert list(table.columns) == M.EDUCATION_LEG_BY_STATUS_COLUMNS
+    cell = table.set_index(["code", "age_range", "group"])
+
+    def region(age_range, group):
+        return cell.loc[(M.REGION_CODE, age_range, group)]
+
+    # present adults of the surveyed Kreise: students 1, 2, 5 (the absent 6 and the minor 4 are in
+    # no base), others 3 and 8
+    assert region("18plus", "student")["model_n_present"] == 3
+    assert region("18plus", "student")["model_n_present_with_leg"] == 2
+    assert region("18plus", "student")["model_persons_with_leg_expanded"] == pytest.approx(8.0)
+    assert region("18plus", "other_adult")["model_n_present"] == 2
+    assert region("18plus", "other_adult")["model_share"] == pytest.approx(0.5)
+    for group in ("student", "other_adult"):                   # the two ranges partition 18plus
+        assert (region("18_29", group)["model_n_present"]
+                + region("30plus", group)["model_n_present"]
+                == region("18plus", group)["model_n_present"])
+    assert region("18_29", "student")["model_n_present"] == 2    # 1 (22) and 5 (19); 2 is 31
+    assert region("30plus", "other_adult")["model_share"] == pytest.approx(0.0)
+    # Wolfsburg: model only, student 7 present with a leg; SrV columns NaN
+    wolfsburg = cell.loc[(M.WOLFSBURG_KREIS, "18plus", "student")]
+    assert (wolfsburg["model_n_present"], wolfsburg["model_share"]) == (1, 1.0)
+    assert np.isnan(wolfsburg["srv_share"]) and np.isnan(wolfsburg["difference_in_se"])
+    # a Kreis row: the SrV columns and the difference in SrV standard errors
+    braunschweig = cell.loc[("03101", "18plus", "student")]
+    assert braunschweig["srv_share"] == 0.5
+    assert braunschweig["difference_in_se"] == pytest.approx((2 / 3 - 0.5) / 0.05)
