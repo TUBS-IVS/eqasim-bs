@@ -1,10 +1,12 @@
 dataset: student_level_table
 title: Student level by home Kreis, sex and age group, with the share counted as employed
-provider: derived in-repo from the student balance (student_od_balance), SrV 2023 parameter cells, MiD 2023 and Zensus 2022
-vintage: enrollment WS 2024/25 balance; SrV 2023, MiD 2023, Zensus 2022 (reference date 2022-05-15)
+provider: derived in-repo from the student balance (student_od_balance), MiD 2023 age and sex cells, LSN-Online population aged 20 to 29 and Zensus 2022
+vintage: enrollment WS 2025/26 balance (WS 2022/23 for omega); population change 2022-12-31 to 2025-12-31; SrV 2023, MiD 2023, Zensus 2022 (reference date 2022-05-15)
 geography: |
   One block per ZGB Kreis (the eight Kreise of the study region): students living in the Kreis,
-  split by sex and by the age groups 18_29 and 30plus with the regional shares of SrV.
+  split by sex and by the four age groups 18_19, 20_24, 25_29 and 30plus (the joint MiD 2023 share of
+  (sex, age group), the same mix in every Kreis). The split of the total over the Kreise follows the
+  census (assumptions A18 and A19).
 crs: null
 roles:
 - reference_table
@@ -43,16 +45,20 @@ licensing:
     balance, and from LSN enrollment (dl-de/by-2-0); the Zensus 2022 and SrV/MiD figures
     enter as aggregates only.
 limitations: |
-  The table counts heads, never days (no day factor applied). Age and sex are taken as
-  independent, the SrV parameter table has no joint cell (A9). A2 (CHE origin is the Kreis of the
-  school-leaving certificate) reaches the level through the balance, and A6 (a student who does
-  not live in the origin Kreis lives in the site Kreis) through the movers; A16 (the balance counts
-  enrolled students, SrV counts students by main activity; two errors in opposite directions)
-  affects the comparison with SrV; omega (A12) is one number for all Kreise. The assumptions are
-  documented in braunschweig/calibration/student_level_table.py and
-  braunschweig/data/education/student_od_table.py, the owners of the wording. The level against
-  SrV is not decided yet (ADR-0210, Decision 5; the two gate comparisons are in the run
-  manifest).
+  The table counts heads, never days (no day factor applied). Age and sex are the national joint
+  MiD cell, the same mix in every Kreis (A9); the regiostar7_* rows of the MiD table show what that
+  leaves out. The split over the Kreise follows the census pattern carried to the model year with
+  the population change of the ages 20 to 29 (A18, A19); the total is the balance's. omega (A12)
+  is one number for all Kreise, built in one year (census year, enrollment WS 2022/23). A2 (CHE
+  origin is the Kreis of the school-leaving certificate) reaches the level through the balance,
+  and A6 (a student who does not live in the origin Kreis lives in the site Kreis) through the
+  movers; A16 (the balance counts enrolled students, SrV counts students by main activity; two
+  errors in opposite directions) affects the comparison with SrV. The assumptions are documented
+  in braunschweig/calibration/student_level_table.py and
+  braunschweig/data/education/student_od_table.py, the owners of the wording. The level is
+  decided (owner, 2026-11-27, ADR-0210 Decision 5): it is not scaled to SrV; the gate triggers
+  still compare the balance row sums with SrV, and the stated uncertainty of the level is in the
+  run manifest.
 
   The header of the file names the source of the weight triple and the mover share (the optimum
   of a decided calibration stage, or set by the owner); the values are in the header and the run
@@ -60,4 +66,4 @@ limitations: |
 notes: |
   Phase 2 of the student layer (issue #140). The level gate against SrV and the employed-target
   pre-check of the same run are run artifacts, not committed tables.
-  Run manifest docs/runs/student-balance-2026-11-26.yml (omega, day factor, gate rows) and ADR-0210 (decisions).
+  Run manifest docs/runs/student-balance-2026-11-27.yml (omega, gate rows, level and its uncertainty) and ADR-0210 (decisions).

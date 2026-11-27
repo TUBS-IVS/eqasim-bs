@@ -125,6 +125,8 @@ status:
   notes: >-
     A table build and a calibration on survey aggregates, not a validation. The calibration could not decide (validation
     entries below); the weight triple and the mover share of the final tables were set by the owner.
+    The final tables of this run are superseded by run student-balance-2026-11-27; its calibration, weights decision and
+    level decision aid stay the evidence.
 validation:
 - metric: 'calibration stage weights: total variation distance to the SrV destination reference (commune-curve weights)'
   reference: SrV 2023 destination reference (survey aggregate; sampling noise is the noise floor)
