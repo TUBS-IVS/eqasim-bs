@@ -210,8 +210,18 @@ def test_expected_commit_unparsable_lock_raises(tmp_path, lock_text):
         tool_version.expected_populationsim_commit(_project(tmp_path, lock_text))
 
 
-def _run_with_commit(commit):
+def _is_sync_check(command):
+    return list(command[1:]) == list(tool_version.SYNC_CHECK_ARGS)
+
+
+def _run_with_commit(commit, sync_exit=0, sync_calls=None):
+    """Fake uv: answers the version report, and the sync check by inspecting the command."""
     def fake_run(command, **kwargs):
+        if _is_sync_check(command):
+            if sync_calls is not None:
+                sync_calls.append((command, kwargs))
+            return subprocess.CompletedProcess(
+                command, sync_exit, stdout="", stderr="Would update 2 packages")
         return subprocess.CompletedProcess(
             command, 0, stdout=json.dumps(dict(_REPORT, commit=commit)), stderr="")
     return fake_run
@@ -258,6 +268,8 @@ def test_signature_changes_with_the_commit():
 def test_check_refuses_an_ortools_version_other_than_the_lock(tmp_path):
     # Same PopulationSim commit, other solver backend: the results are not the locked ones.
     def fake_run(command, **kwargs):
+        if _is_sync_check(command):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(
             command, 0, stdout=json.dumps(dict(_REPORT, commit=_SHA, ortools="9.10.4067")),
             stderr="")
@@ -294,3 +306,87 @@ def test_lock_content_hash_follows_the_text_not_the_line_endings(tmp_path):
         _LOCK_EXCERPT.replace("9.9.3963", "9.10.4067").encode("utf-8"))
     assert tool_version.lock_content_hash(lf) == tool_version.lock_content_hash(crlf)
     assert tool_version.lock_content_hash(lf) != tool_version.lock_content_hash(other)
+
+
+# --- the whole environment equals the lock (uv sync --frozen --check) --------------------
+
+def test_sync_check_passes_on_exit_zero_with_the_exact_command(tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="Would make no changes")
+
+    tool_version.require_environment_in_sync("/opt/uv", tmp_path, subprocess_run=fake_run)
+
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command == ["/opt/uv", "sync", "--frozen", "--check", "--offline"]
+    assert kwargs["cwd"] == str(tmp_path)
+    assert kwargs["timeout"] == tool_version.REPORT_TIMEOUT_S
+
+
+def test_sync_check_refuses_a_differing_environment_with_uvs_output(tmp_path):
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 1, stdout="Would download 1 package", stderr="Would update urllib3")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.require_environment_in_sync("/opt/uv", tmp_path, subprocess_run=fake_run)
+    message = str(excinfo.value)
+    assert "Would update urllib3" in message and "Would download 1 package" in message
+    assert "exit 1" in message and "uv sync --frozen" in message
+
+
+def test_sync_check_keeps_only_the_tail_of_a_long_output(tmp_path):
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 2, stdout="HEAD-MARKER" + "x" * 5000 + "TAIL-MARKER", stderr="")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.require_environment_in_sync("/opt/uv", tmp_path, subprocess_run=fake_run)
+    assert "TAIL-MARKER" in str(excinfo.value) and "HEAD-MARKER" not in str(excinfo.value)
+
+
+def test_sync_check_timeout_raises(tmp_path):
+    def fake_run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    with pytest.raises(RuntimeError, match="timed out") as excinfo:
+        tool_version.require_environment_in_sync("/opt/uv", tmp_path, subprocess_run=fake_run)
+    assert "uv sync --frozen" in str(excinfo.value)
+
+
+def test_sync_check_oserror_names_the_uv_path(tmp_path):
+    def fake_run(command, **kwargs):
+        raise FileNotFoundError("no such file")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        tool_version.require_environment_in_sync(
+            "/nowhere/uv", tmp_path, subprocess_run=fake_run)
+    assert "/nowhere/uv" in str(excinfo.value)
+
+
+def test_check_refuses_when_only_the_sync_check_fails(tmp_path):
+    # Primary-path test: version, commit, ortools, numpy and pandas all equal the lock, so
+    # only the whole-environment check can catch the differing package.
+    context = SimpleNamespace(set_info=lambda key, value: None)
+    sync_calls = []
+    with pytest.raises(RuntimeError, match="uv sync --frozen"):
+        tool_version.check_populationsim_environment(
+            context, "/opt/uv", str(_project(tmp_path)), "0.10.0+bs.1",
+            subprocess_run=_run_with_commit(_SHA, sync_exit=1, sync_calls=sync_calls))
+    assert len(sync_calls) == 1
+
+
+def test_check_passes_and_runs_the_sync_check_exactly_once(tmp_path):
+    context = SimpleNamespace(info={})
+    context.set_info = context.info.__setitem__
+    sync_calls = []
+    report = tool_version.check_populationsim_environment(
+        context, "/opt/uv", str(_project(tmp_path)), "0.10.0+bs.1",
+        subprocess_run=_run_with_commit(_SHA, sync_calls=sync_calls))
+    assert report["commit"] == _SHA
+    assert context.info["populationsim_tool_report"] == report
+    assert len(sync_calls) == 1
+    assert sync_calls[0][1]["cwd"] == str(tmp_path)
