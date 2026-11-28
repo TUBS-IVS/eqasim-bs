@@ -23,6 +23,7 @@ may only name run manifests (no run, no claim).
 | [cordon_gates](../registry/features/cordon_gates.yml) | cordon | active | ON | A/A/- | 5 | -- | marker | none | unvalidated | pending |
 | [cordon_mode_balancer](../registry/features/cordon_mode_balancer.yml) | cordon | active | ON | A/A/- | 2 | -- | marker | committed | unvalidated | pending |
 | [cordon_network_ring](../registry/features/cordon_network_ring.yml) | cordon | active | ON | A/A/- | 4 | proven | none | none | unvalidated | pending |
+| [day_absence_student_cells](../registry/features/day_absence_student_cells.yml) | behavior | active | ON | A/-/- | 3 | proven | marker | committed | unvalidated | pending |
 | [departure_time_model](../registry/features/departure_time_model.yml) | behavior | active | ON | A/i/- | 8 | proven | marker | committed | unvalidated | pending |
 | [detour_circuity_curve](../registry/features/detour_circuity_curve.yml) | secondary | supported | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |
 | [diary_plan_match](../registry/features/diary_plan_match.yml) | population | active | ON | A/-/- | 25 | proven | marker | committed | measured_vs_reference (`plan-structure-fix-arm3-100pct-2026-09-07`) | pending |
@@ -116,6 +117,7 @@ may only name run manifests (no run, no claim).
 | [simwrapper_layer1](../registry/features/simwrapper_layer1.yml) | analysis | supported | ON | A/A/A | 1 | not claimed | none | none | unvalidated | pending |
 | [srv_participation_controls](../registry/features/srv_participation_controls.yml) | attributes | active | ON | A/i/- | 7 | proven | none | committed | unvalidated | pending |
 | [srv_primary_distance_validation](../registry/features/srv_primary_distance_validation.yml) | validation | active | ON | A/s/s | 5 | -- | marker | committed | measured_vs_reference (`srv-primary-distance-baseline-2026-09-03`, `srv-primary-distance-baseline-2026-09-04`) | Lasse Bienzeisler with Claude (Fable 5.1), 2026-09-05 |
+| [student_flows](../registry/features/student_flows.yml) | education | active | ON | A/A/- | 11 | proven | marker | assumption | unvalidated | pending |
 | [student_incommuters](../registry/features/student_incommuters.yml) | cordon | active | ON | A/A/- | 3 | proven | marker | none | unvalidated | pending |
 | [svb_wohn_work_production_mass](../registry/features/svb_wohn_work_production_mass.yml) | work | parked | off | i/i/i | 1 | proven | marker | none | measured_vs_reference (`verbindungen-ab-2026-07-16`) | pending |
 | [taz_work_location_choice](../registry/features/taz_work_location_choice.yml) | work | parked | off | i/i/i | 3 | proven | none | committed | unvalidated | pending |

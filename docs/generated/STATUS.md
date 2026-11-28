@@ -11,7 +11,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 117 | stages: 138 | datasets: 117 | ADRs: 206 | run manifests: 128
+- Features: 119 | stages: 140 | datasets: 118 | ADRs: 208 | run manifests: 130
 
 ## Population synthesis
 
@@ -58,11 +58,12 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Travel / activity behavior
 
-17 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`
+17 stage(s), 8 in the production DAG. Datasets: `entd_2008`, `mid2023_b1`, `mid2023_home_office_day_donors`, `mid2023_reference_tables`, `mid2023_workday_location`, `srv2023_absence_by_age_band`, `srv2023_absence_household_by_size`, `srv2023_departure_time_reference`, `srv2023_student_reference`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Commute-day-state model (far/weekly out-commuters)](../registry/features/commute_day_state.yml) | active | ON | A/-/- | measured_vs_reference (`commute-day-state-phase-b-proof-100pct-2026-09-06-rerun`, `commute-day-state-phase-b-proof-100pct-2026-09-05`, `commute-day-state-phase-b-sensitivity-far100-2026-09-06`) | [#244](https://github.com/TUBS-IVS/eqasim-bs/issues/244) |
+| [Day absence by cells - students by home area, other adults by age band (#140, Phase 4)](../registry/features/day_absence_student_cells.yml) | active | ON | A/-/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 | [Departure-time model (precision-aware de-rounding and SrV first-departure mapping)](../registry/features/departure_time_model.yml) | active | ON | A/i/- | unvalidated | [#123](https://github.com/TUBS-IVS/eqasim-bs/issues/123) |
 | [Passive escort legs take the purpose of the paired same-household adult leg](../registry/features/escort_passive_from_adult.yml) | active | ON | A/i/- | unvalidated | [#372](https://github.com/TUBS-IVS/eqasim-bs/issues/372) |
 | [Passive escort joint activities anchor at the accompanying adult's placed secondary location](../registry/features/escort_passive_joint_location.yml) | active | ON | A/i/- | unvalidated (`i385-passive-joint-location-smoke-03101-2026-09-11`, `i385-passive-joint-location-production-smoke-03101-2026-09-15`) | [#385](https://github.com/TUBS-IVS/eqasim-bs/issues/385) |
@@ -117,12 +118,13 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Education
 
-8 stage(s), 6 in the production DAG. Datasets: `lsn_bbs_share_by_age`, `lsn_kitas`, `lsn_schools`, `lsn_universities`
+8 stage(s), 6 in the production DAG. Datasets: `lsn_bbs_share_by_age`, `lsn_kitas`, `lsn_schools`, `lsn_universities`, `student_destination_points`, `student_od_balance`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Building potentials — education](../registry/features/building_potentials_education.yml) | active | ON | A/A/- | unvalidated |  |
 | [Education gravity (schools/Kita/uni)](../registry/features/education_gravity.yml) | active | ON | A/A/- | unvalidated |  |
+| [Student flows - students placed by the enrollment balance (#140, Phase 4)](../registry/features/student_flows.yml) | active | ON | A/A/- | unvalidated | [#140](https://github.com/TUBS-IVS/eqasim-bs/issues/140) |
 
 ## Secondary locations
 
@@ -142,7 +144,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Cordon / external demand
 
-12 stage(s), 12 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `vg250_ew`
+12 stage(s), 12 in the production DAG. Datasets: `ba_pendleratlas`, `destatis_population_kreis`, `gtfs_feed`, `lsn_universities`, `mid2023_student_reference`, `mikrozensus_pendler_modes`, `osm_cordon_ring`, `srv2023_mode_by_distance_band`, `srv2023_student_reference`, `student_destination_points`, `student_level_table`, `student_od_balance`, `vg250_ew`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -188,7 +190,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-9 stage(s), 5 in the production DAG. Datasets: `hbefa_emission_factors`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `srv2023_student_reference`, `vg250_ew`, `zensus2022_employed_by_age_kreis`
+11 stage(s), 7 in the production DAG. Datasets: `hbefa_emission_factors`, `mid2023_student_reference`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `srv2023_student_reference`, `student_level_table`, `student_od_balance`, `vg250_ew`, `zensus2022_employed_by_age_kreis`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
