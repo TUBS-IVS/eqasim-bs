@@ -1,0 +1,28 @@
+2026-11-25T20:38:13,208  INFO Gbl:76 Command: org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice --config-path braunschweig_1pct_i679_config.xml --config:plans.inputPlansFile braunschweig_1pct_i679_population.xml.gz --config:standaloneModeChoice.outputDirectory mode_choice --config:standaloneModeChoice.removePersonsWithNoValidAlternatives true --config:standaloneModeChoice.excludedSubpopulations incommuter,student_incommuter --config:global.numberOfThreads 56 --write-input-csv-trips true --write-output-csv-trips true --compression gzip --skip-scenario-check true --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-25T20:38:33,524  INFO BraunschweigModeAvailability:94 carPassengerAvailability evaluations: attribute 1/1, compatibility fallback 0/1
+2026-11-25T20:38:33,524  INFO BraunschweigModeAvailability:94 carPassengerAvailability evaluations: attribute 1/1, compatibility fallback 0/1
+2026-11-25T20:38:33,524  INFO BraunschweigModeAvailability:94 carPassengerAvailability evaluations: attribute 1/1, compatibility fallback 0/1
+2026-11-25T20:38:33,524  INFO BraunschweigModeAvailability:94 carPassengerAvailability evaluations: attribute 1/1, compatibility fallback 0/1
+2026-11-25T20:38:38,418  INFO ParallelProgress:86 [Standalone mode choice, 2238/11987, (18.67%)]
+2026-11-25T20:38:48,420  INFO ParallelProgress:86 [Standalone mode choice, 8076/11987, (67.37%), RT:10s, 807.60it/s, ~04s]
+2026-11-25T20:38:58,422  INFO ParallelProgress:86 [Standalone mode choice, 11319/11987, (94.43%), RT:20s, 565.95it/s, ~01s]
+Exception in thread "main" java.util.concurrent.ExecutionException: java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because the return value of "org.matsim.contribs.discrete_mode_choice.model.DiscreteModeChoiceTrip.getInitialMode()" is null
+	at java.base/java.util.concurrent.FutureTask.report(FutureTask.java:124)
+	at java.base/java.util.concurrent.FutureTask.get(FutureTask.java:193)
+	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer.run(StandaloneModeChoicePerformer.java:168)
+	at org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice.main(RunStandaloneModeChoice.java:269)
+Caused by: java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because the return value of "org.matsim.contribs.discrete_mode_choice.model.DiscreteModeChoiceTrip.getInitialMode()" is null
+	at org.eqasim.core.simulation.mode_choice.constraints.OutsideConstraint.validateBeforeEstimation(OutsideConstraint.java:17)
+	at org.matsim.contribs.discrete_mode_choice.model.constraints.CompositeTripConstraint.validateBeforeEstimation(CompositeTripConstraint.java:27)
+	at org.matsim.contribs.discrete_mode_choice.model.constraints.TourFromTripConstraint.validateBeforeEstimation(TourFromTripConstraint.java:37)
+	at org.matsim.contribs.discrete_mode_choice.model.constraints.CompositeTourConstraint.validateBeforeEstimation(CompositeTourConstraint.java:33)
+	at org.matsim.contribs.discrete_mode_choice.model.tour_based.TourBasedModel.chooseModes(TourBasedModel.java:89)
+	at org.matsim.contribs.discrete_mode_choice.replanning.DiscreteModeChoiceAlgorithm.run(DiscreteModeChoiceAlgorithm.java:54)
+	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer$PlanAlgoThread.run(StandaloneModeChoicePerformer.java:225)
+	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer.lambda$run$1(StandaloneModeChoicePerformer.java:157)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+2026-11-25T20:39:08,424  INFO ParallelProgress:86 [Standalone mode choice, 11466/11987, (95.65%), RT:30s, 382.20it/s, ~01s]
+2026-11-25T23:10:22,618  INFO InjectorBuilder:78 Deleting output directory ~/i679_on2/cache/braunschweig.matsim.simulation.prepare__8c046eb051e7350805180c5b30a4ee86.cache/__java_temp/eqasim_standalone14562097257611018423

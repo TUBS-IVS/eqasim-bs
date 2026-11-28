@@ -1,0 +1,4 @@
+environment: launch env 'eqasim' has the gated prefix ~/miniforge3/envs/eqasim
+launched i678_ab_defaults: pid 1219115 (the launch shell; the launcher runs as its child), log ~/i678_ab_defaults/logs/run_20261126T171802.log
+launcher [explain] block complete, no gate abort: # 93 stages: 23 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 23 may recompute (stale ancestor, early cutoff decides), 47 hits
+braunschweig.popsim.stage: STALE-IF

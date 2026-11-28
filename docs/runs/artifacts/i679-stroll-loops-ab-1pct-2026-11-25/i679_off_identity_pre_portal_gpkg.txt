@@ -1,0 +1,6 @@
+braunschweig_1pct_i679_commutes_pre_portal.gpkg [('braunschweig_1pct_i679_commutes_pre_portal', '2000-01-01T00:00:00Z', 307791.0, 5313212.0, 889246.0, 6022168.0), ('education', '2026-11-25T15:23:56.413Z', 548849.4660272833, 5725068.571496367, 683120.8911227154, 5847312.302802911)]
+braunschweig_1pct_i679_commutes_pre_portal.gpkg [('braunschweig_1pct_i679_commutes_pre_portal', '2000-01-01T00:00:00Z', 307791.0, 5313212.0, 889246.0, 6022168.0), ('education', '2026-11-25T19:32:35.237Z', 548849.4660272833, 5725068.571496367, 683120.8911227154, 5847312.302802911)]
+layers ['braunschweig_1pct_i679_commutes_pre_portal', 'education'] ['braunschweig_1pct_i679_commutes_pre_portal', 'education']
+layer braunschweig_1pct_i679_commutes_pre_portal: rows 3689 / 3689, content identical: True
+layer education: rows 1903 / 1903, content identical: True
+rc=0

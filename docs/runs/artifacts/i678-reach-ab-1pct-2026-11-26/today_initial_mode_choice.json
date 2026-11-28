@@ -1,0 +1,38 @@
+{
+  "n_trips": 38729,
+  "n_trips_mode_changed": 16764,
+  "share_mode_changed": 0.43285393374473907,
+  "mode_shares_before": {
+    "bicycle": 0.11546902837666864,
+    "car": 0.3909989930026595,
+    "car_passenger": 0.1112861163469235,
+    "outside": 0.044514446538769396,
+    "pt": 0.0689664076015389,
+    "walk": 0.26876500813344006
+  },
+  "mode_shares_after": {
+    "bicycle": 0.08507836504944614,
+    "car": 0.5314622117792869,
+    "car_passenger": 0.12959281158821556,
+    "outside": 0.044514446538769396,
+    "pt": 0.06088460843295722,
+    "walk": 0.14846755661132485
+  },
+  "persons_before": 12667,
+  "persons_after": 12667,
+  "population_file": "braunschweig_1pct_i678_population.xml.gz",
+  "java_wall_time_s": 66.32784450706095,
+  "travel_times": "free_flow",
+  "runner": "org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice",
+  "configurator": "org.eqasim.braunschweig.BraunschweigConfigurator",
+  "excluded_subpopulations": [
+    "incommuter",
+    "student_incommuter",
+    "freight"
+  ],
+  "config_file": "braunschweig_1pct_i678_config.xml",
+  "reach": {
+    "isolate_outside_trips": false,
+    "max_tour_length": 6
+  }
+}

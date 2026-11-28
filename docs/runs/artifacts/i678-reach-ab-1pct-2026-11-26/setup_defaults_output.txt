@@ -1,0 +1,21 @@
+setup i678_ab_defaults in ~/i678_ab_defaults
+shared checkouts before (they must stay as they are):
+  eqasim-bs: branch main, HEAD 68ee8df873fe, 0 dirty entries
+  eqasim-java-bs: branch main, HEAD c5343300e02d, 0 dirty entries
+  run: git -C ~/eqasim-bs fetch -q origin
+  run: git -C ~/eqasim-java-bs fetch -q origin
+  run: git -C ~/eqasim-bs fetch --no-tags ~/i678_ab/i678-ab.bundle +refs/heads/fix/i678-mode-choice-reach:refs/isolated-runs/i678_ab_defaults/eqasim-bs
+  eqasim-bs: refs/heads/fix/i678-mode-choice-reach of i678-ab.bundle -> 5bfc8ec8eb8c3d99ecd50838fbb742f15548897e
+  eqasim-java-bs: 3f398bdfe0960096b1702def8fa772b7db6e8e23 -> 3f398bdfe0960096b1702def8fa772b7db6e8e23
+  cache source ~/i679_d/cache: 5153 files, 61.8 GiB; 138.6 GiB free
+  run: git -C ~/eqasim-bs worktree add --detach ~/i678_ab_defaults/eqasim-bs 5bfc8ec8eb8c3d99ecd50838fbb742f15548897e
+  run: git -C ~/eqasim-java-bs worktree add --detach ~/i678_ab_defaults/eqasim-java-bs 3f398bdfe0960096b1702def8fa772b7db6e8e23
+  symlink farm ~/eqasim-bs/eqasim-data -> ~/i678_ab_defaults/eqasim-bs/eqasim-data: 87 links, 385 tracked entries of the commit kept, 51 top-level run-state entries excluded (caches, outputs, popsim work dirs, resolved configs, logs)
+  run: cp -a -- ~/i679_d/cache ~/i678_ab_defaults/cache.partial
+  cache copied to ~/i678_ab_defaults/cache: 5153 files, 61.8 GiB
+shared checkouts after the worktree adds:
+  eqasim-bs: branch main, HEAD 68ee8df873fe, 0 dirty entries
+  eqasim-java-bs: branch main, HEAD c5343300e02d, 0 dirty entries
+run directory ready: ~/i678_ab_defaults
+next: python scripts/isolated_run.py overlay ~/i678_ab_defaults --from <overlay of the run whose cache this is>
+EXIT=0

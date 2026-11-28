@@ -27,4 +27,7 @@ licensing:
   restricted: false
   redistribution: allowed
 limitations: null
-notes: Measured immaterial vs the constant 1.3 (ADR-0042); kept as opt-in infra.
+notes: 'Measured immaterial vs the constant 1.3 (ADR-0042); kept as opt-in infra. Provenance of the committed curve: the
+  committed file was last changed by commit a627fcaba (2026-06-26, per git history), before the loop exclusion of
+  c657ba70 (#679, ADR-0207), so it was fitted WITHOUT leaving loop legs (strolls, dog walks) out of the secondary
+  walk/bike OD pairs; the script now leaves them out where the cache carries loop_origin, so a refit may change it.'

@@ -1,0 +1,28 @@
+# Provenance of arm E (issue #679), written 2026-11-26 on the laptop from the run server's run.json and log; paths relative to the home directory on the run server
+# Arm E = arm D's overlay unchanged (source i679_ship_e/i679_e_33abe12f_source.yml, body identical to i679_c7/i679_d_5b212d47_source.yml), new code only:
+# out-and-back strolls (a stroll followed in the diary by its own way home) are no longer collapsed as loops and carry the
+# activity attribute outAndBackStroll; the prepare stage selects SameFacilityLeisureNonMotorised and StrollNonMotorised.
+## Code (git bundles, fetched into refs/isolated-runs/i679_e/{eqasim-bs,eqasim-java-bs} of the shared repositories; nothing pushed)
+bcbadf3f13bfbd26bb3838bd98a3b7258f32b56072255f58ae1fc386447c7e13  i679_ship_e/i679_33abe12f.bundle (55d9b194..33abe12f, ref refs/i679-e/run-33abe12f)
+ff75c224c4cbe1b0d5748192c203bef8a46e7ea9dc6eff46ec5e10d11096f6d2  i679_ship_e/i679_java_e83ca961f.bundle (f8accd10c..e83ca961f, ref refs/i679-e/java-e83ca961f)
+worktrees at launch: eqasim-bs 33abe12f69282fde2b37c9b037c42793c3b3f6e1, eqasim-java-bs e83ca961f080d52d916a036ebc9e7b6b2d5bfc0e (branch feat/i679-same-facility-leisure-trips, not merged)
+## Shaded jar built by the runtime stage of this launch (16:50:13, 193796362 bytes; contains org/eqasim/braunschweig/mode_choice/constraints/StrollTripConstraint)
+5eecbd7fdeb943d981325d79c3a2bb96  ~/i679_e/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+## Setup: scripts/isolated_run.py setup (tool blob 600f1654, the same as arm D's) with --cache-from ~/i679_d/cache (cp -a, 5153 files, 61.8 GiB); shared checkouts unchanged
+setup 2026-11-26T16:45:13+01:00 (started 16:37:50) {'eqasim-bs': '33abe12f6928', 'eqasim-java-bs': 'e83ca961f080'} cache_bytes 66406665279
+## Gate (logs/explain_20261126T164603.log; --allow-environment-mismatch as in arm D: 5 pip extras missing, conda 312/312)
+# 94 stages: 9 stale for own reasons, 0 will recompute, 12 may recompute (stale ancestor, early cutoff decides), 73 hits; braunschweig.popsim.stage HIT
+gate list: braunschweig.matsim.scenario.facilities, braunschweig.matsim.scenario.population, braunschweig.matsim.simulation.prepare,
+  braunschweig.popsim.distance_distributions, braunschweig.synthesis.commute_day.output_day,
+  braunschweig.synthesis.commute_day.spatial_locations_day, braunschweig.synthesis.locations.secondary_chainsolvers,
+  matsim.output, matsim.runtime.eqasim
+may recompute (if the output of matsim.runtime.eqasim or of the day-view location join changes; after its jar rebuild arm D's first launch recomputed all of these up to its prepare failure, i679_d_first_launch_stage_starts.txt, except activities_day_stage and matsim.simulation.run, which that excerpt does not list):
+  braunschweig.data.transit.cut_schedule, braunschweig.matsim.scenario.households, braunschweig.matsim.scenario.vehicles,
+  braunschweig.synthesis.commute_day.activities_day_stage, braunschweig.synthesis.incommuters,
+  braunschweig.synthesis.student_incommuters, braunschweig.synthesis.outside_tour_modes.{stage,activities_stage},
+  braunschweig.synthesis.portal_trips.{stage,trips_final,anchors}, matsim.simulation.run
+no stage upstream of the distance distributions (PopulationSim, trips, primary locations) is stale
+## Launch (setsid nohup through isolated_run.py launch, launch shell pid 1197750, log ~/i679_e/logs/run_20261126T164639.log)
+launch 2026-11-26T16:46:39+01:00 {'eqasim-bs': '33abe12f6928', 'eqasim-java-bs': 'e83ca961f080'}
+[isolated-run] run=i679_e eqasim-bs=33abe12f69282fde2b37c9b037c42793c3b3f6e1 eqasim-java-bs=e83ca961f080d52d916a036ebc9e7b6b2d5bfc0e start=2026-11-26T16:46:39+01:00
+# done when the log has a line: [isolated-run] run=i679_e ... exit=<code> end=<time> (exit=0 = success)

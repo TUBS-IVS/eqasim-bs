@@ -1,6 +1,7 @@
 # ADR-0203 · 2026-11-19 · KREIS controls of a batch follow their own universe and the finer-level controls (issue #658)
 
 - **Status:** accepted (implemented on branch `fix/i658-popsim-kreis-consistency`; keys switched on by owner decision 2026-11-19 with a documented deviation from one pre-registered check, see "Evidence").
+- **Amended by [ADR-0211](ADR-0211-students-lower-the-employed-target-and-get-their-own-education-entries.md) (2026-11-27):** the decision of 2026-11-18 that the Zensus count is the level of every employment control no longer holds for students: the employed target of the grid groups 16 to 29 and 30 to 39 is the Zensus count minus the students counted as employed (switch `student_employment_concept`, owner approval 2026-11-26).
 - **Numbering:** ADR-0203. Highest id on any local or remote branch on 2026-11-19: ADR-0202 (issue #657); ADR-0201 stays reserved for the pending decision record of issue #646.
 - **Issue:** #658. Extends [ADR-0062](ADR-0062-popsim-apportion-household-level-kreis-controls-by-household.md) (batch split of the KREIS controls) and applies [ADR-0092](ADR-0092-1km-ownership-shape-controls-raked-to-blended-kreis-anchors.md) (1 km ownership grid raked to the Kreis anchors) at batch scale; Tier-3 controls: [ADR-0015](ADR-0015-tier-3-kreis-level-populationsim-controls.md).
 

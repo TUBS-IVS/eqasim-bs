@@ -24,6 +24,17 @@ the stage record is `docs/registry/stages/data.census.filtered.yml`. No figures 
    `braunschweig/popsim/stage/config_keys.py`; production values are in `configs/base_bs.yml`. Code defaults
    are the legacy behaviour. Their bounds are ASSUMPTIONS (ADR-0203).
 
+5. **The student entries** (ADR-0211, `input_consistency.kreis_pairs`): while a student education entry is
+   active, its age-range pair (`persons_18_29`, `persons_30plus`) replaces the 18-plus pair and is judged like
+   it; with neither education entry active the table is the 18-plus table of before. The two soft entries
+   add an at-most pair each (the students with a work leg within the non-employed persons with a work leg;
+   the students with a flat-rate ticket within the flat-rate holders). Both are judged after the employment
+   bridge has set the employed levels, because the bridge moves persons between the classes of the work
+   control. The work pair is gated per batch part and raises; the ticket pair is reported only. The reasons,
+   the bound and the part-versus-Kreis assumption are in the docstring of `input_consistency_guard` and
+   ADR-0211; a change of a student age range must change `input_consistency` in step (it refuses to import
+   otherwise).
+
 ## Where the measurement appears
 
 - **Stage table:** `<work_dir>/popsim_input_consistency.csv`, written for every batch by

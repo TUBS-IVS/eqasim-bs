@@ -11,11 +11,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 114 | stages: 133 | datasets: 107 | ADRs: 201 | run manifests: 113
+- Features: 117 | stages: 138 | datasets: 117 | ADRs: 206 | run manifests: 128
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `vg250_ew`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `srv2023_student_reference`, `student_level_table`, `urbistat_gemeinde_age`, `vg250_ew`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -135,6 +135,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [leisure_unspecified: MiD W_ZWECK 10 leisure legs are the fifth leisure subtype](../registry/features/leisure_unspecified_subtype.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [exclude_no_answer_purpose_legs: a survey non-answer is never a modelled purpose, and a design code can never become a distance](../registry/features/no_answer_codes_excluded.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [Calibration: purpose-resolved secondary](../registry/features/secondary_distance_by_purpose.yml) | active | ON | A/i/i | unvalidated |  |
+| [Strolls and dog walks are loops: a loop activity is placed at the place of the activity before it (#679)](../registry/features/secondary_loop_zero_displacement.yml) | active | ON | A/-/- | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | [#679](https://github.com/TUBS-IVS/eqasim-bs/issues/679) |
 | [secondary_mid_weekday_legs_only: the secondary layers and the MiD subtype deciders estimate on the weekday diary universe](../registry/features/secondary_mid_weekday_universe.yml) | active | ON | A/-/- | unvalidated | [#373](https://github.com/TUBS-IVS/eqasim-bs/issues/373) |
 | [SrV-grounded secondary location types for leisure/other (#262)](../registry/features/secondary_srv_location_types.yml) | active | ON | A/-/- | measured_vs_reference (`srv262-AB-5pct-2026-08-12`) | [#262](https://github.com/TUBS-IVS/eqasim-bs/issues/262) |
 | [W_ZWD no-detail codes (799, 699) are subtype sentinels, labels verified against the codeplan](../registry/features/w_zwd_codeplan_sentinels.yml) | active | ON | A/-/- | unvalidated | [#242](https://github.com/TUBS-IVS/eqasim-bs/issues/242) |
@@ -176,6 +177,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 | [Carless routing re-mode](../registry/features/carless_routing_remode.yml) | active | ON | A/A/s | unvalidated |  |
 | [Initial mode choice before iteration 0 with free-flow travel times](../registry/features/initial_mode_choice.yml) | active | ON | A/A/A | unvalidated | [#542](https://github.com/TUBS-IVS/eqasim-bs/issues/542) |
 | [Large sites spread their car access over their parking lots or get one high-capacity link](../registry/features/large_facility_access_links.yml) | active | ON | A/A/A | unvalidated (`i465-large-facility-access-1pct-2026-10-23`) | [#465](https://github.com/TUBS-IVS/eqasim-bs/issues/465) |
+| [Same-facility leisure trips and trips into an out-and-back stroll may only be walk or bicycle in the mode choice (#679)](../registry/features/loop_trips_non_motorised.yml) | active | ON | A/A/A | unvalidated (`i679-stroll-loops-ab-1pct-2026-11-25`) | [#679](https://github.com/TUBS-IVS/eqasim-bs/issues/679) |
 | [Mode choice](../registry/features/mode_choice.yml) | supported | off | i/i/i | unvalidated |  |
 | [Zone-based parking costs (sourced tariffs, SrV free-parking shares)](../registry/features/parking_cost_zones.yml) | EXPERIMENTAL | ON | A/A/- | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | [#436](https://github.com/TUBS-IVS/eqasim-bs/issues/436) |
 | [Plan feasibility check on the written population and the 30 h plan-time bound](../registry/features/plan_feasibility_check.yml) | active | ON | A/A/A | unvalidated (`i453-i443-ab-1pct-2026-10-16`, `i465-wpe-smoke-1pct-2026-10-23`, `i576-plan-check-split-prod100-2026-11-06`) | [#443](https://github.com/TUBS-IVS/eqasim-bs/issues/443) |
@@ -186,12 +188,13 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-4 stage(s), 4 in the production DAG. Datasets: `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `vg250_ew`
+9 stage(s), 5 in the production DAG. Datasets: `hbefa_emission_factors`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `srv2023_student_reference`, `vg250_ew`, `zensus2022_employed_by_age_kreis`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
 | [Full analysis (dashboard+MiD)](../registry/features/full_analysis.yml) | active | ON | A/s/s | unvalidated |  |
 | [Integerizer quality (per-cell error map)](../registry/features/integerizer_quality.yml) | active | ON | A/s/- | unvalidated |  |
+| [Post-run road-traffic emissions (HBEFA)](../registry/features/post_run_emissions.yml) | EXPERIMENTAL | off | s/-/- | unvalidated (`emissions-wiring-1pct-2026-11-26`, `emissions-road-type-parity-2026-11-26`) | [#688](https://github.com/TUBS-IVS/eqasim-bs/issues/688) |
 | [SimWrapper export (8 chart + 4 map + commuter tabs)](../registry/features/simwrapper_export.yml) | active | ON | A/-/- | unvalidated |  |
 | [SimWrapper Layer-1 (MATSim Java contrib)](../registry/features/simwrapper_layer1.yml) | supported | ON | A/A/A | unvalidated |  |
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE
+from braunschweig.popsim.attributes import EMPLOYED_TAET, PT_SUBSCRIPTION_FKARTE, STUDENT_TAET
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.sampling import draw_prepared_choice, prepare_weighted_choice, weighted_choice
 
@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 # strongly on urbanity) -- user decision 2026-06-18.
 SOFT_KEYS_BY_PRIORITY = ("car_class", "any_license", "any_pt", "hh_type5", "oek_status")
 HARD_KEYS = ("size", "regiostar7")
+#: Student status keys (A1 of the student design, ADR-0211). The household feature ``has_student`` is a soft key
+#: that binds only a target household with a student aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older and is
+#: relaxed LAST (it sits in front of :data:`SOFT_KEYS_BY_PRIORITY`). The person key ``student``
+#: (``P_TAET == STUDENT_TAET``, no age bound) binds a student target only and is likewise relaxed last.
+STUDENT_KEY = "student"
+HH_STUDENT_KEY = "has_student"
+HH_STUDENT_MIN_AGE_YEARS = 18
 
 
 def _car_class(n_cars: pd.Series) -> np.ndarray:
@@ -30,7 +37,19 @@ def _car_class(n_cars: pd.Series) -> np.ndarray:
     return np.where(n <= 0, "0", np.where(n == 1, "1", "2plus"))
 
 
-def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.DataFrame:
+def _is_adult_student(members: pd.DataFrame) -> pd.Series:
+    """True for members with ``P_TAET == STUDENT_TAET`` aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older (a
+    missing age is not an adult). The one definition behind ``has_student``, the student-first pairing of
+    :func:`align_members` and the ``household_pairs`` count."""
+    return (members["P_TAET"].eq(STUDENT_TAET)
+            & (pd.to_numeric(members["HP_ALTER"], errors="coerce") >= HH_STUDENT_MIN_AGE_YEARS))
+
+
+def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame, *,
+                      student_key: bool = False) -> pd.DataFrame:
+    """Household match features. With ``student_key`` the column :data:`HH_STUDENT_KEY` is added: True when a
+    member has ``P_TAET == STUDENT_TAET`` and is at least :data:`HH_STUDENT_MIN_AGE_YEARS` old. Without it the
+    frame is exactly today's (``persons`` then needs no ``P_TAET`` here)."""
     has_lic = persons.assign(_lic=persons["P_FSCHEIN"].eq(1)).groupby("H_ID")["_lic"].any()
     has_pt = persons.assign(
         _pt=persons["P_FKARTE"].isin(PT_SUBSCRIPTION_FKARTE)
@@ -46,10 +65,14 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame) -> pd.Dat
     feats["any_license"] = has_lic.reindex(feats.index).fillna(False).to_numpy()
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
     feats["H_GEW"] = households.set_index("H_ID")["H_GEW"].reindex(feats.index).to_numpy()
+    if student_key:
+        has_student = persons.assign(_student=_is_adult_student(persons)).groupby("H_ID")["_student"].any()
+        feats[HH_STUDENT_KEY] = has_student.reindex(feats.index).fillna(False).to_numpy(dtype=bool)
     return feats
 
 
-def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_key=None):
+def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_key=None,
+                    student_key: bool = False):
     """Find a weekday household of EQUAL size AND EQUAL RegioStaR (the hard keys),
     matching as many soft keys as possible (drop the lowest-priority soft key
     first). Returns ``(matched_H_ID, relaxation_level)`` or ``(None, None)`` if no
@@ -62,7 +85,23 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
     (the dominant cost over tens of thousands of weekend households). The grouped
     subframe preserves ``weekday_feats``'s row order and ``weighted_choice`` draws
     over ``sorted(ids)``, so the result is BYTE-IDENTICAL to the boolean-mask path.
+
+    ``student_key`` (A1, ADR-0211; needs :data:`HH_STUDENT_KEY` in both feature frames, see
+    :func:`build_hh_features`): a target household WITH a student (``target_feats[HH_STUDENT_KEY]``) uses the
+    ladder ``(HH_STUDENT_KEY, *SOFT_KEYS_BY_PRIORITY)``, so a donor household with a student is given up
+    last; its ``level`` then counts up to ``len(SOFT_KEYS_BY_PRIORITY) + 1``. Every other target keeps today's
+    ladder and today's level. Exactly one ``weighted_choice`` per call in every case, so the shared rng stream
+    does not move. With ``student_key=False`` nothing differs from the pre-A1 function.
     """
+    ladder = SOFT_KEYS_BY_PRIORITY
+    if student_key:
+        for frame_name, frame in (("target_feats", target_feats), ("weekday_feats", weekday_feats)):
+            names = frame.index if isinstance(frame, pd.Series) else frame.columns
+            if HH_STUDENT_KEY not in names:
+                raise KeyError(f"match_household: student_key needs the feature {HH_STUDENT_KEY!r} in "
+                               f"{frame_name} (build_hh_features(..., student_key=True))")
+        if bool(target_feats[HH_STUDENT_KEY]):
+            ladder = (HH_STUDENT_KEY,) + SOFT_KEYS_BY_PRIORITY
     if weekday_by_key is not None:
         pool = weekday_by_key.get(
             (target_feats["size"], target_feats["regiostar7"])
@@ -76,19 +115,19 @@ def match_household(target_id, target_feats, weekday_feats, *, rng, weekday_by_k
         ]
         if len(pool) == 0:
             return None, None
-    active = list(SOFT_KEYS_BY_PRIORITY)
+    active = list(ladder)
     while True:
         narrowed = pool
         for key in active:
             narrowed = narrowed[narrowed[key] == target_feats[key]]
         if len(narrowed) > 0:
             ids = sorted(narrowed.index.tolist())
-            level = len(SOFT_KEYS_BY_PRIORITY) - len(active)
+            level = len(ladder) - len(active)
             return weighted_choice(ids, narrowed.loc[ids, "H_GEW"].to_numpy(), rng=rng), level
         if not active:
             ids = sorted(pool.index.tolist())  # size + RegioStaR only
             return (weighted_choice(ids, pool.loc[ids, "H_GEW"].to_numpy(), rng=rng),
-                    len(SOFT_KEYS_BY_PRIORITY))
+                    len(ladder))
         active.pop()  # drop the lowest-priority remaining soft key
 
 
@@ -149,7 +188,8 @@ def age_band_index(ages: pd.Series, edges=AGE_BAND_EDGES) -> np.ndarray:
 
 
 def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
-                  age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False, lift_free_never: bool = False):
+                  age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False, lift_free_never: bool = False,
+                  student_key: bool = False):
     """Greedily pair each target member to a distinct donor member by
     (age band, sex), falling back to age band only, then any free donor.
 
@@ -180,6 +220,17 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     band at all. The age band stays the stronger key: no lift-free donor of another band is
     preferred. Targets of the other class keep the ``passenger_key`` tiers unchanged. Again a
     reordering only: pair count and rng are untouched.
+
+    ``student_key`` (A1, ADR-0211; needs ``P_TAET`` in both member frames): a target member with
+    ``P_TAET == STUDENT_TAET`` aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older (a younger student goes through
+    today's ladder, lead decision 13) is first paired with a free STUDENT donor member: of the same age band and sex,
+    else of the same age band, else any student donor member (the student status outranks sex and age band;
+    each tier runs over all student targets before the next, so a looser pair never takes the donor of an
+    exact one). These pairs are made before the main loop, so an earlier non-student member cannot take the
+    student donor first; a student target without any free student donor, and every non-student member, then
+    goes through the tiers above in the target order as before. A household without a student target is therefore paired
+    exactly as without the flag. Pair count and rng are untouched here too (the pairs are returned in target
+    order).
     """
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="align_members")
     d_band = age_band_index(donor_members["HP_ALTER"], edges=age_band_edges)
@@ -193,7 +244,30 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     if lift_free_never:
         d_lift_free = ~_require_donor_lift(donor_members, what="align_members donor members")
     pairs = []
+    student_pairs = {}
+    if student_key:
+        d_student = donor_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
+        # Only a student aged HH_STUDENT_MIN_AGE_YEARS or older is paired student-first: a younger student counts
+        # only in the person path (lead decision 13) and goes through today's ladder here. A missing age is no
+        # adult (NaN compares False), as in build_hh_features.
+        t_student = _is_adult_student(target_members).to_numpy()
+        # Tier by tier over ALL student targets, so a looser student pair never takes the student donor
+        # an exact one would have used: (age band, sex), then age band, then student status alone.
+        student_tiers = (lambda tpos: (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]),
+                         lambda tpos: d_band == t_band[tpos],
+                         lambda tpos: np.ones(len(donor_members), dtype=bool))
+        for tier in student_tiers:
+            for tpos in np.flatnonzero(t_student):
+                if int(tpos) in student_pairs:
+                    continue
+                cand = np.flatnonzero(~used & d_student & tier(tpos))
+                if len(cand) > 0:
+                    student_pairs[int(tpos)] = int(cand[0])
+                    used[cand[0]] = True
     for tpos in range(len(target_members)):
+        if tpos in student_pairs:
+            pairs.append((tpos, student_pairs[tpos]))
+            continue
         exact = np.flatnonzero(~used & (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]))
         band_only = np.flatnonzero(~used & (d_band == t_band[tpos]))
         any_free = np.flatnonzero(~used)
@@ -222,8 +296,9 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     """``(n_pairs, n_crossed_coarse, n_in_split_child_band, n_crossed_fine_child_band, n_any_free)``.
 
     The fifth value, ``n_any_free``, is the number of pairs whose donor sits in a different band
-    of the ACTIVE ``age_band_edges`` (pass the edges given to :func:`align_members`): exactly the
-    pairs that took the ``any_free`` tier. Ages are read as floats (a missing age is NaN and
+    of the ACTIVE ``age_band_edges`` (pass the edges given to :func:`align_members`): the
+    pairs that took the ``any_free`` tier and, with ``student_key``, the student-first pairs across
+    age bands (the status outranks the band). Ages are read as floats (a missing age is NaN and
     counts as a crossing, as it matches no donor band in :func:`align_members`), so a nullable
     ``Int64`` age column with ``pd.NA`` does not raise.
 
@@ -233,8 +308,8 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     counted per pair AFTER the pairing, from the returned positions, so the pairing itself
     (and its rng-free determinism) is untouched. Every tier before ``any_free`` (the
     ``passenger_key`` and ``lift_free_never`` reorderings included) stays inside the target's
-    band of the ACTIVE edge set, so a crossing of the active bands is exactly an ``any_free``
-    pair. A crossing of the inactive bands is not: with the coarse edges active, a fine
+    band of the ACTIVE edge set, so without ``student_key`` a crossing of the active bands is exactly an
+    ``any_free`` pair (the student tiers of ``student_key`` can cross bands too). A crossing of the inactive bands is not: with the coarse edges active, a fine
     crossing can also come from the in-band tiers (two children of the same coarse band).
 
     Both band systems are measured in BOTH arms of the ``fine_child_age_bands`` flag, as in
@@ -316,15 +391,19 @@ def _require_lift_free_refines_class_key(passenger_key: bool, lift_free_never: b
 
 
 def _person_keys(persons: pd.DataFrame, *, age_band_edges=AGE_BAND_EDGES,
-                 passenger_key: bool = False, lift_free_donors: bool = False) -> pd.DataFrame:
+                 passenger_key: bool = False, lift_free_donors: bool = False,
+                 student_key: bool = False) -> pd.DataFrame:
     """Match keys of ``persons``. With ``lift_free_donors`` (donor side of ADR-0166) a donor counts as "never"
     only when its handed-over diary is also lift-free, so a "never" target's exact cell holds only consistent
-    donors; a "never" donor with a lift joins the other class. Targets are always keyed without it."""
+    donors; a "never" donor with a lift joins the other class. Targets are always keyed without it.
+    With ``student_key`` (A1, ADR-0211) the column :data:`STUDENT_KEY` (``P_TAET == STUDENT_TAET``) is added."""
     keys = _base_person_keys(persons, age_band_edges=age_band_edges)
     if passenger_key:
         keys[PASSENGER_KEY] = _require_passenger_class(persons, what="match_person")
         if lift_free_donors:
             keys[PASSENGER_KEY] &= ~_require_donor_lift(persons, what="match_person")
+    if student_key:
+        keys[STUDENT_KEY] = persons["P_TAET"].eq(STUDENT_TAET).to_numpy()
     return keys
 
 
@@ -360,7 +439,14 @@ def _scalar_age_band(age, edges):
     return position - 1
 
 
-def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key: bool) -> dict:
+def _is_student_row(target_row: pd.Series) -> bool:
+    """True when the row's ``P_TAET`` is :data:`STUDENT_TAET` (a missing code is not a student)."""
+    code = target_row["P_TAET"]
+    return False if pd.isna(code) else bool(code == STUDENT_TAET)
+
+
+def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key: bool,
+                        student_key: bool = False) -> dict:
     """Match keys of ONE target row, value-equal to ``_person_keys(pd.DataFrame([target_row])).iloc[0]``.
 
     The prepared path of :func:`match_person` reads the keys only for the candidate-cell
@@ -386,6 +472,8 @@ def _target_person_keys(target_row: pd.Series, *, age_band_edges, passenger_key:
             raise KeyError(f"match_person: {_P_VAUTO_MISSING}")
         p_vauto = pd.to_numeric(target_row["P_VAUTO"], errors="coerce")
         keys[PASSENGER_KEY] = False if pd.isna(p_vauto) else bool(p_vauto == P_VAUTO_NEVER)
+    if student_key:
+        keys[STUDENT_KEY] = _is_student_row(target_row)
     return keys
 
 
@@ -408,12 +496,15 @@ class PreparedPersonPool:
     _snapshot_columns: dict = field(repr=False)
     passenger_key: bool = False
     lift_free_never: bool = False
+    student_key: bool = False
+    #: ``(H_ID, P_ID) -> donor has P_TAET == STUDENT_TAET``; filled only with ``student_key``.
+    _student_by_item: dict = field(default_factory=dict, repr=False)
     _candidate_indexes: dict = field(default_factory=dict, repr=False)
     #: ``(match_keys, target_values) -> PreparedWeightedChoice | None`` per candidate key cell.
     _cell_choices: dict = field(default_factory=dict, repr=False)
 
     def validate(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
-                 lift_free_never: bool = False) -> None:
+                 lift_free_never: bool = False, student_key: bool = False) -> None:
         """Reject a prepared pool whose source, content, age bands or passenger key setting changed.
 
         The content check compares every snapshot column and is O(pool size), so
@@ -422,7 +513,7 @@ class PreparedPersonPool:
         pool runs this full check before and after its loop (the rule and its reason:
         ``docs/codebase/notes/performance-equivalence.md``).
         """
-        self.check_binding(weekday_persons, age_band_edges, passenger_key, lift_free_never)
+        self.check_binding(weekday_persons, age_band_edges, passenger_key, lift_free_never, student_key)
         current_columns = tuple(c for c in _PERSON_POOL_COLUMNS if c in weekday_persons.columns)
         if current_columns != tuple(self._snapshot_columns):
             raise ValueError(
@@ -436,7 +527,7 @@ class PreparedPersonPool:
                 "match_person: weekday person pool changed since preparation")
 
     def check_binding(self, weekday_persons: pd.DataFrame, age_band_edges, passenger_key: bool = False,
-                      lift_free_never: bool = False) -> None:
+                      lift_free_never: bool = False, student_key: bool = False) -> None:
         """O(1) per-call check: same source object, age bands and passenger key settings."""
         if weekday_persons is not self._source:
             raise ValueError(
@@ -453,6 +544,10 @@ class PreparedPersonPool:
             raise ValueError(
                 f"match_person: prepared_pool was prepared with lift_free_never={self.lift_free_never}, "
                 f"the call requests lift_free_never={bool(lift_free_never)}")
+        if bool(student_key) != self.student_key:
+            raise ValueError(
+                f"match_person: prepared_pool was prepared with student_key={self.student_key}, "
+                f"the call requests student_key={bool(student_key)}")
 
     def candidate_positions(self, target_keys: pd.Series, match_keys: tuple) -> tuple:
         """Return original row positions matching one relaxation-level key set."""
@@ -499,13 +594,13 @@ class PreparedPersonPool:
 
 
 def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passenger_key: bool = False,
-                        lift_free_never: bool = False):
+                        lift_free_never: bool = False, student_key: bool = False):
     """Prepare invariant donor features for repeated :func:`match_person` calls."""
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="prepare_person_pool")
     edges = tuple(_validate_age_band_edges(
         age_band_edges, what="prepare_person_pool"))
     keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key,
-                        lift_free_donors=lift_free_never)
+                        lift_free_donors=lift_free_never, student_key=student_key)
     if len(weekday_persons):
         items = tuple(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]))
         weights = weekday_persons["P_GEW"].to_numpy(copy=True)
@@ -528,17 +623,27 @@ def prepare_person_pool(weekday_persons, *, age_band_edges=AGE_BAND_EDGES, passe
         _snapshot_columns=snapshot_columns,
         passenger_key=bool(passenger_key),
         lift_free_never=bool(lift_free_never),
+        student_key=bool(student_key),
+        _student_by_item=(dict(zip(items, keys[STUDENT_KEY].tolist())) if student_key else {}),
     )
+
+
+def _with_student_flag(h, p, level, student_key: bool, student_target: bool, student_by_item: dict):
+    """The return value of :func:`match_person`: three values with the student key off (today's), four
+    with it on (``donor_is_student`` is None unless the target is a student)."""
+    if not student_key:
+        return h, p, level
+    return h, p, level, (bool(student_by_item[(h, p)]) if student_target else None)
 
 
 def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                  age_band_edges=AGE_BAND_EDGES, prepared_pool=None, passenger_key: bool = False,
-                 lift_free_never: bool = False):
+                 lift_free_never: bool = False, student_key: bool = False):
     """Draw ONE weekday donor person for ``target_row``, P_GEW-weighted.
 
     Matches on as many of ``PERSON_KEYS_BY_PRIORITY`` as possible, dropping the
     lowest-priority remaining SOFT key when no donor qualifies. Returns
-    ``(H_ID, P_ID, relaxation_level)``.
+    ``(H_ID, P_ID, relaxation_level)`` -- with ``student_key`` a fourth value, see below.
 
     ``hard_keys`` names keys that are NEVER relaxed (default: none). They are
     required on every candidate pool, and the ladder pops only the soft keys, in
@@ -581,8 +686,19 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
     without a car-passenger option; a "never" donor with a lift moves to the other class. Same key
     position and the same one draw per call.
 
+    ``student_key`` (A1, ADR-0211): for a STUDENT target (``P_TAET == STUDENT_TAET``, no age bound) the ladder
+    gets the key :data:`STUDENT_KEY` (``P_TAET == STUDENT_TAET`` on the donor) IN FRONT, so a student donor is
+    given up last; its ``level`` then counts up to one more relaxation. A target that is not a student keeps
+    today's ladder, and exactly one draw is made per call for every target, so the shared rng stream does not
+    move and the key only changes WHICH donor a student target gets. The hard employment key is untouched
+    (a student is never employed, so the two never conflict). With the key on the return value is
+    ``(H_ID, P_ID, level, donor_is_student)``: ``donor_is_student`` is True/False for a student target
+    (primary path = a student donor, fallback = a non-student donor, counted by the callers) and ``None`` for
+    any other target. With the key off the return value is the three-value tuple of today, so every existing
+    caller and test is unchanged.
+
     BYTE-IDENTITY (mandatory): with the defaults ``hard_keys=frozenset()``,
-    ``passenger_key=False`` and
+    ``passenger_key=False``, ``student_key=False`` and
     ``age_band_edges=AGE_BAND_EDGES`` this function takes the same branches, builds
     the same pools in the same order and
     makes the same number of ``weighted_choice`` calls (exactly one, whichever
@@ -598,6 +714,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
         raise ValueError("empty weekday person pool; cannot match weekend person")
     _require_lift_free_refines_class_key(passenger_key, lift_free_never, what="match_person")
     keys_by_priority = PERSON_KEYS_WITH_PASSENGER if passenger_key else PERSON_KEYS_BY_PRIORITY
+    student_target = bool(student_key) and _is_student_row(target_row)
+    if student_target:
+        keys_by_priority = (STUDENT_KEY,) + keys_by_priority
     if hard_keys:
         # A misspelled key would otherwise be silently dropped by the comprehensions
         # below, leaving the caller believing a boundary is guarded when it is not.
@@ -614,8 +733,9 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             raise TypeError("match_person: prepared_pool must be a PreparedPersonPool")
         # O(1) binding check only; the O(pool) content check is the caller's, once before and
         # once after its loop (PreparedPersonPool.validate).
-        prepared_pool.check_binding(weekday_persons, edges, passenger_key, lift_free_never)
-        tkeys = _target_person_keys(target_row, age_band_edges=edges, passenger_key=passenger_key)
+        prepared_pool.check_binding(weekday_persons, edges, passenger_key, lift_free_never, student_key)
+        tkeys = _target_person_keys(target_row, age_band_edges=edges, passenger_key=passenger_key,
+                                    student_key=student_key)
         active = list(soft)
         while True:
             match_keys = tuple(
@@ -623,7 +743,8 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             choice = prepared_pool.cell_choice(tkeys, match_keys)
             if choice is not None:
                 h, p = draw_prepared_choice(choice, rng=rng)
-                return h, p, len(soft) - len(active)
+                return _with_student_flag(h, p, len(soft) - len(active), student_key, student_target,
+                                          prepared_pool._student_by_item)
             if not active:
                 h, p = draw_prepared_choice(prepared_pool.cell_choice(tkeys, ()), rng=rng)
                 hard_note = f" and no donor shares the hard key(s) {hard}" if hard else ""
@@ -631,13 +752,16 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                     "[weekend_plan_match] match_person hit the whole-pool size-only "
                     "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
                     hard_note, h, p)
-                return h, p, len(soft)
+                return _with_student_flag(h, p, len(soft), student_key, student_target,
+                                          prepared_pool._student_by_item)
             active.pop()
 
     keys = _person_keys(weekday_persons, age_band_edges=edges, passenger_key=passenger_key,
-                        lift_free_donors=lift_free_never)
+                        lift_free_donors=lift_free_never, student_key=student_key)
     tkeys = _person_keys(pd.DataFrame([target_row]), age_band_edges=edges,
-                         passenger_key=passenger_key).iloc[0]
+                         passenger_key=passenger_key, student_key=student_key).iloc[0]
+    student_by_item = (dict(zip(zip(weekday_persons["H_ID"], weekday_persons["P_ID"]),
+                                keys[STUDENT_KEY].tolist())) if student_target else {})
     hard_mask = pd.Series(True, index=weekday_persons.index)
     for key in hard:
         hard_mask &= keys[key] == tkeys[key]
@@ -651,7 +775,7 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
             level = len(soft) - len(active)
             h, p = weighted_choice(list(zip(pool["H_ID"], pool["P_ID"])),
                                    pool["P_GEW"].to_numpy(), rng=rng)
-            return h, p, level
+            return _with_student_flag(h, p, level, student_key, student_target, student_by_item)
         if not active:
             # Reached only when hard_mask excludes EVERY donor: with no hard keys an empty
             # `active` leaves the mask unrestricted, so the branch above returns first.
@@ -666,8 +790,63 @@ def match_person(target_row, weekday_persons, *, rng, hard_keys=frozenset(),
                 "[weekend_plan_match] match_person hit the whole-pool size-only "
                 "fallback (all soft person keys dropped%s); drew weekday (%s, %s).",
                 hard_note, h, p)
-            return h, p, len(soft)
+            return _with_student_flag(h, p, len(soft), student_key, student_target, student_by_item)
         active.pop()
+
+
+@dataclass(frozen=True)
+class StudentMatchCounts:
+    """Primary-versus-fallback counts of one student match path (A1, ADR-0211).
+
+    Primary path = the student target got a STUDENT donor; fallback = it was relaxed to a non-student donor
+    (the student key is the last key the ladder gives up, so a fallback means the pool or the donor household
+    offered no student at all). ``n_student_targets`` counts every student target re-drawn on the path
+    (``P_TAET == STUDENT_TAET``, no age bound)."""
+
+    n_student_targets: int = 0
+    n_student_donor: int = 0
+    n_non_student_donor: int = 0
+
+    def __post_init__(self):
+        if self.n_student_donor + self.n_non_student_donor != self.n_student_targets:
+            raise ValueError(f"StudentMatchCounts: {self.n_student_donor} + {self.n_non_student_donor} "
+                             f"does not add up to {self.n_student_targets} student targets")
+
+    @property
+    def student_donor_share(self):
+        """Share of student targets with a student donor; ``None`` when the path had no student target."""
+        return self.n_student_donor / self.n_student_targets if self.n_student_targets else None
+
+    @property
+    def fallback_share(self):
+        """Share relaxed to a non-student donor; ``None`` when the path had no student target."""
+        return self.n_non_student_donor / self.n_student_targets if self.n_student_targets else None
+
+
+def log_student_match_counts(logger_, path: str, counts: StudentMatchCounts, *, warn_share=None) -> None:
+    """Log the primary-versus-fallback rate of one student match path as ``[<path>] primary P/N, fallback F``.
+
+    ``warn_share`` is the share of non-student donors above which the line is a WARNING. ``None`` (the
+    default until the one-batch smoke has measured a defensible value) means no bound is set, and the line
+    says so; the bound is never invented here. Whatever the bound, a path on which students were re-drawn
+    and NONE got a student donor is always a WARNING: a 100 % fallback means the primary method is broken
+    (an empty student pool, a wrong key), not that the ladder had to relax (CLAUDE.md "Fallback
+    transparency", item 2)."""
+    if counts.n_student_targets > 0 and counts.n_student_donor == 0:
+        bound = "not set" if warn_share is None else f"{float(warn_share):.3f}"
+        logger_.warning(
+            "[%s] primary 0/%d (0.0%%), fallback %d (100.0%%): no student target got a student donor, so "
+            "the primary method is not working on this path (empty student donor pool?); always a warning, "
+            "whatever the bound (warn bound %s)", path, counts.n_student_targets, counts.n_student_targets, bound)
+    elif warn_share is None:
+        log_fallback_rate(logger_, path, counts.n_non_student_donor, counts.n_student_targets,
+                          threshold=1.0,
+                          what="student targets relaxed to a non-student donor; warn bound not set "
+                               "(donor_match_student_fallback_warn_share is None): report only")
+    else:
+        log_fallback_rate(logger_, path, counts.n_non_student_donor, counts.n_student_targets,
+                          threshold=float(warn_share),
+                          what="student targets relaxed to a non-student donor")
 
 
 @dataclass(frozen=True)
@@ -697,14 +876,31 @@ class WeekendMatchReport:
     #: FINE edges in BOTH arms (same meaning as ``DiaryMatchReport.n_crossed_fine_child_age_band``).
     #: Run evidence for the size of the effect: ``docs/runs/fine-child-band-fallback-smoke-2026-11-11.yml``.
     n_crossed_fine_child_age_band: int = 0
-    #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: exactly the pairs that
-    #: took the ``any_free`` tier of :func:`align_members`.
+    #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: the pairs that took the
+    #: ``any_free`` tier of :func:`align_members`, plus, with ``student_key``, the student-first pairs of an
+    #: adult student with a student donor of another band (the student status outranks the age band there).
+    #: The name is kept for the stable log key.
     n_any_free_pairs: int = 0
+    #: A1 (ADR-0211), only with ``student_key``: :class:`StudentMatchCounts` per match path -- the keys are
+    #: ``household_pairs`` (student members of a household-aligned pair), ``person_fallback`` (surplus members
+    #: and unmatched households) and ``mixed_person_sweep``. ``None`` with the key off.
+    student_counts: "dict | None" = None
+    #: A1 (ADR-0211), only with ``student_key``: the relaxation levels of the households that matched on the
+    #: STUDENT ladder, i.e. a household with a student aged 18 or older (``(has_student, *SOFT_KEYS_BY_PRIORITY)``,
+    #: so the level runs up to ``len(SOFT_KEYS_BY_PRIORITY) + 1``). :attr:`hh_match_level_counts` then holds only the
+    #: other households, whose ladder and level meaning are those of the key-off build, so the two never mix. ``None``
+    #: with the key off (every household is in ``hh_match_level_counts``).
+    student_hh_match_level_counts: "dict | None" = None
+
+
+#: The match paths of :attr:`WeekendMatchReport.student_counts`.
+STUDENT_PATHS_WEEKEND = ("household_pairs", "person_fallback", "mixed_person_sweep")
 
 
 def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_ID",
                                   fine_child_age_bands=True, precompute_matching=True,
-                                  passenger_key=False, car_passenger_diaries=None):
+                                  passenger_key=False, car_passenger_diaries=None,
+                                  student_key=False, student_fallback_warn_share=None):
     """Give every weekend-reporting donor a matched WEEKDAY plan source.
 
     ``fine_child_age_bands`` (default True, issue #386): band 6-13-year-olds finely
@@ -730,6 +926,17 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     handed-over diary -- the donor row's CURRENT plan source, which for a member-completion filler
     is its mirror -- is lift-free, in the member alignment and in every person-level match. The
     lift flag lives on an internal column that the returned frame does not carry.
+
+    ``student_key`` (default False, A1 of the student design, ADR-0211): a household with a student aged 18
+    or older prefers a donor household with one (:func:`match_household`), student members are paired with
+    student donor members first (:func:`align_members`) and every person-level match of a student target
+    prefers a student donor (:func:`match_person`). Every call still draws exactly once, so the key changes
+    WHICH donor is drawn for the student targets, never the draw sequence; with it off the function is
+    byte-identical to the one before A1 (frames, trace columns and report). With it on the trace gains
+    ``target_is_student`` and ``donor_is_student`` (the latter only for a student re-drawn in this pass),
+    the report gains :attr:`WeekendMatchReport.student_counts`, and each path logs its primary (student
+    donor) versus fallback (non-student donor) rate, a WARNING above ``student_fallback_warn_share``
+    (``None`` = report only).
     """
     from braunschweig.popsim import day_type as _dt
     from braunschweig.popsim import seed as _seed
@@ -755,7 +962,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             persons, household_id_col=household_id, age_col="HP_ALTER")
         households = households.join(
             hh_type5.rename("hh_type5"), on=household_id)
-    feats = build_hh_features(households, persons)
+    feats = build_hh_features(households, persons, student_key=student_key)
 
     weekday_ids = hh_dt.index[hh_dt == "weekday"]
     weekend_ids = hh_dt.index[hh_dt == "weekend"]
@@ -779,7 +986,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         if key not in prepared_pools:
             prepared_pools[key] = prepare_person_pool(
                 weekday_pool, age_band_edges=edges, passenger_key=passenger_key,
-                lift_free_never=lift_free_never)
+                lift_free_never=lift_free_never, student_key=student_key)
         return prepared_pools[key]
 
     persons_by_hh = dict(tuple(persons.groupby(household_id, sort=False)))
@@ -793,6 +1000,20 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_remapped = 0
     level_counts: dict = {}
     band_totals = np.zeros(5, dtype=int)  # pairs, coarse crossed, in split band, fine crossed, any_free
+    # A1: student targets re-drawn per path -> [targets, with a student donor]; only filled with student_key.
+    student_totals = {path: [0, 0] for path in STUDENT_PATHS_WEEKEND}
+    target_is_student = (persons["P_TAET"].eq(STUDENT_TAET).to_numpy() if student_key
+                         else np.zeros(len(persons), dtype=bool))
+    donor_is_student = pd.Series(pd.NA, index=persons.index, dtype="boolean")
+    # A1: rows of a household matched on the student ladder (its levels have another meaning, see the report).
+    student_ladder = pd.Series(False, index=persons.index)
+    student_level_counts: dict = {}
+
+    def count_student(path, ridx, donor_student):
+        """Record one re-drawn student target on ``path`` (``donor_student`` is the donor's student status)."""
+        student_totals[path][0] += 1
+        student_totals[path][1] += int(bool(donor_student))
+        donor_is_student[ridx] = bool(donor_student)
 
     # Pre-group the weekday pool on the two HARD match keys (size, regiostar7) ONCE,
     # so match_household does an O(1) lookup per weekend household instead of
@@ -814,23 +1035,30 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
             )
         target_members = persons_by_hh[hid].reset_index()  # keeps original index in 'index'
         matched_id, level = match_household(
-            hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key)
+            hid, feats.loc[hid], weekday_feats, rng=rng, weekday_by_key=weekday_by_key,
+            student_key=student_key)
+        uses_student_ladder = bool(student_key and feats.loc[hid, HH_STUDENT_KEY])
         if matched_id is not None:
             donor_members = persons_by_hh[matched_id].reset_index(drop=True)
             paired = align_members(target_members, donor_members,
                                    age_band_edges=age_band_edges, passenger_key=passenger_key,
-                                   lift_free_never=lift_free_never)
+                                   lift_free_never=lift_free_never, student_key=student_key)
             band_totals += count_pair_band_crossings(
                 target_members, donor_members, paired, age_band_edges=age_band_edges)
+            target_adult_student = (_is_adult_student(target_members).to_numpy() if student_key else None)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
                 persons.loc[ridx, "source_P_ID"] = donor_members.loc[dpos, "source_P_ID"]
                 resolution[ridx] = "hh_match"
                 match_level[ridx] = level
+                student_ladder[ridx] = uses_student_ladder
                 n_remapped += 1
+                if student_key and target_adult_student[tpos]:
+                    count_student("household_pairs", ridx, donor_members.loc[dpos, "P_TAET"] == STUDENT_TAET)
             n_hh_matched += 1
-            level_counts[level] = level_counts.get(level, 0) + 1
+            target_counts = student_level_counts if uses_student_ladder else level_counts
+            target_counts[level] = target_counts.get(level, 0) + 1
             # An UNFILLABLE donor keeps H_GR larger than its real person count, so
             # align_members can run out of donor members and leave surplus weekend
             # persons unpaired. They would otherwise silently keep their WEEKEND
@@ -842,28 +1070,32 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                     continue
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
-                                              age_band_edges=age_band_edges,
-                                              prepared_pool=prepared_for(age_band_edges),
-                                              passenger_key=passenger_key, lift_free_never=lift_free_never)
+                sh, sp, plevel, *student_result = match_person(
+                    trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
+                    prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
+                    lift_free_never=lift_free_never, student_key=student_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
                 match_level[ridx] = plevel
                 n_remapped += 1
+                if student_result and student_result[0] is not None:
+                    count_student("person_fallback", ridx, student_result[0])
         else:
             for tpos in range(len(target_members)):
                 ridx = target_members.loc[tpos, "index"]
                 trow = target_members.loc[tpos]
-                sh, sp, plevel = match_person(
+                sh, sp, plevel, *student_result = match_person(
                     trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
                     prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
-                    lift_free_never=lift_free_never)
+                    lift_free_never=lift_free_never, student_key=student_key)
                 persons.loc[ridx, "source_H_ID"] = sh
                 persons.loc[ridx, "source_P_ID"] = sp
                 resolution[ridx] = "person_fallback"
                 match_level[ridx] = plevel
                 n_remapped += 1
+                if student_result and student_result[0] is not None:
+                    count_student("person_fallback", ridx, student_result[0])
             n_person_fallback += 1
 
     # A2: Safety-net sweep: resolve every person's plan-source to its donor's kernwo;
@@ -895,21 +1127,23 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     n_swept = 0
     for ridx in sorted(persons.index[sweep_mask].tolist()):  # deterministic order
         trow = persons.loc[ridx]
-        sh, sp, plevel = match_person(trow, weekday_pool, rng=rng,
-                                      age_band_edges=age_band_edges,
-                                      prepared_pool=prepared_for(age_band_edges),
-                                      passenger_key=passenger_key, lift_free_never=lift_free_never)
+        sh, sp, plevel, *student_result = match_person(
+            trow, weekday_pool, rng=rng, age_band_edges=age_band_edges,
+            prepared_pool=prepared_for(age_band_edges), passenger_key=passenger_key,
+            lift_free_never=lift_free_never, student_key=student_key)
         persons.loc[ridx, "source_H_ID"] = sh
         persons.loc[ridx, "source_P_ID"] = sp
         resolution[ridx] = "mixed_person_sweep"
         match_level[ridx] = plevel
         n_remapped += 1
         n_swept += 1
+        if student_result and student_result[0] is not None:
+            count_student("mixed_person_sweep", ridx, student_result[0])
     # The full content check of the prepared pool, once after all match_person calls (it was
     # prepared on first use, so its preparation is the "before" check); match_person itself
     # checks only the O(1) binding per call.
     for edges, prepared in prepared_pools.items():
-        prepared.validate(weekday_pool, edges, passenger_key, lift_free_never)
+        prepared.validate(weekday_pool, edges, passenger_key, lift_free_never, student_key)
 
     if lift_free_never:
         persons = persons[output_columns]
@@ -923,6 +1157,14 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         "plan_source_H_ID": persons["source_H_ID"].to_numpy(),
         "plan_source_P_ID": persons["source_P_ID"].to_numpy(),
     })
+    student_counts = None
+    if student_key:
+        trace["target_is_student"] = target_is_student
+        trace["donor_is_student"] = donor_is_student.to_numpy()
+        trace["hh_student_ladder"] = student_ladder.to_numpy()
+        student_counts = {path: StudentMatchCounts(n_student_targets=t, n_student_donor=d,
+                                                   n_non_student_donor=t - d)
+                          for path, (t, d) in student_totals.items()}
     report = WeekendMatchReport(
         n_weekend_households=len(weekend_ids),
         n_hh_matched=n_hh_matched,
@@ -935,12 +1177,18 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         n_paired_in_split_child_band=int(band_totals[2]),
         n_crossed_fine_child_age_band=int(band_totals[3]),
         n_any_free_pairs=int(band_totals[4]),
+        student_counts=student_counts,
+        student_hh_match_level_counts=student_level_counts if student_key else None,
     )
+    for path, counts in (student_counts or {}).items():
+        log_student_match_counts(logger, f"weekend_plan_match.student_donor.{path}", counts,
+                                 warn_share=student_fallback_warn_share)
     log_fallback_rate(
         logger, "weekend_plan_match.align_members_any_free", report.n_any_free_pairs,
         report.n_paired_members,
-        what="household-aligned member pairs took the any-age third tier (donor in another band of the "
-             "active age_band_edges; person-level remaps are not counted)")
+        what="household-aligned member pairs whose donor sits in another band of the active age_band_edges "
+             "(the any-age third tier, and with student_key also the student tiers that pair across age "
+             "bands; person-level remaps are not counted)")
     logger.info(
         "[weekend_plan_match] %d weekend households: %d HH-matched, %d via "
         "person-fallback; %d persons remapped, %d swept by per-person safety net. "
@@ -949,6 +1197,10 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
         report.n_person_fallback_households, report.n_persons_remapped,
         report.n_swept, report.hh_match_level_counts,
     )
+    if student_key:
+        logger.info("[weekend_plan_match] HH match-level counts of the student households (student ladder, one "
+                    "key longer, levels not comparable with the line above): %s",
+                    report.student_hh_match_level_counts)
     # No silent fallback (audit package D): align_members' third tier pairs a member with a donor of
     # ANY age once no same-age-band donor is free. Reported as rates, mirroring DiaryMatchReport; no
     # threshold is asserted because the age band is a preference, not a hard key.

@@ -1,0 +1,152 @@
+{
+  "clone": "~/i678_replay3/eqasim-bs",
+  "jar": "~/i678_replay3/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar",
+  "threads": 32,
+  "xmx": "56G",
+  "loop_settings": {
+    "isolate_outside_trips": false,
+    "max_tour_length": 11
+  },
+  "initial_settings": {
+    "isolate_outside_trips": true,
+    "max_tour_length": 11
+  },
+  "lift_all_modes": true,
+  "max_share_other_modes": 0.002,
+  "excluded_subpopulations": [
+    "incommuter",
+    "student_incommuter",
+    "freight"
+  ],
+  "steps": {
+    "jar_check": {
+      "seconds": 34.4,
+      "persons_after": 1261590
+    },
+    "mode_choice_reach_apply": {
+      "changes": {
+        "maximumLength": [
+          "6",
+          "11"
+        ]
+      },
+      "seconds": 32.8,
+      "persons_after": 1261590
+    },
+    "initial_mode_choice": {
+      "report": {
+        "n_trips": 3919594,
+        "n_trips_mode_changed": 1680926,
+        "share_mode_changed": 0.42885206988274804,
+        "mode_shares_before": {
+          "bicycle": 0.10655516872410765,
+          "car": 0.4009351478750095,
+          "car_passenger": 0.11341684878586915,
+          "outside": 0.04818279648351334,
+          "pt": 0.0661956314863223,
+          "walk": 0.26471440664517804
+        },
+        "mode_shares_after": {
+          "bicycle": 0.0805088486205459,
+          "car": 0.5311440419594479,
+          "car_passenger": 0.11620871957656839,
+          "outside": 0.04818279648351334,
+          "pt": 0.05918419101570214,
+          "walk": 0.16477140234422238
+        },
+        "persons_before": 1261590,
+        "persons_after": 1261590,
+        "population_file": "braunschweig_100pct_prod20261031_population.xml.gz",
+        "java_wall_time_s": 2592.723700982984,
+        "travel_times": "free_flow",
+        "runner": "org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice",
+        "configurator": "org.eqasim.braunschweig.BraunschweigConfigurator",
+        "excluded_subpopulations": [
+          "incommuter",
+          "student_incommuter",
+          "freight"
+        ],
+        "config_file": "braunschweig_100pct_prod20261031_config_initial_mode_choice.xml",
+        "reach": {
+          "isolate_outside_trips": true,
+          "max_tour_length": 11
+        }
+      },
+      "seconds": 2773.8,
+      "persons_after": 1261590
+    },
+    "frozen_pt_walk_lift": {
+      "report": {
+        "n_persons": 1205226,
+        "n_persons_without_legs": 183533,
+        "n_resident_trips": 3919594,
+        "n_unreached_trips": 702487,
+        "n_unreached_by_reason": {
+          "fixed_border": 698210,
+          "fixed_vehicle": 0,
+          "fixed_length": 4277
+        },
+        "n_pt_trips_frozen": 45216,
+        "n_pt_as_walk_frozen": 4076,
+        "n_lifted": 1212,
+        "n_lifted_stamped": 1212,
+        "n_lifted_routing_mode_only": 0,
+        "lifted_by_distance_band": {
+          "0_1km": 0,
+          "1_2km": 0,
+          "2_5km": 0,
+          "5_10km": 578,
+          "10km_plus": 634
+        },
+        "n_lifted_by_mode": {
+          "pt": 1212,
+          "walk": 258,
+          "bicycle": 5
+        },
+        "n_lifted_by_reason": {
+          "fixed_border": 1475,
+          "fixed_vehicle": 0,
+          "fixed_length": 0
+        },
+        "n_lifted_with_tour": 2,
+        "share_lifted": 0.02680467091295117,
+        "min_distance_m": 5000.0,
+        "max_share": 0.02,
+        "bound_exceeded": true,
+        "share_lifted_other_modes": 6.709878625184138e-05,
+        "max_share_other_modes": 0.002,
+        "bound_exceeded_other_modes": false,
+        "all_modes": true,
+        "reach": {
+          "isolate_outside_trips": false,
+          "max_tour_length": 11
+        },
+        "walk_max_distance_m": 5000.0,
+        "bicycle_max_distance_m": 30000.0
+      },
+      "seconds": 1185.8,
+      "persons_after": 1261590
+    },
+    "plan_check": {
+      "threshold": {
+        "max_frozen_defect_share": 0.005,
+        "max_frozen_pt_as_walk_share": 0.02,
+        "fail_on_threshold": false,
+        "exceeded": [
+          "share_plans_non_monotonic_large",
+          "share_lifted_frozen_pt_walk"
+        ],
+        "share_lifted_frozen_pt_walk": 0.02680467091295117,
+        "share_lifted_other_modes": 6.709878625184138e-05
+      },
+      "reach": {
+        "isolate_outside_trips": false,
+        "max_tour_length": 11,
+        "lift_all_modes": true
+      },
+      "seconds": 467.4,
+      "persons_after": 1261590
+    }
+  },
+  "persons_input": 1261590
+}

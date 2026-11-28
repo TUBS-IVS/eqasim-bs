@@ -1,0 +1,129 @@
+== option A: stage weights optimum (undecided)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_11723ffacbc646da9420b034dff25700 has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
+INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_a35300244b8c4b009d420d50185ead2e has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
+INFO braunschweig.data.education.student_od_table: [student_od_table] CHE origin cells: primary (listed) 209/816 (25.6%) (institution view 25, Kreis view 95, both views 89), censored 607/816 (74.4%), upper bound 32855 persons, 0 censored without bound
+INFO braunschweig.data.education.student_od_table: [student_od_table] distance-learning cells dropped: 88 cells, 12271 persons
+INFO braunschweig.data.education.student_od_table: [student_od_table] listed choice-set cells from Kreise outside the origin Kreise (not in the table): 42 cells, 7428 persons
+WARNING braunschweig.data.education.student_od_table: [student_od_table] 4 institution(s) listed for a region Kreis are outside the choice set and not distance learning (302 persons): {'Universität Leipzig': 150, 'Martin-Luther-Universität Halle-Wittenberg': 86, 'Universität Hamburg': 37, 'Universität Kassel': 29}
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients: 202 of 10956 communes with ewz == 0 carry no weight (1.8%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients (rule commune_curve, max_commute_km 100): 400 Kreise x 21 destinations, 777 pairs with a non-zero coefficient (9.2%)
+INFO braunschweig.data.education.student_od_table: [student_od_table] T with weights (1.0, 1.0, 0.95): 426 rows {'commuter': 300, 'local': 6, 'mover_to_braunschweig': 0, 'out_commuter': 120}; institutions scaled (primary) 12/16 (75.0%), unscaled 4/16 (25.0%) (no CHE total ['Hochschule für Bildende Künste Braunschweig'], no enrollment ['Otto-von-Guericke-Universität Magdeburg', 'Hochschule Magdeburg-Stendal', 'Hochschule Harz - Hochschule für angewandte Wissenschaften (FH)']); multi-site splits by weight 81/102 (79.4%), by enrollment only 21/102 (20.6%); local sites with a censored own-Kreis cell 0/6 (0.0%) []
+INFO braunschweig.data.education.student_od_table: [student_od_table] movers: share 0, table unchanged
+WARNING braunschweig.data.education.student_od_table: [student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis origin at 1/6 (16.7%) local site(s) ['Hochsch. f. Bildende Künste Braunschweig | 03101000']
+INFO braunschweig.data.education.student_od_table: [student_od_table] balance: 6 local site(s), enrollment 28417.0 = residents 24500.7 + in-commuters 3916.3; out-commuters 5010.5 to 15 surrounding site(s); censored bound 8810.6 persons, of which 1681.6 commuting; 0 censored cell(s) without a bound (0 at local sites, 0 at surrounding sites)
+INFO braunschweig.calibration.student_level_table: [student level table] omega = 0.5388 = 1 - Z / S, Z = 12226.8 (Zensus 12930.0 x MiD ratio 0.9456), S = 26510.2 (students living 29511.3 x SrV share 20-29 0.8983), over the 8 Kreise ['03101', '03102', '03103', '03151', '03153', '03154', '03157', '03158']
+INFO braunschweig.calibration.student_level_table: [student level table] level table: 8 Kreise, 32 cells, 29511.3 students, 15900.3 counted as employed (omega 0.5388; age and sex taken as independent, A9)
+INFO braunschweig.calibration.student_level_table: [student level table] employed pre-check: 32 cells, smallest remainder 3030.5 persons, all >= 0
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO braunschweig.calibration.student_level_table: [student level table] gate: SrV difference evaluable in 8/9 rows (1 without SrV or a positive standard error), beyond 2.0 SrV standard errors in 3 ['03101', '03153', '03157']
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se: True (rows ['03101', '03ZGB'])
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se_20_29: True (rows ['03101', '03ZGB'])
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_od_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_od_table.csv (426 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_by_site.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_by_site.csv (6 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_out_commuters.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_out_commuters.csv (15 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_in_commuters_by_origin.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_balance_in_commuters_by_origin.csv (43 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_level_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_level_table.csv (32 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_level_gate.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_level_gate.csv (9 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_employed_target_precheck.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_a_weights_optimum_undecided\student_employed_target_precheck.csv (32 rows)
+INFO build_student_balance: [build_student_balance] balance done: omega 0.5388, gate_triggered True, gate_triggered_area_consistent True (exit code 0 either way)
+rc=0
+== option B: stage weights_and_movers optimum (undecided)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_3bdb891134e348d48b4f93ad7f14753e has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
+INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_b95fa4a1443043d7ac03e051d08898fe has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
+INFO braunschweig.data.education.student_od_table: [student_od_table] CHE origin cells: primary (listed) 209/816 (25.6%) (institution view 25, Kreis view 95, both views 89), censored 607/816 (74.4%), upper bound 32855 persons, 0 censored without bound
+INFO braunschweig.data.education.student_od_table: [student_od_table] distance-learning cells dropped: 88 cells, 12271 persons
+INFO braunschweig.data.education.student_od_table: [student_od_table] listed choice-set cells from Kreise outside the origin Kreise (not in the table): 42 cells, 7428 persons
+WARNING braunschweig.data.education.student_od_table: [student_od_table] 4 institution(s) listed for a region Kreis are outside the choice set and not distance learning (302 persons): {'Universität Leipzig': 150, 'Martin-Luther-Universität Halle-Wittenberg': 86, 'Universität Hamburg': 37, 'Universität Kassel': 29}
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients: 202 of 10956 communes with ewz == 0 carry no weight (1.8%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients (rule commune_curve, max_commute_km 100): 400 Kreise x 21 destinations, 777 pairs with a non-zero coefficient (9.2%)
+INFO braunschweig.data.education.student_od_table: [student_od_table] T with weights (1.0, 1.0, 0.55): 426 rows {'commuter': 300, 'local': 6, 'mover_to_braunschweig': 0, 'out_commuter': 120}; institutions scaled (primary) 12/16 (75.0%), unscaled 4/16 (25.0%) (no CHE total ['Hochschule für Bildende Künste Braunschweig'], no enrollment ['Otto-von-Guericke-Universität Magdeburg', 'Hochschule Magdeburg-Stendal', 'Hochschule Harz - Hochschule für angewandte Wissenschaften (FH)']); multi-site splits by weight 81/102 (79.4%), by enrollment only 21/102 (20.6%); local sites with a censored own-Kreis cell 0/6 (0.0%) []
+INFO braunschweig.data.education.student_od_table: [student_od_table] movers: share 0.15 of 3340.2 movers at 3 local site(s) in ['03102', '03103', '03158'] moved to 03101 (501.0 persons)
+WARNING braunschweig.data.education.student_od_table: [student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis origin at 1/6 (16.7%) local site(s) ['Hochsch. f. Bildende Künste Braunschweig | 03101000']
+INFO braunschweig.data.education.student_od_table: [student_od_table] balance: 6 local site(s), enrollment 28417.0 = residents 25365.1 + in-commuters 3051.9; out-commuters 3980.7 to 15 surrounding site(s); censored bound 8803.4 persons, of which 1346.6 commuting; 0 censored cell(s) without a bound (0 at local sites, 0 at surrounding sites)
+INFO braunschweig.calibration.student_level_table: [student level table] omega = 0.5362 = 1 - Z / S, Z = 12226.8 (Zensus 12930.0 x MiD ratio 0.9456), S = 26361.6 (students living 29345.8 x SrV share 20-29 0.8983), over the 8 Kreise ['03101', '03102', '03103', '03151', '03153', '03154', '03157', '03158']
+INFO braunschweig.calibration.student_level_table: [student level table] level table: 8 Kreise, 32 cells, 29345.8 students, 15734.9 counted as employed (omega 0.5362; age and sex taken as independent, A9)
+INFO braunschweig.calibration.student_level_table: [student level table] employed pre-check: 32 cells, smallest remainder 3042.5 persons, all >= 0
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO braunschweig.calibration.student_level_table: [student level table] gate: SrV difference evaluable in 8/9 rows (1 without SrV or a positive standard error), beyond 2.0 SrV standard errors in 3 ['03102', '03153', '03157']
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se: False (rows ['03101', '03ZGB'])
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se_20_29: True (rows ['03101', '03ZGB'])
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_od_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_od_table.csv (429 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_by_site.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_by_site.csv (6 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_out_commuters.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_out_commuters.csv (15 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_in_commuters_by_origin.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_balance_in_commuters_by_origin.csv (43 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_level_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_level_table.csv (32 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_level_gate.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_level_gate.csv (9 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_employed_target_precheck.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\option_b_weights_and_movers_optimum_undecided\student_employed_target_precheck.csv (32 rows)
+INFO build_student_balance: [build_student_balance] balance done: omega 0.5362, gate_triggered False, gate_triggered_area_consistent True (exit code 0 either way)
+rc=0
+== comparison: centroid_bands weights_and_movers optimum (undecided, not a candidate)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_96758f3bf9154766a8692cf6834dda74 has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO braunschweig.data.education.student_geometry: [student_geometry] vg250_gem: 10956 land communes (GF == 4), 83577140 inhabitants; dropped 154 non-land rows (GF != 4) of 11110, from <main checkout>\eqasim-data\data\germany\vg250-ew_12-31.utm32s.gpkg.ebenen.zip
+INFO braunschweig.data.education.student_geometry: [student_geometry] site points: commune centroid 18/21 (85.7%), curated coordinates 3 (0 of them overriding a site row)
+<site-packages>\pyogrio\raw.py:198: RuntimeWarning: File /vsimem/pyogrio_eb767f22cc664b6badbd94b2f280eacf has GPKG application_id, but non conformant file extension
+  return ogr_read(
+INFO build_student_balance: [build_student_balance] site Kreis: LSN table (primary) 18/21 (85.7%), VG250 polygon lookup (curated institutions) 3 (14.3%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] reach 100 km of 6 destination(s): 51 Kreise, 859 communes in reach; 202 unpopulated communes (ewz == 0) skipped
+INFO braunschweig.data.education.student_od_table: [student_od_table] CHE origin cells: primary (listed) 209/816 (25.6%) (institution view 25, Kreis view 95, both views 89), censored 607/816 (74.4%), upper bound 32855 persons, 0 censored without bound
+INFO braunschweig.data.education.student_od_table: [student_od_table] distance-learning cells dropped: 88 cells, 12271 persons
+INFO braunschweig.data.education.student_od_table: [student_od_table] listed choice-set cells from Kreise outside the origin Kreise (not in the table): 42 cells, 7428 persons
+WARNING braunschweig.data.education.student_od_table: [student_od_table] 4 institution(s) listed for a region Kreis are outside the choice set and not distance learning (302 persons): {'Universität Leipzig': 150, 'Martin-Luther-Universität Halle-Wittenberg': 86, 'Universität Hamburg': 37, 'Universität Kassel': 29}
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients: 202 of 10956 communes with ewz == 0 carry no weight (1.8%)
+INFO braunschweig.data.education.student_geometry: [student_geometry] pair coefficients (rule centroid_bands, max_commute_km 100): 400 Kreise x 21 destinations, 578 pairs with a non-zero coefficient (6.9%)
+INFO braunschweig.data.education.student_od_table: [student_od_table] T with weights (1.0, 1.0, 0.5): 426 rows {'commuter': 300, 'local': 6, 'mover_to_braunschweig': 0, 'out_commuter': 120}; institutions scaled (primary) 12/16 (75.0%), unscaled 4/16 (25.0%) (no CHE total ['Hochschule für Bildende Künste Braunschweig'], no enrollment ['Otto-von-Guericke-Universität Magdeburg', 'Hochschule Magdeburg-Stendal', 'Hochschule Harz - Hochschule für angewandte Wissenschaften (FH)']); multi-site splits by weight 72/102 (70.6%), by enrollment only 30/102 (29.4%); local sites with a censored own-Kreis cell 0/6 (0.0%) []
+INFO braunschweig.data.education.student_od_table: [student_od_table] movers: share 0.2 of 3342.3 movers at 3 local site(s) in ['03102', '03103', '03158'] moved to 03101 (668.5 persons)
+WARNING braunschweig.data.education.student_od_table: [student_od_table] balance: censored commuter bound capped at enrollment minus the own-Kreis origin at 1/6 (16.7%) local site(s) ['Hochsch. f. Bildende Künste Braunschweig | 03101000']
+INFO braunschweig.data.education.student_od_table: [student_od_table] balance: 6 local site(s), enrollment 28417.0 = residents 25627.5 + in-commuters 2789.5; out-commuters 3665.0 to 15 surrounding site(s); censored bound 8785.3 persons, of which 1561.4 commuting; 0 censored cell(s) without a bound (0 at local sites, 0 at surrounding sites)
+INFO braunschweig.calibration.student_level_table: [student level table] omega = 0.5353 = 1 - Z / S, Z = 12226.8 (Zensus 12930.0 x MiD ratio 0.9456), S = 26313.7 (students living 29292.5 x SrV share 20-29 0.8983), over the 8 Kreise ['03101', '03102', '03103', '03151', '03153', '03154', '03157', '03158']
+INFO braunschweig.calibration.student_level_table: [student level table] level table: 8 Kreise, 32 cells, 29292.5 students, 15681.6 counted as employed (omega 0.5353; age and sex taken as independent, A9)
+INFO braunschweig.calibration.student_level_table: [student level table] employed pre-check: 32 cells, smallest remainder 3051.0 persons, all >= 0
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: enrollment from local sites in 5/8 Kreise, 3 without a local site set to 0 persons ['03151', '03154', '03157']
+INFO braunschweig.calibration.student_control_evidence: [student control evidence] level gate: SrV estimate in 7/8 Kreise, NaN for the unsurveyed ['03103']; pooled row 03ZGB over ['03101', '03102', '03151', '03153', '03154', '03157', '03158']; MiD-to-census ratio Germany 1.7108, Land 03 1.6395
+INFO braunschweig.calibration.student_level_table: [student level table] gate: SrV difference evaluable in 8/9 rows (1 without SrV or a positive standard error), beyond 2.0 SrV standard errors in 3 ['03102', '03153', '03157']
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se: False (rows ['03101', '03ZGB'])
+INFO braunschweig.calibration.student_level_table: [student level table] gate triggered on beyond_two_se_20_29: True (rows ['03101', '03ZGB'])
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_od_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_od_table.csv (429 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_by_site.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_by_site.csv (6 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_out_commuters.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_out_commuters.csv (15 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_in_commuters_by_origin.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_balance_in_commuters_by_origin.csv (43 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_level_table.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_level_table.csv (32 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_level_gate.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_level_gate.csv (9 rows)
+WARNING build_student_balance: overwriting docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_employed_target_precheck.csv
+INFO build_student_balance: wrote docs\runs\artifacts\student-balance-2026-11-26\options\comparison_centroid_bands\student_employed_target_precheck.csv (32 rows)
+INFO build_student_balance: [build_student_balance] balance done: omega 0.5353, gate_triggered False, gate_triggered_area_consistent True (exit code 0 either way)
+rc=0

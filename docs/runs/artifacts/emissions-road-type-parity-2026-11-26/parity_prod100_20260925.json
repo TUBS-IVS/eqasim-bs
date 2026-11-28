@@ -1,0 +1,620 @@
+{
+  "question": "does braunschweig.emissions.road_types give the road type of org.matsim.contrib.emissions.OsmHbefaMapping",
+  "inputs": {
+    "network": {
+      "path": "/home/felix/prod100_20260925/output/matsim_output/output_network.xml.gz",
+      "sha256": "158c9b901ae4388c775573714bf2289307f9c39021470e8f3f0aed08199145ca"
+    },
+    "java_table": {
+      "path": "/home/felix/felix_emissions/parity_2026-11-26/out/java_road_types_prod100_20260925.tsv",
+      "sha256": "9b083991f6a9f3a353a0ede837c3f426a4e25b6acebfce3c88bc942cd9aaef5d"
+    },
+    "jar": {
+      "path": "/home/felix/prod100_20261031/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar",
+      "sha256": "3a03142be2d5b7755de42903a5e98b29bef956c2b2157652ad2523db91938e35"
+    },
+    "class_table": {
+      "path": "osm_hbefa_road_classes.csv",
+      "sha256": "3985e61c8c03b71181fffc3565de80c61d52d00774e410d9631ce2989826e3a8"
+    },
+    "port_modules": {
+      "road_types.py": "3059ea2cf557c6732de4e02c7826e123d6284d8a14924e8b29aa9173d7a2204b",
+      "view.py": "9c9a31847de7ee77c3b6e89bb3349057c8f03e2d9b1d5bca32c20305526b4836"
+    },
+    "repository_commit": "f9b960167607b42806bb4f832adcaf188424d078",
+    "emitting_network_modes": [
+      "car",
+      "truck"
+    ]
+  },
+  "equal_on_every_drivable_link": true,
+  "drivable": {
+    "links": 214807,
+    "equal_links": 214807,
+    "different_links": 0,
+    "links_by_outcome": {
+      "equal_same_road_type": 214807
+    },
+    "length_km_by_outcome": {
+      "equal_same_road_type": 27619.433
+    }
+  },
+  "not_drivable": {
+    "links": 6173,
+    "equal_links": 672,
+    "different_links": 5501,
+    "links_by_outcome": {
+      "different_java_maps_port_refuses": 5501,
+      "equal_both_refuse": 73,
+      "equal_same_road_type": 599
+    },
+    "length_km_by_outcome": {
+      "different_java_maps_port_refuses": 1887.935,
+      "equal_both_refuse": 12.914,
+      "equal_same_road_type": 43.089
+    }
+  },
+  "java_exceptions": {
+    "not_drivable: java.lang.RuntimeException: 'construction' not in hbefa map": 26,
+    "not_drivable: java.lang.RuntimeException: 'pedestrian' not in hbefa map": 21,
+    "not_drivable: java.lang.RuntimeException: 'track' not in hbefa map": 18,
+    "not_drivable: java.lang.RuntimeException: 'busway' not in hbefa map": 8
+  },
+  "port_errors": {},
+  "difference_patterns_total": 49,
+  "difference_patterns": [
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "160.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1231,
+      "example_link_id": "101327"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "100.00",
+      "java": "URB/MW-Nat./100",
+      "port": "__PORT_FALLBACK__",
+      "links": 680,
+      "example_link_id": "107593"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "120.00",
+      "java": "URB/MW-Nat./120",
+      "port": "__PORT_FALLBACK__",
+      "links": 670,
+      "example_link_id": "100254"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "80.00",
+      "java": "URB/Trunk-City/80",
+      "port": "__PORT_FALLBACK__",
+      "links": 558,
+      "example_link_id": "118818"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "200.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 482,
+      "example_link_id": "100659"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "140.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 356,
+      "example_link_id": "113998"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "72.00",
+      "java": "URB/Distr/70",
+      "port": "__PORT_FALLBACK__",
+      "links": 333,
+      "example_link_id": "pt_100237"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "60.00",
+      "java": "URB/Local/60",
+      "port": "__PORT_FALLBACK__",
+      "links": 165,
+      "example_link_id": "111888"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "28.80",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 149,
+      "example_link_id": "pt_102052_pt_215332"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "50.00",
+      "java": "URB/Access/50",
+      "port": "__PORT_FALLBACK__",
+      "links": 103,
+      "example_link_id": "10099"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "250.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 96,
+      "example_link_id": "327467"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "90.00",
+      "java": "URB/Trunk-Nat./90",
+      "port": "__PORT_FALLBACK__",
+      "links": 74,
+      "example_link_id": "111887"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "32.40",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 71,
+      "example_link_id": "pt_106069_pt_348363"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "25.20",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 63,
+      "example_link_id": "pt_101118_pt_258050"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "70.00",
+      "java": "URB/Distr/70",
+      "port": "__PORT_FALLBACK__",
+      "links": 58,
+      "example_link_id": "101235"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "21.60",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 50,
+      "example_link_id": "pt_100237_pt_477473"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "18.00",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 49,
+      "example_link_id": "pt_112498_pt_408726"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "14.40",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 43,
+      "example_link_id": "pt_104917_pt_544921"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "40.00",
+      "java": "URB/Access/40",
+      "port": "__PORT_FALLBACK__",
+      "links": 42,
+      "example_link_id": "230610"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "110.00",
+      "java": "URB/MW-Nat./110",
+      "port": "__PORT_FALLBACK__",
+      "links": 32,
+      "example_link_id": "101329"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "39.60",
+      "java": "URB/Access/40",
+      "port": "__PORT_FALLBACK__",
+      "links": 30,
+      "example_link_id": "pt_100337_66734"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "36.00",
+      "java": "URB/Access/40",
+      "port": "__PORT_FALLBACK__",
+      "links": 25,
+      "example_link_id": "pt_120815_pt_606602"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "10.80",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 21,
+      "example_link_id": "pt_103336_pt_561163"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "3.60",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 16,
+      "example_link_id": "pt_132394_502649"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "30.00",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 15,
+      "example_link_id": "399810"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "130.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 12,
+      "example_link_id": "228324"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "7.20",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 11,
+      "example_link_id": "pt_207798_pt_88984"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "46.80",
+      "java": "URB/Access/50",
+      "port": "__PORT_FALLBACK__",
+      "links": 9,
+      "example_link_id": "pt_192428_682009"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "64.80",
+      "java": "URB/Local/60",
+      "port": "__PORT_FALLBACK__",
+      "links": 8,
+      "example_link_id": "pt_142390_pt_77494"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "43.20",
+      "java": "URB/Access/40",
+      "port": "__PORT_FALLBACK__",
+      "links": 7,
+      "example_link_id": "pt_140168_25486"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "inf",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 7,
+      "example_link_id": "pt_270717_218207"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "50.40",
+      "java": "URB/Access/50",
+      "port": "__PORT_FALLBACK__",
+      "links": 5,
+      "example_link_id": "pt_192435_682009"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "25.00",
+      "java": "URB/Access/30",
+      "port": "__PORT_FALLBACK__",
+      "links": 4,
+      "example_link_id": "346408"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "57.60",
+      "java": "URB/Local/60",
+      "port": "__PORT_FALLBACK__",
+      "links": 3,
+      "example_link_id": "pt_114665_623366"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "75.60",
+      "java": "URB/Trunk-City/80",
+      "port": "__PORT_FALLBACK__",
+      "links": 3,
+      "example_link_id": "pt_17614_560438"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "316.80",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_135132_274731"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "5720.40",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_1588_505558"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "54.00",
+      "java": "URB/Access/50",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_274731_213646"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "11034.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_34084_492312"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "61.20",
+      "java": "URB/Local/60",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_402334_119043"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "3664.80",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 2,
+      "example_link_id": "pt_426032"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "4266.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_426032_167122"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "5050.80",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_426032_167401"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "5302.80",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_492312_376730"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "5821.20",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_492312_598889"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "11304.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_505558_449433"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "111.60",
+      "java": "URB/MW-Nat./110",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_562854_690155"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "5094.00",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_598888_492312"
+    },
+    {
+      "group": "not_drivable",
+      "outcome": "different_java_maps_port_refuses",
+      "osm_class": "<none>",
+      "freespeed_kmh": "3585.60",
+      "java": "URB/MW-Nat./130",
+      "port": "__PORT_FALLBACK__",
+      "links": 1,
+      "example_link_id": "pt_703997_426032"
+    }
+  ],
+  "port_report": {
+    "method": "port of org.matsim.contrib.emissions.OsmHbefaMapping",
+    "emitting_network_modes": [
+      "car",
+      "truck"
+    ],
+    "drivable_links": 214807,
+    "drivable_length_meters": 27619433.07038542,
+    "fallback_road_type": "__PORT_FALLBACK__",
+    "fallback_links": 0,
+    "fallback_length_meters": 0.0,
+    "fallback_length_share": 0.0,
+    "max_fallback_length_share": 1.0,
+    "fallback_osm_classes": {},
+    "not_drivable_links": 6173,
+    "speed_raised_to_class_minimum_links": 61073,
+    "speed_lowered_to_class_maximum_links": 15397,
+    "speed_from_allowed_speed_links": 0,
+    "links_by_road_type": {
+      "URB/Access/30": 115407,
+      "URB/Access/40": 10,
+      "URB/Access/50": 15917,
+      "URB/Distr/50": 17588,
+      "URB/Distr/60": 332,
+      "URB/Distr/70": 2535,
+      "URB/Distr/80": 5096,
+      "URB/Local/50": 27451,
+      "URB/Local/60": 7635,
+      "URB/MW-Nat./100": 1431,
+      "URB/MW-Nat./120": 225,
+      "URB/MW-Nat./130": 1938,
+      "URB/MW-Nat./80": 1344,
+      "URB/Trunk-City/50": 7656,
+      "URB/Trunk-City/60": 913,
+      "URB/Trunk-City/70": 2961,
+      "URB/Trunk-City/80": 2440,
+      "URB/Trunk-Nat./100": 3904,
+      "URB/Trunk-Nat./110": 14,
+      "URB/Trunk-Nat./90": 10
+    },
+    "length_meters_by_road_type": {
+      "URB/Access/30": 12439513.594290687,
+      "URB/Access/40": 901.4733166394426,
+      "URB/Access/50": 1647288.8706525555,
+      "URB/Distr/50": 1777115.0856888962,
+      "URB/Distr/60": 48150.92283618036,
+      "URB/Distr/70": 452775.0112568556,
+      "URB/Distr/80": 1706172.3296459913,
+      "URB/Local/50": 3487015.591085517,
+      "URB/Local/60": 2240960.645939888,
+      "URB/MW-Nat./100": 412478.2656311636,
+      "URB/MW-Nat./120": 50107.458674631285,
+      "URB/MW-Nat./130": 540379.6459254364,
+      "URB/MW-Nat./80": 184142.5452302275,
+      "URB/Trunk-City/50": 556918.9346373784,
+      "URB/Trunk-City/60": 91118.25428152032,
+      "URB/Trunk-City/70": 344482.70178510743,
+      "URB/Trunk-City/80": 439405.4836483652,
+      "URB/Trunk-Nat./100": 1198478.1032926315,
+      "URB/Trunk-Nat./110": 1270.6996747390592,
+      "URB/Trunk-Nat./90": 757.4528977589825
+    }
+  }
+}

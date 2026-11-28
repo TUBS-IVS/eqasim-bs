@@ -416,3 +416,96 @@ def test_run_warns_not_info_when_universe_fit_is_entirely_empty(tmp_path, monkey
     assert (out / "participation_universe_fit.csv").exists()
     assert report["participation_universe_fit"] == []
     assert any("NO (Kreis, control, category) cells" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# student entries (A3 of the student design, ADR-0211): the fit replaces education_18plus
+# ---------------------------------------------------------------------------
+
+
+def _student_run(tmp_path, monkeypatch, name, extra_args):
+    base = _e2e_frames()
+    persons = base.persons.assign(
+        employment_status=["nicht_erwerbstaetig"] * 4, age=[20, 25, 40, 50],
+        P_TAET=[10, 2, 10, 2], has_pt_subscription=[True, False, False, False])
+    frames = PopulationFrames(persons, base.households, base.homes, None,
+                              "run_output", "x", "e2e_", _participation_universe_trips())
+    monkeypatch.setattr(R.spatial, "load_kreise", lambda crs: _e2e_kreise())
+    monkeypatch.setattr(R.spatial, "load_gemeinden", lambda crs: _e2e_gemeinden())
+    monkeypatch.setattr(R.spatial, "assign_geographies", _e2e_assign_geographies)
+    monkeypatch.setattr(R.C, "build_registry", _e2e_registry)
+    monkeypatch.setattr(R.PS, "load_population",
+                        lambda run_output_dir=None, sim_cache=None, prefix=None: frames)
+    out = tmp_path / name
+    report = R.run(R._parse_args(["--run-output-dir", str(tmp_path), "--label", name,
+                                  "--analysis-out", str(out), "--no-geo", *extra_args]))
+    return out, report
+
+
+def test_run_lists_the_student_entries_in_place_of_education_18plus(tmp_path, monkeypatch, caplog):
+    targets = tmp_path / "student_kreis_targets.csv"
+    pd.DataFrame({"ars5": ["03101"] * 3, "control": ["student_education_30plus"] * 3,
+                  "category": ["student", "other_edu", "other_noedu"],
+                  "target_persons": [1, 0, 1], "universe_persons": [2, 2, 2],
+                  "target_share": [0.5, 0.0, 0.5]}).to_csv(targets, index=False)
+
+    out, report = _student_run(tmp_path, monkeypatch, "with", ["--student-targets", str(targets)])
+
+    universe = pd.read_csv(out / "participation_universe_fit.csv", dtype={"ars5": str})
+    assert "education_18plus" not in set(universe["control"])
+    assert "work_by_employment" in set(universe["control"])
+    student = pd.read_csv(out / "student_participation_fit.csv", dtype={"ars5": str})
+    assert set(student["control"]) == {"student_education_30plus"}
+    # persons aged 40 (student) and 50 (other, no leg): one each
+    assert student.set_index("category")["realised_share"].to_dict() == pytest.approx(
+        {"student": 0.5, "other_edu": 0.0, "other_noedu": 0.5})
+    assert report["student_participation_fit"] == student.to_dict(orient="records")
+
+    # Work-leg entry only: no student education entry replaced education_18plus, so it stays.
+    work_targets = tmp_path / "work_only.csv"
+    pd.DataFrame({"ars5": ["03101"] * 3, "control": ["student_work_leg"] * 3,
+                  "category": ["student_work", "student_nowork", "not_student"],
+                  "target_persons": [1, 0, 1], "universe_persons": [2, 2, 2],
+                  "target_share": [0.5, 0.0, 0.5]}).to_csv(work_targets, index=False)
+    out, report = _student_run(tmp_path, monkeypatch, "work", ["--student-targets", str(work_targets)])
+    assert "education_18plus" in set(pd.read_csv(out / "participation_universe_fit.csv")["control"])
+    student = pd.read_csv(out / "student_participation_fit.csv", dtype={"ars5": str})
+    assert student.set_index("category")["realised_share"].to_dict() == pytest.approx(
+        {"student_work": 0.5, "student_nowork": 0.0, "not_student": 0.5})
+
+    # Without the file (a run-output source has no stage file to default to): skipped with a
+    # WARNING, and education_18plus stays in the universe fit.
+    with caplog.at_level(logging.WARNING):
+        out, report = _student_run(tmp_path, monkeypatch, "without", [])
+    assert report["student_participation_fit"] is None
+    assert not (out / "student_participation_fit.csv").exists()
+    assert "education_18plus" in set(pd.read_csv(out / "participation_universe_fit.csv")["control"])
+    assert any("student" in r.message and r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_student_targets_default_is_the_stage_file_under_the_sim_cache(tmp_path, caplog):
+    """The default is the file of the ONE popsim stage directory of the cache. A stale file of an
+    earlier popsim configuration next to the stage directory of the validated persons (which holds
+    none: its run had no student entry) is never picked; the user is asked for --student-targets."""
+    from braunschweig.popsim import stage
+
+    assert R.STUDENT_TARGETS_FILE == stage.STUDENT_TARGETS_FILE    # restated, pinned to the owner
+    assert stage.__name__ == R.POPSIM_STAGE_CACHE_GLOB.split("__")[0]
+    cache = tmp_path / "cache"
+    old = cache / "braunschweig.popsim.stage__old.cache"
+    old.mkdir(parents=True)
+    ns = R._parse_args(["--sim-cache", str(cache)])
+    assert R._student_targets_path(ns) == old / stage.STUDENT_TARGETS_FILE
+    (old / stage.STUDENT_TARGETS_FILE).write_text("ars5\n", encoding="utf-8")
+
+    new = cache / "braunschweig.popsim.stage__new.cache"
+    new.mkdir()
+    output = cache / "output.cache"
+    output.mkdir()
+    (output / "bs_persons.csv").write_text("person_id\n", encoding="utf-8")    # newer persons
+    with caplog.at_level(logging.WARNING):
+        assert R._student_targets_path(ns) is None
+    assert any("--student-targets" in r.message for r in caplog.records)
+
+    explicit = R._parse_args(["--sim-cache", str(cache), "--student-targets", str(tmp_path / "x.csv")])
+    assert R._student_targets_path(explicit) == tmp_path / "x.csv"

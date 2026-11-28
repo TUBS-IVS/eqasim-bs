@@ -24,11 +24,17 @@ order it:
    of each person is read) and reduces it with `summarise`, which raises `ValueError` naming the person when a
    plan has more legs than activities - 1;
 5. logs the rates under `[plan_check]`, writes `plan_check.json` (with the `threshold` block) and only then calls
-   `check_thresholds`, so the report exists when the check raises.
+   `check_thresholds`, so the report exists when the check raises; then `check_unreached_invariant`: the count
+   `n_unreached_unfit` of the residents' frozen block (resident trips the mode choice does not reach whose mode does
+   not fit their distance, `mode-choice-reach.md`) must be 0 after the lift. When the lift report says it covered
+   all modes (its `all_modes` key, required whenever a lift report is passed) a remaining trip raises `ValueError`
+   regardless of `fail_on_threshold`: it is a lift gap or a drift between the lift and the plan check, not a data
+   threshold. With the lift on the pt rule only, or off, it is an ERROR line and the run continues (ADR-0206
+   decision 6).
 
 ## Frozen and in-region
 
-The class comes from the home-based tours of the WRITTEN plan (`leg_tour_frozen`): a tour starts at every leg
+The class comes from the reach definition (`leg_reach`, docs/codebase/notes/mode-choice-reach.md; ADR-0206) when `prepare` passes the loop settings. The older rule it extends, `leg_tour_frozen`, reads the home-based tours of the WRITTEN plan: a tour starts at every leg
 that departs from a `home` activity, and a tour is frozen when any of its legs starts or ends at an `outside`
 activity. These are the tours the production discrete mode choice never re-chooses (`OutsideFilter`, see
 ADR-0145). The two levels differ on purpose:

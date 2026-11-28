@@ -1623,6 +1623,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.transit.connections",
     "braunschweig.data.transit.router_cache",
     "braunschweig.data.transit.schedule",
+    "braunschweig.matsim.config_modules",
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.plan_validation",
     # high_income by the resident 5000 EUR rule (_high_income, ADR-0191).

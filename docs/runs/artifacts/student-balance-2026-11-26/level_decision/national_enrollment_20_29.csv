@@ -1,0 +1,11 @@
+# Table: national_enrollment_20_29.csv (issue #140, Phase 2, decision aid for the student level).
+# Enrolled students at German universities aged 20 to 29 (sum of the single years 20 to 29) and in total,
+#   block "Hochschulen insgesamt", column "Insgesamt" (German and foreign students, all types of university).
+# Read by hand from the two Destatis publications below on 2026-11-27 and checked by summing the single
+#   years; the census day (2022-05-15) lies in summer semester 2022.
+# Definition (Destatis, Statistik der Studierenden): persons enrolled for a course of study, without
+#   students on leave, visiting students and Studienkolleg; Berufsakademien are not universities here.
+# Licence: Datenlizenz Deutschland - Namensnennung - Version 2.0 (Statistisches Bundesamt).
+semester,students_20_29_persons,students_total_persons,source_title,source_table,source_url
+SS 2022,2067553,2758824,"Fachserie 11 Reihe 4.1, Studierende an Hochschulen, Sommersemester 2022","Tabelle 3, Studierende und Studienanfaenger/-innen nach Hochschularten und Alter",https://www.statistischebibliothek.de/mir/servlets/MCRFileNodeServlet/DEHeft_derivate_00076045/2110410227314.pdf
+WS 2022/23,2124997,2920263,"Statistischer Bericht, Statistik der Studierenden, Wintersemester 2022/2023 (endgueltige Ergebnisse)","Tabelle 21311-15, Studierende und Studienanfaenger/-innen nach Hochschularten und Alter",https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Bildung-Forschung-Kultur/Hochschulen/Publikationen/Downloads-Hochschulen/statistischer-bericht-studierende-hochschulen-endg-2110410237005.xlsx?__blob=publicationFile

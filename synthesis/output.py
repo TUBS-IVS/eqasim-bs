@@ -34,6 +34,45 @@ PERSON_OPTIONAL_OUTPUT_COLUMNS = ("license_type", "economic_status", "employment
                                   "passenger_availability_source")
 
 
+# eqasim-bs#679 (loop lengths for analyses): the loop columns of the Braunschweig day-view location join
+# (braunschweig.synthesis.commute_day.spatial_locations_day, present only while
+# secondary_loop_zero_displacement is on), appended to the trips CSV per trip with the values of the trip's
+# DESTINATION activity: is_loop_stroll (the trip leads into a stroll placed where it starts) and
+# loop_trip_diary_distance_km (the survey diary length of a trip that this placement makes zero-length,
+# NaN otherwise). Without them the trips CSV keeps its column set byte-identically.
+TRIP_LOOP_OUTPUT_COLUMNS = ("is_loop_stroll", "loop_trip_diary_distance_km")
+
+
+def attach_trip_loop_columns(df_trips, df_locations):
+    """``df_trips`` with :data:`TRIP_LOOP_OUTPUT_COLUMNS` from the trips' destination activities.
+
+    ``df_trips`` carries ``person_id`` and ``following_activity_index`` (``prepare_trip_output_frame``),
+    ``df_locations`` one row per located activity. Returns ``df_trips`` unchanged when the location
+    frame has neither column; raises ValueError when it has only one, or when a trip's destination
+    activity has no location row (its loop columns would be lost). The trip order is kept.
+    """
+    present = [column for column in TRIP_LOOP_OUTPUT_COLUMNS if column in df_locations.columns]
+    if not present:
+        return df_trips
+    if len(present) != len(TRIP_LOOP_OUTPUT_COLUMNS):
+        raise ValueError("The location frame carries only %s of the loop columns %s."
+                         % (present, list(TRIP_LOOP_OUTPUT_COLUMNS)))
+    destinations = df_locations[["person_id", "activity_index", *TRIP_LOOP_OUTPUT_COLUMNS]].rename(
+        columns = { "activity_index": "following_activity_index" })
+    merged = pd.merge(df_trips, destinations, how = "left",
+                      on = ["person_id", "following_activity_index"], validate = "many_to_one")
+    unlocated = merged["is_loop_stroll"].isna()
+    if unlocated.any():
+        raise ValueError(
+            "%d trips have a destination activity without a location row, so their loop columns are "
+            "unknown; first (person_id, trip_index): %s" % (
+                int(unlocated.sum()),
+                [(int(person_id), int(trip_index)) for person_id, trip_index in zip(
+                    merged.loc[unlocated, "person_id"], merged.loc[unlocated, "trip_index"])][:5]))
+    merged["is_loop_stroll"] = merged["is_loop_stroll"].astype(bool)
+    return merged
+
+
 def select_person_output_columns(available_columns, residency_col):
     """Ordered persons-CSV column list: the legacy columns + the residency flag,
     plus any present optional fork attribute (PERSON_OPTIONAL_OUTPUT_COLUMNS),
@@ -223,7 +262,8 @@ def execute(context):
     df_activities.loc[df_activities["is_first"], "preceding_trip_index"] = -1
     df_activities["preceding_trip_index"] = df_activities["preceding_trip_index"].astype(int)
     # Prepare spatial data sets
-    df_locations = context.stage("synthesis.population.spatial.locations")[[
+    df_all_locations = context.stage("synthesis.population.spatial.locations")
+    df_locations = df_all_locations[[
         "person_id", "activity_index", "geometry"
     ]]
 
@@ -285,6 +325,9 @@ def execute(context):
                     "%s/%spt_legs.csv" % (output_path, output_prefix))
 
         assert not np.any(df_trips["mode"].isna())                                 
+
+    # eqasim-bs#679: the loop columns per trip, only where the location frame carries them.
+    df_trips = attach_trip_loop_columns(df_trips, df_all_locations)
 
     if "csv" in output_formats:
         df_trips.to_csv("%s/%strips.csv" % (output_path, output_prefix), sep = ";", index = None, lineterminator = "\n")

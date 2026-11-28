@@ -1,0 +1,1012 @@
+"""Decision aid for the student LEVEL of the student balance (issue #140, Phase 2). Not a validation.
+
+The level gate (``../student_level_gate.csv``) shows the balance below the SrV count of the students
+aged 20 to 29. Before the owner decides whether the level stands, this script puts head counts of the
+students aged 20 to 29 living in each Kreis next to each other (items 1 to 3 from three sources, item 4
+a combination of 1 and 2) and measures why the plain SrV count is high.
+
+1. **Balance.** The gate column ``balance_students_20_29_persons`` (enrollment of winter semester
+   2024/25), and the same flows rescaled to the enrollment of winter semester 2022/23: the semester of
+   the origin table, half a year after the census day and inside the SrV year. Every row of the flow
+   table is divided by ``LSN enrollment of the institution / CHE total of the institution``.
+   ASSUMPTION L1: the site split and the home pattern of 2024/25 hold for 2022/23. Institutions without
+   a CHE total or without LSN enrollment are not rescaled (counted and logged). A third column rescales
+   the flows to the NEWEST semester of the official site statistics (winter semester 2025/26,
+   ``lsn_enrollment_by_site_and_semester.csv``), every destination site by its own ratio to 2024/25. The
+   three institutions in Sachsen-Anhalt, which the flow table holds at their CHE total of 2022/23, are
+   rescaled from that semester with the statistics of their Land; where 2025/26 is not published for
+   one of them its last published winter semester is used (counted and logged). It is the level of a
+   model of today; the comparisons with the census (2022) and SrV (2023) belong to the columns of
+   2022/23.
+2. **Census extrapolation.** The census count of the pupils and students outside the labour force,
+   aged 20 to 29, of the Kreis, times ``enrolled students aged 20 to 29 in Germany / the same census
+   count for Germany`` (``national_enrollment_20_29.csv``; summer semester 2022 holds the census day,
+   winter semester 2022/23 is the sensitivity). ASSUMPTION L2: the national ratio holds in every Kreis.
+   The count is by main residence and includes distance learners and every institution.
+3. **SrV with the school degree corrected.** SrV has no school degree in its weights. The SrV persons
+   aged 20 to 29 of a Kreis are post-stratified to the census count by school degree (university
+   entrance qualification yes / no, census table 2000S-2038):
+   ``students = N_census(with) * p_SrV(student | with) + N_census(without) * p_SrV(student | without)``.
+   ASSUMPTION L3: SrV category 3 of ``V_SCHULAB`` equals the census category "Fachhochschul- oder
+   Hochschulreife (Abitur)". ASSUMPTION L4: inside a school-degree class the SrV respondents stand for
+   the whole Kreis, also for its municipalities SrV did not survey.
+
+4. **Census pattern at the level of the balance.** The students aged 20 to 29 of the eight Kreise as the
+   balance counts them (its total, anchored on enrollment), distributed over the Kreise in proportion to
+   the census count of item 2. It keeps the regional level of the balance and replaces only its split
+   over the Kreise; with one regional employed share of the students it also returns the census count of
+   the students outside the labour force in every Kreis. Uses ASSUMPTION L2 for the split only.
+
+The header of the first table also gives ``omega`` (the share of the students the census counts as
+employed, ``1 - Z / S`` of the level table) with ``S`` taken from the enrollment of 2022/23: ``Z`` is a
+census count of 2022, so only that semester puts both sides of the ratio into one year.
+
+Column ``census_pattern_2025_population_students_20_29_persons`` carries the census pattern of item 4 to
+2025: the census count of a Kreis is multiplied by the change of its population aged 20 to 29 between
+31 December 2022 and 31 December 2025 (``lsn_population_20_29_by_kreis.csv``) before the total of the
+newest semester is distributed. ASSUMPTION L6: the share of students among the young adults changes by
+the same factor in every Kreis. The header also sets the persons aged 20 to 29 of the census day next
+to those of the two dates.
+
+Columns ``*_minus_srv_in_se``: a head count minus the school-corrected SrV count, in standard errors of
+the latter; the header gives the sum of their squares over the seven surveyed Kreise per candidate (a
+reading aid, the standard errors are approximate).
+
+SrV universe of this aid: every person with a valid ``GEWICHT_P_ZENSUS``, INCLUDING the persons away
+from home all day (a head count of residents). The gate column ``srv_estimate_students_20_29_persons``
+uses the share of the persons at home on the day instead; it is copied here unchanged for comparison.
+
+Third table: the students aged 20 to 29 with an education leg on the reporting day (``E_ZWECK_9`` in
+:data:`srv_participation_universe.EDUCATION_E_ZWECK_9`, the definition of the day factor), SrV with the
+corrected weights against ``balance x day factor``. It shares the SrV education-leg share with the day
+factor, so it adds the split Braunschweig / surrounding Kreise, not a second test of the level. It also
+gives the share of the students away from home all day per group (all students with a valid weight).
+
+Optional fourth table (``--mid-persons``): the same school-degree check on the national MiD sample,
+which DOES carry the school degree in its person weight, and the share of students with a second home.
+
+Table ``student_age_distribution.csv``: the age bands of the students by three sources that count
+different things. The enrolled students of the official statistics (``destatis_students_by_age_ws2022_23.csv``,
+Germany) include every enrolled person whatever the main activity; SrV (region) and MiD (Germany, only
+with ``--mid-persons``) count the persons whose MAIN activity is studying, the definition of a student
+in the model (assumption A1 of the design). The level table splits the balance, a count of ENROLLED
+persons, with the SrV shares. The gate and the columns ``*_20_29_*`` of this aid turn the balance into
+the ages 20 to 29 with the SrV share too; the header of the first table gives that figure for the seven
+surveyed Kreise under the share of each source, so the reader sees how far it depends on the choice.
+
+Two more tables with ``--zensus-status-dir`` (the folder of census table 2000S-2001):
+
+* ``census_pattern_check_nrw.csv`` -- an out-of-region test of ASSUMPTION L2. For the districts of
+  Nordrhein-Westfalen the statistical office published the census count of students by district of
+  residence (``nrw_census_students_18_26.csv``). The table sets it against the public census count of
+  the pupils and students outside the labour force times ONE ratio pooled over the Land. The two age
+  windows differ (18 to 26 against 20 to 29), so it tests the pattern over districts, not a level.
+* ``entrance_qualifications_by_school_district.csv`` -- why the balance may book students of the
+  surrounding Kreise as residents of the cities: its origin is the Kreis of the SCHOOL of the entrance
+  qualification (CHE), not the home. The table gives the entrance qualifications awarded by the schools
+  of each Kreis in one school year (``lsn_entrance_qualifications_by_school_district_2021_22.csv``) per
+  resident age cohort (census persons aged 15 to 19 divided by five). ASSUMPTION L5: a qualification is
+  the Hochschulreife of the general schools plus the general, subject-bound and Fachhochschulreife of
+  the vocational schools; the school part of the Fachhochschulreife of the general schools is left out.
+
+Standard errors (approximate, for reading the tables, not a test): ``sqrt(p (1 - p) / n_effective)``
+with the Kish ``n_effective`` of the base; 0 where a share is 0 or 1. The census counts and the
+national ratio are treated as exact.
+
+Usage (local-only inputs as arguments)::
+
+    python analyse_student_level.py --srv-dir <folder with the three SrV CSV files>
+        --zensus-students <zensus2022_students_20_29_kreis.csv>
+        --zensus-school-dir <folder with the 2000S-2038 JSON files>
+        [--mid-persons <MiD2023_Personen.csv>] [--zensus-status-dir <folder with the 2000S-2001 JSON files>]
+        --source-commit <sha> --out-dir <this folder>
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import importlib.util
+import json
+import logging
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+REPO = Path(__file__).resolve().parents[5]
+sys.path.append(str(REPO))
+
+from braunschweig.calibration import srv_participation_universe as U  # noqa: E402
+from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E402
+from braunschweig.calibration.srv_student_reference import BRAUNSCHWEIG_KREIS  # noqa: E402
+from braunschweig.data.education import student_od_table as T  # noqa: E402
+
+logger = logging.getLogger("analyse_student_level")
+_TAG = "[student level aid]"
+
+HERE = Path(__file__).resolve().parent
+ARTIFACTS = HERE.parent
+GATE = ARTIFACTS / "student_level_gate.csv"
+OD_TABLE = REPO / "eqasim-data/data/braunschweig/schools/student_od_table.csv"
+CHE = REPO / "eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv"
+SRV_PARAMETERS = REPO / "eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv"
+NATIONAL = HERE / "national_enrollment_20_29.csv"
+NRW = HERE / "nrw_census_students_18_26.csv"
+LSN_SERIES = HERE / "lsn_enrollment_by_site_and_semester.csv"
+POPULATION = HERE / "lsn_population_20_29_by_kreis.csv"
+ENROLLED_BY_AGE = HERE / "destatis_students_by_age_ws2022_23.csv"
+# age bands of the age table: (label, minimum age years, maximum age years), bounds inclusive; 200 is a
+# sentinel far above any age
+AGE_BANDS = (("under_18", 0, 17), ("age_18_19", 18, 19), ("age_20_24", 20, 24), ("age_25_29", 25, 29),
+             ("age_30_34", 30, 34), ("age_35plus", 35, 200))
+ADULT_BANDS = [label for label, minimum, _ in AGE_BANDS if minimum >= 18]
+BANDS_20_29 = ["age_20_24", "age_25_29"]
+BANDS_30PLUS = ["age_30_34", "age_35plus"]
+AGE_COLUMNS = ["source", "counts", "n_persons", *["share_%s" % label for label, _, _ in AGE_BANDS],
+               "share_20_29_among_adults", "share_30plus_among_adults"]
+POPULATION_BASE_DATE, POPULATION_NEWEST_DATE = "2022-12-31", "2025-12-31"
+SERIES_ORIGIN_TABLE = "ws2022_23"     # the semester of the CHE totals (the curated institutions' rows)
+SERIES_WINTERS = ["ws2021_22", "ws2022_23", "ws2023_24", "ws2024_25", "ws2025_26"]
+PATTERN_2025 = "census_pattern_2025_population_students_20_29_persons"
+LEVEL_TABLE = REPO / "eqasim-data/data/braunschweig/popsim/student_level_table.csv"
+SERIES_FLOW_TABLE, SERIES_NEWEST = "ws2024_25", "ws2025_26"   # columns of LSN_SERIES
+SERIES_SEMESTERS = ["ws2021_22", "ss2022", "ws2022_23", "ws2023_24", "ws2024_25", "ss2025", "ws2025_26"]
+LSN_SCHOOLS = HERE / "lsn_entrance_qualifications_by_school_district_2021_22.csv"
+
+CSV_READ_KWARGS = dict(sep=";", decimal=",", encoding="cp1252", low_memory=False)
+PERSONS_FILE, LEGS_FILE, HOUSEHOLDS_FILE = "SrV2023_Personen.csv", "SrV2023_Wege.csv", "SrV2023_Haushalte.csv"
+PERSON_READ_COLUMNS = ["HHNR", "PNR", "V_ALTER", "V_ERW", "V_SCHULAB", "E_ANZ_WEGE", "GEWICHT_P_ZENSUS",
+                       "MITTL_WERKTAG"]
+
+AGE_MIN_YEARS, AGE_MAX_YEARS = 20, 29
+SRV_STUDENT = 7                    # V_ERW "Student/Studentin"
+SRV_WITH_QUALIFICATION = 3         # V_SCHULAB "Allgemeine oder fachgebundene Hochschulreife (Abitur)"
+SRV_WITHOUT_QUALIFICATION = (1, 2, 4)   # Hauptschule, Realschule, (noch) ohne Schulabschluss
+SRV_AWAY_ALL_DAY = -7              # E_ANZ_WEGE of a person away from home all day
+CLASS_WITH, CLASS_WITHOUT, CLASS_UNKNOWN = "with", "without", "unknown"
+
+CENSUS_SCHOOL_TABLE = "2000S-2038"
+CENSUS_AGE = "ALT020B029"
+CENSUS_QUALIFICATION = "ABSCH-FHRABI"
+CENSUS_TOTAL = "%TOTAL%"
+CENSUS_PUBLISHED = "e"
+CENSUS_GERMANY = "DG"
+CENSUS_COUNT_TOLERANCE_PERSONS = 10.0   # the publisher rounds the counts to 10
+
+CENSUS_STATUS_TABLE = "2000S-2001"
+CENSUS_STATUS_STUDENTS = "ERW-AKTIV-X"   # pupils and students outside the labour force
+CENSUS_AGE_15_19 = "ALT015B019"
+YEARS_15_19 = 5
+# NRW check: a district whose students aged 18 to 26 exceed this share of its persons aged 20 to 29
+# counts as a district with many students (a reading aid for the mean error by group, an ASSUMPTION).
+MANY_STUDENTS_SHARE = 0.25
+LAND_NIEDERSACHSEN = "03"
+GROUP_REGION = "region_eight"
+
+SEMESTER_CENSUS_DAY, SEMESTER_SENSITIVITY = "SS 2022", "WS 2022/23"
+GROUP_SURROUNDING = "surrounding_six"   # the surveyed Kreise without Braunschweig
+GROUP_SURVEYED = U.REGION_CODE          # the seven surveyed Kreise, the pooled code of the gate table
+
+# balance column -> the same regional total distributed over the Kreise by the census pattern (item 4)
+CANDIDATES_PATTERN = {
+    "balance_students_20_29_persons": "census_pattern_students_20_29_persons",
+    "balance_ws2022_23_students_20_29_persons": "census_pattern_ws2022_23_students_20_29_persons",
+    "balance_ws2025_26_students_20_29_persons": "census_pattern_ws2025_26_students_20_29_persons",
+}
+# the head counts compared with the school-corrected SrV count (SrV is of 2023: the columns of the newest
+# semester are a level of today and are not compared)
+CANDIDATES = ["balance_students_20_29_persons", "balance_ws2022_23_students_20_29_persons",
+              "census_pattern_students_20_29_persons", "census_pattern_ws2022_23_students_20_29_persons",
+              "census_extrapolation_students_20_29_persons", "srv_gate_estimate_students_20_29_persons"]
+
+MID_STUDENT, MID_UNKNOWN_ACTIVITY = 10, 99        # P_TAET
+MID_WITH_QUALIFICATION = (8, 9)                    # P_BIL1 Fachhochschulreife, Abitur
+MID_UNKNOWN_SCHOOL = 99
+MID_SECOND_HOME_YES, MID_SECOND_HOME_NO = 1, 2     # P_NEBEN
+
+
+# --------------------------------------------------------------------------- small helpers
+def _load_cli():
+    spec = importlib.util.spec_from_file_location("build_student_balance",
+                                                  REPO / "scripts" / "build_student_balance.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _n_effective(weights: pd.Series) -> float:
+    total = float(weights.sum())
+    squares = float((weights ** 2).sum())
+    return total ** 2 / squares if squares > 0 else float("nan")
+
+
+def _share(weights: pd.Series, mask: pd.Series) -> float:
+    total = float(weights.sum())
+    return float(weights[mask].sum()) / total if total > 0 else float("nan")
+
+
+def _standard_error(share: float, n_effective: float) -> float:
+    if not (np.isfinite(share) and np.isfinite(n_effective) and n_effective > 0):
+        return float("nan")
+    return float(np.sqrt(max(share * (1.0 - share), 0.0) / n_effective))
+
+
+def _root_sum_square(values) -> float:
+    values = np.asarray(list(values), dtype=float)
+    return float(np.sqrt(np.sum(values ** 2)))
+
+
+# --------------------------------------------------------------------------- census school degree
+def _census_cell(dataset: dict, wanted: dict, path: Path) -> float:
+    """The published count of one cell; raises for an absent category or a withheld cell."""
+    position = 0
+    for name, size in zip(dataset["id"], dataset["size"]):
+        index = dataset["dimension"][name]["category"]["index"]
+        if name in wanted:
+            if wanted[name] not in index:
+                raise ValueError("%s: category %r of %s is absent; the table layout changed"
+                                 % (path.name, wanted[name], name))
+            step = index[wanted[name]]
+        else:
+            if size != 1:
+                raise ValueError("%s: dimension %s has %d categories, expected 1" % (path.name, name, size))
+            step = 0
+        position = position * size + step
+    value, flag = dataset["value"][position], dataset["status"][position]
+    if flag != CENSUS_PUBLISHED or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError("%s: cell %s is %r with status flag %r, not a published positive count"
+                         % (path.name, wanted, value, flag))
+    return float(value)
+
+
+def read_census_school(path: Path, region_variable: str, regions) -> pd.DataFrame:
+    """Persons aged 20 to 29 and those with a university entrance qualification, per region.
+
+    ``path`` is one file of census table 2000S-2038 as the census database delivers it (two datasets:
+    the detailed school degree ``BILSA4`` and the coarse one ``BILSA3`` whose total is every person).
+    """
+    if not path.is_file():
+        raise FileNotFoundError("census file %s is missing; fetch table %s from the census database first"
+                                % (path, CENSUS_SCHOOL_TABLE))
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    found = {variable: [ds for ds in document["data"] if variable in ds["id"]] for variable in ("BILSA4", "BILSA3")}
+    for variable, datasets in found.items():
+        if len(datasets) != 1:
+            raise ValueError("%s has %d datasets with variable %s, expected one"
+                             % (path.name, len(datasets), variable))
+    rows = []
+    for region in regions:
+        total = _census_cell(found["BILSA3"][0],
+                             {"BILSA3": CENSUS_TOTAL, "ALTGR2": CENSUS_AGE, region_variable: region}, path)
+        with_q = _census_cell(found["BILSA4"][0],
+                              {"BILSA4": CENSUS_QUALIFICATION, "ALTGR2": CENSUS_AGE, region_variable: region}, path)
+        rows.append({"code": region, "persons": total, CLASS_WITH: with_q, CLASS_WITHOUT: total - with_q})
+    return pd.DataFrame(rows).set_index("code")
+
+
+# --------------------------------------------------------------------------- SrV
+def read_srv(srv_dir: Path) -> tuple[pd.DataFrame, dict]:
+    """SrV persons of the ZGB Kreise with a valid census weight, one row per person, and the counts of
+    every exclusion. Columns: pid, kreis, weight, age, school_class, status_known, student, present,
+    education_leg."""
+    for name in (PERSONS_FILE, LEGS_FILE, HOUSEHOLDS_FILE):
+        if not (srv_dir / name).is_file():
+            raise FileNotFoundError("SrV file %s is missing in %s" % (name, srv_dir))
+    persons = pd.read_csv(srv_dir / PERSONS_FILE, usecols=PERSON_READ_COLUMNS, **CSV_READ_KWARGS)
+    legs = pd.read_csv(srv_dir / LEGS_FILE, usecols=U.LEG_COLUMNS, **CSV_READ_KWARGS)
+    households = pd.read_csv(srv_dir / HOUSEHOLDS_FILE, usecols=U.HOUSEHOLD_COLUMNS, **CSV_READ_KWARGS)
+    U.require_average_weekday(persons)
+    counts = {"n_persons_total": int(len(persons))}
+
+    ags = households["AGS"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(8)
+    kreis_by_household = pd.Series(ags.str[:5].to_numpy(), index=households["HHNR"].to_numpy())
+    if kreis_by_household.index.duplicated().any():
+        raise ValueError("SrV households: duplicated HHNR")
+    frame = pd.DataFrame({
+        "pid": U._person_ids(persons),
+        "kreis": persons["HHNR"].map(kreis_by_household),
+        "weight": pd.to_numeric(persons["GEWICHT_P_ZENSUS"], errors="coerce"),
+        "age": pd.to_numeric(persons["V_ALTER"], errors="coerce"),
+        "status": pd.to_numeric(persons["V_ERW"], errors="coerce"),
+        "school": pd.to_numeric(persons["V_SCHULAB"], errors="coerce"),
+        "n_legs": pd.to_numeric(persons["E_ANZ_WEGE"], errors="coerce"),
+    })
+    valid_weight = frame["weight"] >= 0
+    counts["n_excluded_invalid_weight"] = int((~valid_weight).sum())
+    frame = frame[valid_weight]
+    in_region = frame["kreis"].isin(ZGB_KREISE)
+    counts["n_excluded_outside_region"] = int((~in_region).sum())
+    frame = frame[in_region].copy()
+    counts["n_persons_valid"] = int(len(frame))
+    counts["n_missing_age"] = int(frame["age"].isna().sum())
+
+    frame["school_class"] = CLASS_UNKNOWN
+    frame.loc[frame["school"] == SRV_WITH_QUALIFICATION, "school_class"] = CLASS_WITH
+    frame.loc[frame["school"].isin(SRV_WITHOUT_QUALIFICATION), "school_class"] = CLASS_WITHOUT
+    frame["status_known"] = frame["status"] >= 0
+    frame["student"] = frame["status"] == SRV_STUDENT
+    negative = frame["n_legs"] < 0
+    if not (frame.loc[negative, "n_legs"] == SRV_AWAY_ALL_DAY).all():
+        raise ValueError("SrV persons: a negative E_ANZ_WEGE other than %d; the away-all-day rule would be wrong"
+                         % SRV_AWAY_ALL_DAY)
+    frame["present"] = ~negative & frame["n_legs"].notna()
+    pids, leg_counts = U.persons_with_purpose(legs, U.EDUCATION_E_ZWECK_9)
+    frame["education_leg"] = frame["pid"].isin(pids)
+    counts.update(leg_counts)
+    return frame.drop(columns=["status", "school", "n_legs"]), counts
+
+
+def _class_columns(rated: pd.DataFrame) -> dict:
+    """Student share, its base and standard error inside the two school-degree classes."""
+    out = {}
+    for label in (CLASS_WITH, CLASS_WITHOUT):
+        base = rated[rated["school_class"] == label]
+        share, n_eff = _share(base["weight"], base["student"]), _n_effective(base["weight"])
+        out.update({"n_%s_qualification" % label: int(len(base)),
+                    "n_effective_%s_qualification" % label: n_eff,
+                    "student_share_%s_qualification" % label: share,
+                    "se_student_share_%s_qualification" % label: _standard_error(share, n_eff)})
+    return out
+
+
+def _sample_columns(code: str, part: pd.DataFrame, share_census: float) -> dict:
+    known = part[part["school_class"] != CLASS_UNKNOWN]
+    status_base = part[part["status_known"]]
+    row = {"code": code, "n_persons_20_29": int(len(part)),
+           "n_unknown_school_degree": int((part["school_class"] == CLASS_UNKNOWN).sum()),
+           "srv_share_with_qualification_weighted": _share(known["weight"], known["school_class"] == CLASS_WITH),
+           "srv_share_with_qualification_unweighted": float((known["school_class"] == CLASS_WITH).mean()),
+           "zensus_share_with_qualification": share_census}
+    row.update(_class_columns(known[known["status_known"]]))
+    row["srv_student_share_uncorrected"] = _share(status_base["weight"], status_base["student"])
+    return row
+
+
+def school_degree_rows(young: pd.DataFrame, census: pd.DataFrame, groups: dict) -> pd.DataFrame:
+    """One row per surveyed Kreis and per group: the SrV sample by school degree against the census,
+    the student shares inside the two classes and the corrected student count."""
+    rows, by_kreis = [], {}
+    for code in [k for k in ZGB_KREISE if k not in U.UNSURVEYED_KREISE]:
+        row = _sample_columns(code, young[young["kreis"] == code],
+                              float(census.loc[code, CLASS_WITH] / census.loc[code, "persons"]))
+        corrected = sum(float(census.loc[code, label]) * row["student_share_%s_qualification" % label]
+                        for label in (CLASS_WITH, CLASS_WITHOUT))
+        row["srv_students_school_corrected_persons"] = corrected
+        row["se_srv_students_school_corrected_persons"] = _root_sum_square(
+            float(census.loc[code, label]) * row["se_student_share_%s_qualification" % label]
+            for label in (CLASS_WITH, CLASS_WITHOUT))
+        row["srv_student_share_school_corrected"] = corrected / float(census.loc[code, "persons"])
+        by_kreis[code] = row
+        rows.append(row)
+    for group, codes in groups.items():
+        persons = float(census.loc[codes, "persons"].sum())
+        row = _sample_columns(group, young[young["kreis"].isin(codes)],
+                              float(census.loc[codes, CLASS_WITH].sum()) / persons)
+        # A group is the SUM of its Kreis estimates: each Kreis keeps its own census margin.
+        corrected = sum(by_kreis[c]["srv_students_school_corrected_persons"] for c in codes)
+        row["srv_students_school_corrected_persons"] = corrected
+        row["se_srv_students_school_corrected_persons"] = _root_sum_square(
+            by_kreis[c]["se_srv_students_school_corrected_persons"] for c in codes)
+        row["srv_student_share_school_corrected"] = corrected / persons
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def corrected_weights(young: pd.DataFrame, census: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """``young`` with two weights that sum to the census persons aged 20 to 29 of each Kreis:
+    ``weight_population`` (one factor per Kreis) and ``weight_school`` (one factor per Kreis and
+    school-degree class; a person without a readable school degree keeps the Kreis factor)."""
+    out = young.copy()
+    out["weight_population"] = np.nan
+    out["weight_school"] = np.nan
+    n_fallback = 0
+    for code, part in out.groupby("kreis"):
+        persons = float(census.loc[code, "persons"])
+        factor_kreis = persons / float(part["weight"].sum())
+        out.loc[part.index, "weight_population"] = part["weight"] * factor_kreis
+        out.loc[part.index, "weight_school"] = part["weight"] * factor_kreis
+        unknown = part["school_class"] == CLASS_UNKNOWN
+        # the persons without a readable school degree keep their Kreis factor; the two classes share
+        # the remaining census persons in the census proportion
+        scale = (persons - float(part.loc[unknown, "weight"].sum()) * factor_kreis) / persons
+        for label in (CLASS_WITH, CLASS_WITHOUT):
+            members = part[part["school_class"] == label]
+            if members.empty:
+                raise ValueError("SrV Kreis %s has no person aged 20 to 29 in school class %r" % (code, label))
+            out.loc[members.index, "weight_school"] = (
+                members["weight"] * float(census.loc[code, label]) * scale / float(members["weight"].sum()))
+        n_fallback += int(unknown.sum())
+    n_total = int(len(out))
+    logger.info("%s school-degree weight: primary %d/%d (%.1f%%), Kreis-factor fallback for an unreadable school "
+                "degree %d (%.1f%%)", _TAG, n_total - n_fallback, n_total, 100.0 * (n_total - n_fallback) / n_total,
+                n_fallback, 100.0 * n_fallback / n_total)
+    return out, {"n_school_weight_primary": n_total - n_fallback, "n_school_weight_fallback": n_fallback}
+
+
+def education_leg_rows(weighted: pd.DataFrame, groups: dict, balance: pd.DataFrame, day_factor: float) -> pd.DataFrame:
+    rows = []
+    for group, codes in groups.items():
+        students = weighted[weighted["kreis"].isin(codes) & weighted["student"]]
+        away_share = _share(students["weight_school"], ~students["present"])
+        part = students[students["present"]]
+        with_leg = part[part["education_leg"]]
+        share = _share(part["weight_school"], part["education_leg"])
+        rows.append({
+            "code": group,
+            "n_students_unweighted": int(len(students)),
+            "n_students_away_all_day_unweighted": int((~students["present"]).sum()),
+            "srv_school_corrected_away_all_day_share": away_share,
+            "se_srv_school_corrected_away_all_day_share":
+                _standard_error(away_share, _n_effective(students["weight_school"])),
+            "n_students_present_unweighted": int(len(part)),
+            "n_students_with_education_leg_unweighted": int(len(with_leg)),
+            "srv_population_weight_students_with_education_leg_persons": float(with_leg["weight_population"].sum()),
+            "srv_school_corrected_students_with_education_leg_persons": float(with_leg["weight_school"].sum()),
+            "srv_school_corrected_students_present_persons": float(part["weight_school"].sum()),
+            "srv_school_corrected_education_leg_share": share,
+            "se_srv_school_corrected_education_leg_share": _standard_error(share, _n_effective(part["weight_school"])),
+            "balance_times_day_factor_persons":
+                float(balance.loc[codes, "balance_students_20_29_persons"].sum()) * day_factor,
+            "balance_ws2022_23_times_day_factor_persons":
+                float(balance.loc[codes, "balance_ws2022_23_students_20_29_persons"].sum()) * day_factor,
+            "day_factor": day_factor,
+        })
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- balance
+def balance_by_home(od: pd.DataFrame, che_totals: pd.Series, gate: pd.DataFrame,
+                    series: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Students aged 20 to 29 living in each ZGB Kreis: the gate value and the flows rescaled to the
+    CHE totals of winter semester 2022/23 (ASSUMPTION L1)."""
+    sites = od.drop_duplicates("destination_id")
+    lsn = sites.groupby("institution")["enrollment_persons"].sum(min_count=1)
+    che_by_lsn = {T.INSTITUTION_CROSSWALK[name]: float(total) for name, total in che_totals.items()
+                  if name in T.INSTITUTION_CROSSWALK}
+    factors, kept = {}, []
+    for institution in sorted(set(od["institution"])):
+        enrollment = lsn.get(institution, float("nan"))
+        if institution in che_by_lsn and np.isfinite(enrollment) and enrollment > 0:
+            factors[institution] = float(enrollment) / che_by_lsn[institution]
+        else:
+            factors[institution] = 1.0
+            kept.append(institution)
+    logger.info("%s semester rescaling: primary %d/%d institutions rescaled to their CHE total, fallback %d kept "
+                "at the LSN semester (no CHE total or no LSN enrollment): %s", _TAG, len(factors) - len(kept),
+                len(factors), len(kept), kept)
+    scaled = od["students_persons"].astype(float) / od["institution"].map(factors).astype(float)
+    region = od["home_ars5"].isin(ZGB_KREISE)
+    now = od.loc[region].groupby("home_ars5")["students_persons"].sum()
+    then = scaled[region].groupby(od.loc[region, "home_ars5"]).sum()
+    gate_kreise = gate.loc[list(ZGB_KREISE)]
+    worst = float((now.reindex(ZGB_KREISE) - gate_kreise["balance_students_persons"]).abs().max())
+    if worst > 1e-3:
+        raise ValueError("the flow table and the gate table disagree on the students living per Kreis "
+                         "(largest difference %.6g persons); they do not come from one run" % worst)
+    age_share = gate_kreise["balance_students_20_29_persons"] / gate_kreise["balance_students_persons"]
+    # the newest semester: every destination site by its own ratio of the official site statistics
+    by_destination = series.dropna(subset=["destination_id"]).set_index("destination_id")
+    known = sites.set_index("destination_id")["enrollment_persons"].dropna()
+    missing = sorted(set(known.index) - set(by_destination.index))
+    if missing:
+        raise ValueError("the site series has no row for destination(s) %s of the flow table" % missing)
+    drift = float((by_destination.loc[known.index, SERIES_FLOW_TABLE].astype(float) - known).abs().max())
+    if drift > 0:
+        raise ValueError("column %s of the site series differs from the enrollment of the flow table by up to "
+                         "%.6g persons; the series and the flow table are not of one semester" % (SERIES_FLOW_TABLE, drift))
+    ratio = (by_destination[SERIES_NEWEST].astype(float) / by_destination[SERIES_FLOW_TABLE].astype(float))
+    # institutions without enrollment in the flow table stand at their CHE total: rescale from that semester
+    che_by_curated = {T.OUTSIDE_LSN_CROSSWALK[name]: float(total) for name, total in che_totals.items()
+                      if name in T.OUTSIDE_LSN_CROSSWALK}
+    curated = sites.loc[sites["enrollment_persons"].isna()].set_index("destination_id")["institution"]
+    last_published = {}
+    for destination, institution in curated.items():
+        if destination not in by_destination.index:
+            continue
+        row = by_destination.loc[destination]
+        base = float(row[SERIES_ORIGIN_TABLE])
+        if institution not in che_by_curated or abs(base - che_by_curated[institution]) > 0:
+            raise ValueError("site series: %s of %s is %r, the CHE total is %r; the two are not of one semester"
+                             % (SERIES_ORIGIN_TABLE, destination, base, che_by_curated.get(institution)))
+        published = [semester for semester in SERIES_WINTERS if pd.notna(row[semester])]
+        ratio.loc[destination] = float(row[published[-1]]) / base
+        last_published[destination] = published[-1]
+    row_ratio = od["destination_id"].map(ratio)
+    unscaled = sorted(set(od.loc[row_ratio.isna(), "destination_id"]))
+    behind = {destination: semester for destination, semester in last_published.items() if semester != SERIES_NEWEST}
+    n_destinations = od["destination_id"].nunique()
+    logger.info("%s newest semester (%s): primary %d/%d destinations rescaled to that semester, fallback %d "
+                "rescaled to their last published winter semester %s, %d kept without a row in the series %s",
+                _TAG, SERIES_NEWEST, n_destinations - len(unscaled) - len(behind), n_destinations, len(behind),
+                behind, len(unscaled), unscaled)
+    newest = (od["students_persons"].astype(float) * row_ratio.fillna(1.0))[region].groupby(
+        od.loc[region, "home_ars5"]).sum()
+    out = pd.DataFrame({
+        "balance_students_20_29_persons": gate_kreise["balance_students_20_29_persons"].astype(float),
+        "balance_ws2022_23_students_20_29_persons": then.reindex(ZGB_KREISE) * age_share,
+        "balance_ws2025_26_students_20_29_persons": newest.reindex(ZGB_KREISE) * age_share,
+    })
+    local = sites.loc[sites["scope"] == T.SCOPE_LOCAL, "destination_id"]
+    local_by_semester = {semester: float(by_destination.loc[local, semester].astype(float).sum())
+                         for semester in SERIES_SEMESTERS}
+    return out, {"semester_factors": factors, "institutions_not_rescaled": kept,
+                 "destinations_not_rescaled_newest": unscaled, "destinations_behind_newest": behind,
+                 "local_sites_enrollment": local_by_semester}
+
+
+# --------------------------------------------------------------------------- age of the students
+def _age_row(source: str, counts: str, n_persons: int, weight_by_band: dict) -> dict:
+    total = float(sum(weight_by_band.values()))
+    adults = float(sum(weight_by_band[label] for label in ADULT_BANDS))
+    row = {"source": source, "counts": counts, "n_persons": int(n_persons)}
+    for label, _, _ in AGE_BANDS:
+        row["share_%s" % label] = weight_by_band[label] / total
+    row["share_20_29_among_adults"] = sum(weight_by_band[label] for label in BANDS_20_29) / adults
+    row["share_30plus_among_adults"] = sum(weight_by_band[label] for label in BANDS_30PLUS) / adults
+    return row
+
+
+def _weights_by_band(age: pd.Series, weight: pd.Series) -> dict:
+    return {label: float(weight[(age >= minimum) & (age <= maximum)].sum()) for label, minimum, maximum in AGE_BANDS}
+
+
+def age_distribution_rows(srv: pd.DataFrame, enrolled: pd.DataFrame, mid_path) -> pd.DataFrame:
+    """Age bands of the students: enrolled persons (official statistics), persons whose main activity is
+    studying in SrV (region, every person with a valid weight) and, with ``mid_path``, in MiD (Germany)."""
+    rows = []
+    for record in enrolled.itertuples():
+        bands = {label: float(getattr(record, label)) for label, _, _ in AGE_BANDS}
+        if abs(sum(bands.values()) - float(record.total)) > 0:
+            raise ValueError("enrolled by age: the bands of %r do not sum to its total" % record.university_type)
+        rows.append(_age_row("destatis_ws2022_23: %s" % record.university_type,
+                             "enrolled persons, Germany", int(record.total), bands))
+    students = srv[srv["student"] & srv["age"].notna()]
+    rows.append(_age_row("srv_2023_region", "main activity student, eight Kreise", len(students),
+                         _weights_by_band(students["age"], students["weight"])))
+    if mid_path:
+        persons = pd.read_csv(mid_path, usecols=["HP_ALTER", "P_TAET", "P_GEW"], low_memory=False)
+        mid = persons[(persons["P_GEW"] > 0) & (persons["P_TAET"] == MID_STUDENT)]
+        rows.append(_age_row("mid_2023_germany", "main activity student, Germany", len(mid),
+                             _weights_by_band(mid["HP_ALTER"], mid["P_GEW"])))
+    else:
+        logger.info("%s --mid-persons not given: the age table has no MiD row", _TAG)
+    return pd.DataFrame(rows, columns=AGE_COLUMNS)
+
+
+# --------------------------------------------------------------------------- census status, NRW check, schools
+def read_census_status(path: Path, age_variable: str, age_code: str, regions, with_students: bool) -> pd.DataFrame:
+    """Persons of one age group per district from census table 2000S-2001, and (``with_students``) the
+    pupils and students outside the labour force among them. Raises for a withheld cell."""
+    if not path.is_file():
+        raise FileNotFoundError("census file %s is missing; fetch table %s from the census database first"
+                                % (path, CENSUS_STATUS_TABLE))
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    found = {variable: [ds for ds in document["data"] if variable in ds["id"]] for variable in ("ERWST4", "ERWST3")}
+    for variable, datasets in found.items():
+        if len(datasets) != 1:
+            raise ValueError("%s has %d datasets with variable %s, expected one"
+                             % (path.name, len(datasets), variable))
+    rows = []
+    for region in regions:
+        row = {"code": region,
+               "persons": _census_cell(found["ERWST3"][0],
+                                       {"ERWST3": CENSUS_TOTAL, age_variable: age_code, "GEOLK4": region}, path)}
+        if with_students:
+            row["students_outside_labour_force"] = _census_cell(
+                found["ERWST4"][0], {"ERWST4": CENSUS_STATUS_STUDENTS, age_variable: age_code, "GEOLK4": region}, path)
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("code")
+
+
+def nrw_check(nrw: pd.DataFrame, census: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """The published census count of students by district of residence (NRW) against the public census
+    count of the pupils and students outside the labour force times one pooled ratio."""
+    frame = nrw.join(census, on="district_ars5")
+    if frame[["persons", "students_outside_labour_force"]].isna().any().any():
+        raise ValueError("NRW check: a district of the pinned table has no census row")
+    students = frame["students_18_26_persons"].astype(float)
+    group = frame["students_outside_labour_force"].astype(float)
+    pooled = float(students.sum() / group.sum())
+    out = pd.DataFrame({
+        "district_ars5": frame["district_ars5"], "district_name": frame["district_name"],
+        "students_18_26_persons": students,
+        "employed_share_of_students": frame["employed_students_18_26_persons"].astype(float) / students,
+        "zensus_population_20_29_persons": frame["persons"].astype(float),
+        "zensus_pupils_students_outside_labour_force_20_29_persons": group,
+        "students_per_census_group": students / group,
+        "census_group_times_pooled_ratio_persons": group * pooled,
+    })
+    out["relative_error"] = out["census_group_times_pooled_ratio_persons"] / students - 1.0
+    out["students_18_26_per_person_20_29"] = students / out["zensus_population_20_29_persons"]
+    many = out["students_18_26_per_person_20_29"] > MANY_STUDENTS_SHARE
+    error = out["relative_error"]
+    summary = {
+        "n_districts": int(len(out)), "pooled_students_per_census_group": pooled,
+        "mean_absolute_relative_error": float(error.abs().mean()),
+        "root_mean_square_relative_error": float(np.sqrt((error ** 2).mean())),
+        "relative_error_quantiles_10_50_90": [float(v) for v in error.quantile([0.1, 0.5, 0.9])],
+        "largest_absolute_relative_error": float(error.abs().max()),
+        "correlation_of_logs": float(np.corrcoef(np.log(students), np.log(group))[0, 1]),
+        "n_districts_many_students": int(many.sum()),
+        "mean_relative_error_many_students": float(error[many].mean()),
+        "mean_relative_error_other_districts": float(error[~many].mean()),
+    }
+    logger.info("%s NRW check: %s", _TAG, json.dumps(summary))
+    return out.sort_values("district_ars5"), summary
+
+
+def school_district_rows(schools: pd.DataFrame, cohort: pd.DataFrame, che: pd.DataFrame) -> pd.DataFrame:
+    """Entrance qualifications awarded by the schools of each Kreis per resident age cohort, and the CHE
+    count of students whose qualification comes from the Kreis (ASSUMPTION L5 in the module docstring)."""
+    totals = che[(che["view"] == T.VIEW_KREIS) & (che["row_kind"] == "total")].set_index("origin_ars5")
+    table = schools.set_index("district_ars5")
+    rows = []
+    for code in [*ZGB_KREISE, GROUP_REGION]:
+        codes = list(ZGB_KREISE) if code == GROUP_REGION else [code]
+        part = table.loc[codes]
+        general = float(part["general_hochschulreife_persons"].sum())
+        vocational = float(part[["vocational_allgemeine_hochschulreife_persons",
+                                 "vocational_fachgebundene_hochschulreife_persons",
+                                 "vocational_fachhochschulreife_persons"]].sum().sum())
+        resident_cohort = float(cohort.loc[codes, "persons"].sum()) / YEARS_15_19
+        origin = float(totals.loc[codes, "students_persons"].sum())
+        rows.append({
+            "code": code,
+            "entrance_qualifications_general_schools_persons": general,
+            "entrance_qualifications_vocational_schools_persons": vocational,
+            "entrance_qualifications_persons": general + vocational,
+            "zensus_resident_cohort_persons": resident_cohort,
+            "entrance_qualifications_per_resident_cohort": (general + vocational) / resident_cohort,
+            "che_students_with_qualification_from_kreis_persons": origin,
+            "che_students_per_entrance_qualification": origin / (general + vocational),
+        })
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- MiD (optional)
+def mid_check(path: Path, census_germany: pd.Series) -> pd.DataFrame:
+    """National MiD sample, persons aged 20 to 29: the school degree before and after the person weight
+    (which carries the school degree), the student shares and the share with a second home."""
+    columns = ["HP_ALTER", "P_TAET", "P_GEW", "P_BIL1", "P_NEBEN"]
+    persons = pd.read_csv(path, usecols=columns, low_memory=False)
+    n_total = int(len(persons))
+    persons = persons[persons["P_GEW"] > 0]
+    young = persons[(persons["HP_ALTER"] >= AGE_MIN_YEARS) & (persons["HP_ALTER"] <= AGE_MAX_YEARS)
+                    & (persons["P_TAET"] != MID_UNKNOWN_ACTIVITY)]
+    weight = young["P_GEW"]
+    known = young["P_BIL1"] != MID_UNKNOWN_SCHOOL
+    with_q = young["P_BIL1"].isin(MID_WITH_QUALIFICATION)
+    student = young["P_TAET"] == MID_STUDENT
+    answered = young["P_NEBEN"].isin([MID_SECOND_HOME_YES, MID_SECOND_HOME_NO])
+    second = young["P_NEBEN"] == MID_SECOND_HOME_YES
+    row = {
+        "code": "DE", "n_persons_total": n_total, "n_persons_20_29": int(len(young)),
+        "n_unknown_school_degree": int((~known).sum()),
+        "mid_share_with_qualification_unweighted": float(with_q[known].mean()),
+        "mid_share_with_qualification_weighted": _share(weight[known], with_q[known]),
+        "zensus_share_with_qualification": float(census_germany[CLASS_WITH] / census_germany["persons"]),
+        "mid_student_share_weighted": _share(weight, student),
+        "mid_student_share_with_qualification": _share(weight[known & with_q], student[known & with_q]),
+        "mid_student_share_without_qualification": _share(weight[known & ~with_q], student[known & ~with_q]),
+        "n_students_20_29": int(student.sum()),
+        "mid_students_second_home_share": _share(weight[student & answered], second[student & answered]),
+        "mid_other_persons_second_home_share": _share(weight[~student & answered], second[~student & answered]),
+    }
+    return pd.DataFrame([row])
+
+
+# --------------------------------------------------------------------------- main
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--srv-dir", required=True)
+    parser.add_argument("--zensus-students", required=True)
+    parser.add_argument("--zensus-school-dir", required=True)
+    parser.add_argument("--mid-persons", default=None)
+    parser.add_argument("--zensus-status-dir", default=None)
+    parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--out-dir", required=True)
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    cli = _load_cli()
+    out_dir = Path(args.out_dir)
+    srv_dir, school_dir = Path(args.srv_dir), Path(args.zensus_school_dir)
+    school_kreis = school_dir / ("%s_ALTGR2_GEOLK4.json" % CENSUS_SCHOOL_TABLE)
+    school_germany = school_dir / ("%s_ALTGR2_GEODL1.json" % CENSUS_SCHOOL_TABLE)
+
+    gate = pd.read_csv(GATE, comment="#", dtype={"code": str}).set_index("code")
+    od = pd.read_csv(OD_TABLE, comment="#", dtype={"home_ars5": str, "site_kreis_ars5": str})
+    che = pd.read_csv(CHE, comment="#", dtype={"origin_ars5": str})
+    national = pd.read_csv(NATIONAL, comment="#").set_index("semester")
+    series = pd.read_csv(LSN_SERIES, comment="#", dtype={"lsn_code": str})
+    population = pd.read_csv(POPULATION, comment="#", dtype={"district_ars5": str})
+    enrolled_by_age = pd.read_csv(ENROLLED_BY_AGE, comment="#")
+    zensus = pd.read_csv(args.zensus_students, comment="#", dtype={"region": str}).set_index("region")
+    parameters = cli._read_csv(SRV_PARAMETERS, cli.PARAMETER_COLUMNS, "SrV student parameters")
+    away_share = float(cli._parameter_shares(parameters, "day", "away_all_day", "students_all")["yes"])
+    education_leg_share = float(cli.read_header_value(SRV_PARAMETERS, cli.EDUCATION_LEG_KEY))
+    day_factor = education_leg_share * (1.0 - away_share)
+
+    surveyed = [code for code in ZGB_KREISE if code not in U.UNSURVEYED_KREISE]
+    groups = {BRAUNSCHWEIG_KREIS: [BRAUNSCHWEIG_KREIS],
+              GROUP_SURROUNDING: [code for code in surveyed if code != BRAUNSCHWEIG_KREIS],
+              GROUP_SURVEYED: surveyed}
+
+    census = read_census_school(school_kreis, "GEOLK4", list(ZGB_KREISE))
+    census_germany = read_census_school(school_germany, "GEODL1", [CENSUS_GERMANY]).loc[CENSUS_GERMANY]
+    difference = float((census["persons"] - zensus.loc[list(ZGB_KREISE), "all_persons"].astype(float)).abs().max())
+    if difference > CENSUS_COUNT_TOLERANCE_PERSONS:
+        raise ValueError("the persons aged 20 to 29 of census table %s and of the activity-status table differ by "
+                         "up to %.0f persons; the two tables do not describe one population"
+                         % (CENSUS_SCHOOL_TABLE, difference))
+
+    # 1. balance, 2. census extrapolation
+    balance, balance_info = balance_by_home(od, T.che_totals(che), gate, series)
+    group_z = zensus["students_nonemployed_persons"].astype(float)
+    ratio = {semester: float(national.loc[semester, "students_20_29_persons"]) / float(group_z[CENSUS_GERMANY])
+             for semester in (SEMESTER_CENSUS_DAY, SEMESTER_SENSITIVITY)}
+    logger.info("%s enrolled students aged 20 to 29 per census pupil or student outside the labour force, Germany: "
+                "%s %.4f, %s %.4f", _TAG, SEMESTER_CENSUS_DAY, ratio[SEMESTER_CENSUS_DAY], SEMESTER_SENSITIVITY,
+                ratio[SEMESTER_SENSITIVITY])
+
+    # 3. SrV with the school degree corrected
+    srv, counts = read_srv(srv_dir)
+    young = srv[(srv["age"] >= AGE_MIN_YEARS) & (srv["age"] <= AGE_MAX_YEARS)]
+    counts["n_persons_20_29"] = int(len(young))
+    counts["n_unreadable_status_20_29"] = int((~young["status_known"]).sum())
+    school = school_degree_rows(young, census, {GROUP_SURROUNDING: groups[GROUP_SURROUNDING],
+                                                GROUP_SURVEYED: groups[GROUP_SURVEYED]})
+    weighted, weight_counts = corrected_weights(young, census)
+    counts.update(weight_counts)
+    legs = education_leg_rows(weighted, groups, balance, day_factor)
+    ages = age_distribution_rows(srv, enrolled_by_age, args.mid_persons)
+    # the balance of the seven surveyed Kreise (all ages) under the 20-to-29 share of each source
+    balance_all_ages = float(gate.loc[GROUP_SURVEYED, "balance_students_persons"])
+    share_of_gate = float(gate.loc[GROUP_SURVEYED, "balance_students_20_29_persons"]) / balance_all_ages
+    by_share = {"share of the gate table (SrV, adult students at home on the day)": [share_of_gate, share_of_gate * balance_all_ages]}
+    for record in ages.itertuples():
+        by_share[record.source] = [float(record.share_20_29_among_adults),
+                                   float(record.share_20_29_among_adults) * balance_all_ages]
+    logger.info("%s balance of the seven surveyed Kreise, %.10g students of all ages; aged 20 to 29 under the share "
+                "of each source [share, persons]: %s", _TAG, balance_all_ages,
+                {name: [round(v[0], 4), round(v[1], 1)] for name, v in by_share.items()})
+
+    corrected = school.set_index("code")
+    rows = []
+    for code in [*ZGB_KREISE, GROUP_SURROUNDING, GROUP_SURVEYED]:
+        codes = groups.get(code, [code])
+        has_srv = all(c in surveyed for c in codes)
+        z = float(group_z.loc[codes].sum())
+        rows.append({
+            "code": code,
+            "zensus_population_20_29_persons": float(zensus.loc[codes, "all_persons"].astype(float).sum()),
+            "zensus_pupils_students_outside_labour_force_20_29_persons": z,
+            "balance_students_20_29_persons": float(balance.loc[codes, "balance_students_20_29_persons"].sum()),
+            "balance_ws2022_23_students_20_29_persons":
+                float(balance.loc[codes, "balance_ws2022_23_students_20_29_persons"].sum()),
+            "balance_ws2025_26_students_20_29_persons":
+                float(balance.loc[codes, "balance_ws2025_26_students_20_29_persons"].sum()),
+            "census_extrapolation_students_20_29_persons": z * ratio[SEMESTER_CENSUS_DAY],
+            "census_extrapolation_ws2022_23_students_20_29_persons": z * ratio[SEMESTER_SENSITIVITY],
+            "srv_school_corrected_students_20_29_persons":
+                float(corrected.loc[code, "srv_students_school_corrected_persons"]) if has_srv else float("nan"),
+            "se_srv_school_corrected_students_20_29_persons":
+                float(corrected.loc[code, "se_srv_students_school_corrected_persons"]) if has_srv else float("nan"),
+            "srv_gate_estimate_students_20_29_persons":
+                float(gate.loc[codes, "srv_estimate_students_20_29_persons"].sum()) if has_srv else float("nan"),
+            "se_srv_gate_estimate_students_20_29_persons":
+                _root_sum_square(gate.loc[codes, "srv_se_estimate_students_20_29_persons"]) if has_srv
+                else float("nan"),
+            "census_times_mid_ratio_students_20_29_persons":
+                float(gate.loc[codes, "census_estimate_students_20_29_persons"].sum()),
+        })
+    estimates = pd.DataFrame(rows).set_index("code")
+    kreise = list(ZGB_KREISE)
+    pattern = estimates.loc[kreise, "zensus_pupils_students_outside_labour_force_20_29_persons"]
+    pattern = pattern / float(pattern.sum())
+    for source, target in CANDIDATES_PATTERN.items():
+        estimates[target] = np.nan
+        estimates.loc[kreise, target] = pattern * float(estimates.loc[kreise, source].sum())
+        for group in (GROUP_SURROUNDING, GROUP_SURVEYED):
+            estimates.loc[group, target] = float(estimates.loc[groups[group], target].sum())
+    # the census pattern carried to 2025 with the change of the population aged 20 to 29 (assumption L6)
+    by_date = population.pivot(index="district_ars5", columns="date", values="persons_20_29").astype(float)
+    if by_date.loc[kreise, [POPULATION_BASE_DATE, POPULATION_NEWEST_DATE]].isna().any().any():
+        raise ValueError("population series: a Kreis has no value on %s or %s"
+                         % (POPULATION_BASE_DATE, POPULATION_NEWEST_DATE))
+    change = by_date.loc[kreise, POPULATION_NEWEST_DATE] / by_date.loc[kreise, POPULATION_BASE_DATE]
+    moved = estimates.loc[kreise, "zensus_pupils_students_outside_labour_force_20_29_persons"] * change
+    estimates[PATTERN_2025] = np.nan
+    estimates.loc[kreise, PATTERN_2025] = (
+        moved / float(moved.sum()) * float(estimates.loc[kreise, "balance_ws2025_26_students_20_29_persons"].sum()))
+    for group in (GROUP_SURROUNDING, GROUP_SURVEYED):
+        estimates.loc[group, PATTERN_2025] = float(estimates.loc[groups[group], PATTERN_2025].sum())
+    persons = {"census_day_2022-05-15": float(estimates.loc[kreise, "zensus_population_20_29_persons"].sum()),
+               POPULATION_BASE_DATE: float(by_date.loc[kreise, POPULATION_BASE_DATE].sum()),
+               POPULATION_NEWEST_DATE: float(by_date.loc[kreise, POPULATION_NEWEST_DATE].sum())}
+    logger.info("%s persons aged 20 to 29 in the eight Kreise: %s; change %s to %s per Kreis: %s", _TAG, persons,
+                POPULATION_BASE_DATE, POPULATION_NEWEST_DATE, {k: round(float(v), 4) for k, v in change.items()})
+    squares = {}
+    for candidate in CANDIDATES:
+        column = candidate.replace("_students_20_29_persons", "") + "_minus_srv_in_se"
+        estimates[column] = ((estimates[candidate] - estimates["srv_school_corrected_students_20_29_persons"])
+                             / estimates["se_srv_school_corrected_students_20_29_persons"])
+        squares[candidate] = float((estimates.loc[surveyed, column] ** 2).sum())
+    logger.info("%s sum of squared differences to the school-corrected SrV count over the %d surveyed Kreise, "
+                "in SrV standard errors: %s", _TAG, len(surveyed),
+                {name: round(value, 2) for name, value in squares.items()})
+    estimates = estimates.reset_index()
+    # omega of the level table and the same ratio with the students of the census year
+    with open(LEVEL_TABLE, encoding="utf-8") as handle:
+        omega_lines = [line for line in handle if line.startswith("# omega=")]
+    found = re.match(r"# omega=([0-9.]+) = 1 - Z / S; Z=([0-9.]+), S=([0-9.]+)", omega_lines[0]) if omega_lines else None
+    if not found:
+        raise ValueError("%s: no header line '# omega=... = 1 - Z / S; Z=..., S=...'" % LEVEL_TABLE.name)
+    omega_table, z_students, s_table = (float(found.group(i)) for i in (1, 2, 3))
+    by_code = estimates.set_index("code")
+    if abs(float(by_code.loc[kreise, "balance_students_20_29_persons"].sum()) - s_table) > 1e-3:
+        raise ValueError("S of the level table header differs from the balance column of this aid")
+    omega = {"level_table_ws2024_25": omega_table}
+    for label, column in (("ws2022_23", "balance_ws2022_23_students_20_29_persons"),
+                          ("ws2025_26", "balance_ws2025_26_students_20_29_persons")):
+        omega[label] = 1.0 - z_students / float(by_code.loc[kreise, column].sum())
+    logger.info("%s omega = 1 - Z / S with Z = %.10g (census 2022) and S of each enrollment semester: %s; "
+                "enrollment of the local sites by semester: %s", _TAG, z_students,
+                {name: round(value, 6) for name, value in omega.items()}, balance_info["local_sites_enrollment"])
+
+    today = dt.date.today().isoformat()
+    inputs = [("level_gate", GATE, False), ("flow_table", OD_TABLE, False), ("che_origins", CHE, False),
+              ("lsn_site_series", LSN_SERIES, False), ("lsn_population", POPULATION, False),
+              ("destatis_students_by_age", ENROLLED_BY_AGE, False),
+              ("level_table", LEVEL_TABLE, False),
+              ("srv_student_parameters", SRV_PARAMETERS, False), ("national_enrollment", NATIONAL, False),
+              ("zensus_students", Path(args.zensus_students), True), ("zensus_school_kreis", school_kreis, True),
+              ("zensus_school_germany", school_germany, True),
+              ("srv_persons", srv_dir / PERSONS_FILE, True), ("srv_legs", srv_dir / LEGS_FILE, True),
+              ("srv_households", srv_dir / HOUSEHOLDS_FILE, True)]
+    if args.mid_persons:
+        inputs.append(("mid_persons", Path(args.mid_persons), True))
+    if args.zensus_status_dir:
+        status_dir = Path(args.zensus_status_dir)
+        status_kreis = status_dir / ("%s_ALTGR2_GEOLK4.json" % CENSUS_STATUS_TABLE)
+        status_age5 = status_dir / ("%s_ALTGR1_GEOLK4.json" % CENSUS_STATUS_TABLE)
+        inputs.extend([("nrw_census_students", NRW, False), ("lsn_school_leavers", LSN_SCHOOLS, False),
+                       ("zensus_status_kreis", status_kreis, True), ("zensus_status_age5_kreis", status_age5, True)])
+    common = [
+        "# Generated by docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py on "
+        "%s; code state eqasim-bs %s." % (today, args.source_commit),
+        "# A decision aid built from the inputs below, not a validation. Assumptions L1 to L4 and the standard "
+        "errors are described in the docstring of the script.",
+        "# Inputs:", *cli._input_lines(inputs),
+        "# Census school degree: table %s of the census database (https://ergebnisse.zensus2022.de), persons aged "
+        "15 or older by age group and highest school degree, reference day 2022-05-15, licence dl-de/by-2-0; data "
+        "call /proxy/api/rest/tables/%s/data/ with '2000S ALTGR2 BILSA3§BILSA4 <GEOLK4|GEODL1> PRS006 STAG', fetched "
+        "2026-11-27." % (CENSUS_SCHOOL_TABLE, CENSUS_SCHOOL_TABLE),
+        "# Ages %d to %d inclusive. Region Kreise %s; SrV does not survey %s." % (
+            AGE_MIN_YEARS, AGE_MAX_YEARS, list(ZGB_KREISE), list(U.UNSURVEYED_KREISE)),
+        "# Rows %s = the surveyed Kreise without Braunschweig, %s = the seven surveyed Kreise; a group is the sum "
+        "of its Kreise, its standard error the root of the summed squares." % (GROUP_SURROUNDING, GROUP_SURVEYED),
+        "# SrV counts: %s" % json.dumps(counts, sort_keys=True),
+    ]
+    cli._write(estimates, out_dir / "student_level_estimates_20_29.csv", [
+        "# Table: student_level_estimates_20_29.csv (issue #140, Phase 2). Students aged 20 to 29 living in each "
+        "Kreis: balance, census extrapolation, school-corrected SrV, census pattern.", *common,
+        "# balance_students_20_29_persons: the gate column (enrollment of winter semester 2024/25); "
+        "balance_ws2022_23_...: the same flows divided by LSN enrollment / CHE total of the institution (L1); "
+        "not rescaled: %s." % balance_info["institutions_not_rescaled"],
+        "# balance_ws2025_26_...: the flows rescaled to the newest semester of the official site statistics, every "
+        "destination site by its own ratio to 2024/25 (L1); not rescaled: %s; rescaled to their last published "
+        "winter semester instead: %s. Enrollment of the local sites by semester: %s." % (
+            balance_info["destinations_not_rescaled_newest"], json.dumps(balance_info["destinations_behind_newest"]),
+            json.dumps(balance_info["local_sites_enrollment"])),
+        "# %s: the total of balance_ws2025_26_... over the eight Kreise, distributed by the census count times the "
+        "change of the persons aged 20 to 29 from %s to %s (L6). Persons aged 20 to 29 in the eight Kreise: %s; "
+        "change per Kreis: %s." % (PATTERN_2025, POPULATION_BASE_DATE, POPULATION_NEWEST_DATE, json.dumps(persons),
+                                   json.dumps({k: round(float(v), 6) for k, v in change.items()})),
+        "# omega = 1 - Z / S with Z = %.10g, the census count of 2022, and S = the eight Kreise of a balance column: "
+        "%s. Only the enrollment of 2022/23 puts Z and S into one year." % (z_students, json.dumps(omega)),
+        "# Every column '..._20_29_...' of the balance rests on ONE share of the ages 20 to 29 among the students. "
+        "Row %s, %.10g students of all ages, aged 20 to 29 under the share of each source of "
+        "student_age_distribution.csv [share, persons]: %s. The balance counts enrolled persons; SrV and MiD "
+        "count persons whose main activity is studying." % (GROUP_SURVEYED, balance_all_ages, json.dumps(by_share)),
+        "# census_extrapolation_...: zensus_pupils_students_outside_labour_force_20_29_persons times enrolled "
+        "students aged 20 to 29 in Germany / the same census count for Germany (L2): %s ratio %.10g, %s ratio "
+        "%.10g." % (SEMESTER_CENSUS_DAY, ratio[SEMESTER_CENSUS_DAY], SEMESTER_SENSITIVITY,
+                    ratio[SEMESTER_SENSITIVITY]),
+        "# srv_school_corrected_...: SrV post-stratified to the census school degree of the Kreis (L3, L4), all "
+        "persons with a valid weight; srv_gate_estimate_... and census_times_mid_ratio_...: the columns "
+        "srv_estimate_students_20_29_persons and census_estimate_students_20_29_persons of the gate table, "
+        "unchanged.",
+        "# census_pattern_...: the total of the balance column over the eight Kreise, distributed by the census "
+        "count of the pupils and students outside the labour force (item 4 of the docstring).",
+        "# *_minus_srv_in_se: head count minus srv_school_corrected_..., in its standard errors; sum of the "
+        "squares over the %d surveyed Kreise: %s." % (len(surveyed), json.dumps(
+            {name: round(value, 4) for name, value in squares.items()})),
+    ])
+    cli._write(school, out_dir / "srv_school_degree_20_29.csv", [
+        "# Table: srv_school_degree_20_29.csv (issue #140, Phase 2). The SrV sample aged 20 to 29 by school degree "
+        "against the census, and the student shares inside the two classes.", *common,
+        "# with qualification: SrV V_SCHULAB %d; census category %s (Fachhochschul- oder Hochschulreife). Persons "
+        "without a readable school degree are left out of the shares and counted (n_unknown_school_degree)." % (
+            SRV_WITH_QUALIFICATION, CENSUS_QUALIFICATION),
+        "# srv_students_school_corrected_persons = census persons with x student share with + census persons "
+        "without x student share without; the census persons are those of the whole Kreis.",
+    ])
+    cli._write(legs, out_dir / "student_education_leg_day_20_29.csv", [
+        "# Table: student_education_leg_day_20_29.csv (issue #140, Phase 2). Students aged 20 to 29 with an "
+        "education leg on the reporting day: SrV against balance x day factor.", *common,
+        "# away_all_day: students with E_ANZ_WEGE %d among all students with a valid weight (weight_school)."
+        % SRV_AWAY_ALL_DAY,
+        "# Education-leg columns: students at home at some point on the day; education leg = E_ZWECK_9 in %s. "
+        "weight_population: the SrV "
+        "weight times one factor per Kreis so that the persons aged 20 to 29 sum to the census; weight_school: one "
+        "factor per Kreis and school-degree class." % sorted(U.EDUCATION_E_ZWECK_9),
+        "# day_factor = %s %.10g x (1 - away_all_day_share %.10g), both from srv2023_student_parameters.csv (adult "
+        "students of all ages). The SrV side and the day factor share the SrV education-leg share: the table shows "
+        "the split between Braunschweig and the surrounding Kreise, not a second test of the level." % (
+            cli.EDUCATION_LEG_KEY, education_leg_share, away_share),
+    ])
+    cli._write(ages, out_dir / "student_age_distribution.csv", [
+        "# Table: student_age_distribution.csv (issue #140, Phase 2). Age bands of the students by three sources "
+        "that count different things.", *common,
+        "# counts: 'enrolled persons' = every person enrolled for a course of study, whatever the main activity "
+        "(official statistics, distance-learning institutions included); 'main activity student' = SrV V_ERW %d "
+        "with GEWICHT_P_ZENSUS, every person with a valid weight, and MiD P_TAET %d with P_GEW." % (
+            SRV_STUDENT, MID_STUDENT),
+        "# n_persons: enrolled persons, or the unweighted respondents of the survey. share_20_29_among_adults and "
+        "share_30plus_among_adults: among the students aged 18 or older. The level table uses the SrV shares of "
+        "srv2023_student_parameters.csv (adult students at home on the day).",
+    ])
+    if args.mid_persons:
+        mid = mid_check(Path(args.mid_persons), census_germany)
+        cli._write(mid, out_dir / "mid_school_degree_check_20_29.csv", [
+            "# Table: mid_school_degree_check_20_29.csv (issue #140, Phase 2). National MiD 2023 sample aged 20 to "
+            "29: school degree before and after the person weight, student shares, second home.", *common,
+            "# MiD: weight P_GEW; student = P_TAET %d (P_TAET %d left out); with qualification = P_BIL1 in %s "
+            "(P_BIL1 %d left out and counted); second home = P_NEBEN %d among the persons who answered it." % (
+                MID_STUDENT, MID_UNKNOWN_ACTIVITY, list(MID_WITH_QUALIFICATION), MID_UNKNOWN_SCHOOL,
+                MID_SECOND_HOME_YES),
+        ])
+    else:
+        logger.info("%s --mid-persons not given: the national MiD table is not written", _TAG)
+    if args.zensus_status_dir:
+        nrw = pd.read_csv(NRW, comment="#", dtype={"district_ars5": str})
+        schools = pd.read_csv(LSN_SCHOOLS, comment="#", dtype={"district_ars5": str})
+        status_nrw = read_census_status(status_kreis, "ALTGR2", CENSUS_AGE, list(nrw["district_ars5"]), True)
+        check, summary = nrw_check(nrw, status_nrw)
+        cli._write(check, out_dir / "census_pattern_check_nrw.csv", [
+            "# Table: census_pattern_check_nrw.csv (issue #140, Phase 2). Test of assumption L2 outside the region: "
+            "the published census count of students by district of residence in Nordrhein-Westfalen against the "
+            "public census group times one pooled ratio.", *common,
+            "# students_18_26_persons: nrw_census_students_18_26.csv (students by their own statement, aged 18 to "
+            "26); zensus_pupils_students_outside_labour_force_20_29_persons: census table %s, aged 20 to 29. The "
+            "age windows differ, so the table tests the pattern over the districts, not a level." % CENSUS_STATUS_TABLE,
+            "# relative_error = census group x pooled ratio / students - 1. students_18_26_per_person_20_29 mixes "
+            "the two age windows and only sorts the districts; above %.2f a district counts as one with many "
+            "students." % MANY_STUDENTS_SHARE,
+            "# Summary: %s" % json.dumps(summary, sort_keys=True),
+        ])
+        cohort = read_census_status(status_age5, "ALTGR1", CENSUS_AGE_15_19, list(ZGB_KREISE), False)
+        school_rows = school_district_rows(schools, cohort, che)
+        cli._write(school_rows, out_dir / "entrance_qualifications_by_school_district.csv", [
+            "# Table: entrance_qualifications_by_school_district.csv (issue #140, Phase 2). University entrance "
+            "qualifications awarded by the schools of each Kreis in school year 2021/22 per resident age cohort.",
+            *common,
+            "# entrance_qualifications_persons: lsn_entrance_qualifications_by_school_district_2021_22.csv, by the "
+            "Kreis of the SCHOOL (assumption L5); zensus_resident_cohort_persons: census persons aged 15 to 19 of "
+            "the Kreis divided by %d (table %s, five-year age groups)." % (YEARS_15_19, CENSUS_STATUS_TABLE),
+            "# che_students_with_qualification_from_kreis_persons: row_kind total of the Kreis view of the CHE "
+            "table (students of all ages at all German institutions whose qualification was obtained in the "
+            "Kreis, winter semester 2022/23). Row %s = the eight Kreise." % GROUP_REGION,
+        ])
+    else:
+        logger.info("%s --zensus-status-dir not given: the NRW check and the school-district table are not written",
+                    _TAG)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

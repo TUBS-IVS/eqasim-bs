@@ -1,0 +1,108 @@
+{
+  "stage": "braunschweig.analysis.synthesis.students_vs_srv",
+  "status": "measurement, not validation",
+  "sampling_rate": 1.0,
+  "trace_available": {
+    "weekend": true,
+    "diary": true
+  },
+  "n_missing_srv_cells": 0,
+  "rates": {
+    "adult_students_no_home_kreis": 0.0,
+    "adult_students_absent": 0.07606658582295227,
+    "persons_missing_age": 0.0,
+    "adults_unreadable_p_taet": 0.0015771398510467244,
+    "adults_no_home_kreis": 3.1868819440829695e-06,
+    "plan_source_unresolved": 0.0,
+    "plan_source_redrawn_unresolved": 0.0,
+    "plan_source_redrawn_donor_unknown": 0.00010375596596804317
+  },
+  "diagnostics": {
+    "student_frame": {
+      "n_persons": 1129395,
+      "n_unreadable_p_taet": 1518,
+      "n_students": 27657,
+      "n_students_missing_age": 0,
+      "n_adult_students": 27213,
+      "n_excluded_age_group": 0,
+      "n_excluded_sex": 0,
+      "n_excluded_household_type": 0,
+      "n_excluded_lives_with_person_18_years_older": 0,
+      "n_excluded_licence": 0,
+      "n_excluded_cars_in_household": 0,
+      "n_excluded_car_access": 0,
+      "n_excluded_bicycle_in_household": 0,
+      "n_excluded_season_ticket": 0,
+      "n_excluded_ticket_group4": 0,
+      "day_n_persons": 27213,
+      "day_n_mobile": 22307,
+      "day_n_with_education_leg": 9598,
+      "day_n_excluded_first_departure_hour": 0,
+      "day_n_excluded_last_arrival_home_hour": 0,
+      "day_n_excluded_time_at_education": 0,
+      "day_n_excluded_arrival_band": 0,
+      "n_adult_students_by_kreis": {
+        "03101": 10179,
+        "03102": 2605,
+        "03103": 2940,
+        "03151": 2905,
+        "03153": 2822,
+        "03154": 1492,
+        "03157": 2203,
+        "03158": 2067
+      },
+      "n_adult_students_no_kreis": 0,
+      "unmatched_home_share": 0.0,
+      "max_unmatched_home_share": 0.05,
+      "n_adult_students_absent": 2070,
+      "n_adult_students_present": 25143
+    },
+    "student_level": {
+      "n_persons": 1129395,
+      "n_missing_age": 0,
+      "n_adults_with_age": 942846,
+      "n_adults_unreadable_p_taet": 1487,
+      "n_adults_no_home_kreis": 3,
+      "n_adults_counted": 941356,
+      "n_adults_counted_absent": 52356,
+      "missing_srv_codes": [],
+      "n_missing_srv_rows": 0
+    },
+    "young_adult_status": {
+      "n_persons": 1129395,
+      "n_missing_age": 0,
+      "n_adults_with_age": 942846,
+      "n_adults_unreadable_p_taet": 1487,
+      "n_adults_no_home_kreis": 3,
+      "n_adults_counted": 941356,
+      "n_adults_counted_absent": 52356,
+      "n_young_adults": 124510,
+      "missing_srv_codes": [],
+      "n_missing_srv_rows": 0,
+      "zensus_missing_kreise": [],
+      "n_zensus_missing_kreise": 0
+    },
+    "student_work_class": {
+      "n_persons": 1129395,
+      "n_unreadable_p_taet": 1518,
+      "n_students": 27657,
+      "n_students_missing_age": 0,
+      "n_adult_students": 27213,
+      "n_adult_students_employed": 0,
+      "n_adult_students_not_employed_in_employed_class": 0
+    },
+    "plan_source": {
+      "n_students": 27213,
+      "n_own_diary": 17575,
+      "n_redrawn": 9638,
+      "n_redrawn_donor_not_found": 0,
+      "n_redrawn_donor_p_taet_unreadable": 1,
+      "n_redrawn_donor_unknown": 1,
+      "n_own_diary_donor_unknown": 0,
+      "n_unresolved": 0,
+      "n_redrawn_unresolved": 0,
+      "seed_key_present": true,
+      "unresolved_reason": null
+    }
+  }
+}

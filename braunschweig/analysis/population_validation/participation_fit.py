@@ -94,7 +94,7 @@ import pandas as pd
 
 from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.attributes import (
-    EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES)
+    EMPLOYED_EMPLOYMENT_STATUS_CLASSES, EMPLOYMENT_STATUS_CATEGORIES, STUDENT_TAET)
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
 
 LOGGER = logging.getLogger("braunschweig.analysis.participation_fit")
@@ -745,6 +745,156 @@ def universe_participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
             "universe_participation_fit: %d realised (ars5, control, category) cell(s) have "
             "no matching target and are excluded from the fit; examples: %s",
             len(missing), examples)
+    merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
+    merged["abs_error"] = (merged["realised_share"] - merged["target_share"]).abs()
+    return merged[["ars5", "control", "category", "realised_share", "n_persons",
+                   "target_share", "abs_error"]].reset_index(drop=True)
+
+
+#: Columns of the student targets the stage writes (``stage.STUDENT_TARGETS_FILE``, produced by
+#: ``popsim.student_targets.student_targets_long``) that the student fit reads.
+STUDENT_TARGET_COLUMNS = ("ars5", "control", "category", "target_share")
+
+
+def _student_entry(name: str):
+    """The ``kreis_attribute_control.REGISTRY`` entry of a student entry; ``ValueError`` otherwise."""
+    if name not in kac.STUDENT_ENTRY_NAMES:
+        raise ValueError(
+            f"student participation fit: {name!r} is not a student entry "
+            f"({sorted(kac.STUDENT_ENTRY_NAMES)}); the student targets file holds only those")
+    return next(ctl for ctl in kac.REGISTRY if ctl.name == name)
+
+
+#: Readings of ``has_pt_subscription``: the boolean itself, or its text when a CSV column with a
+#: missing value was read as strings. Anything else is not read as a flat-rate ticket.
+_FLATRATE_VALUES = {True: True, False: False, "True": True, "False": False, "true": True,
+                    "false": False}
+
+
+def _flatrate_flag(values: pd.Series) -> np.ndarray:
+    """``has_pt_subscription`` as a strict boolean array (True only for a True reading).
+
+    A missing value or one outside :data:`_FLATRATE_VALUES` reads as no flat-rate ticket; both
+    counts are logged (a WARNING when above zero), never cast silently (``astype(bool)`` would read
+    NaN and the string "False" as True).
+    """
+    mapped = values.map(_FLATRATE_VALUES)
+    missing = values.isna()
+    unrecognised = mapped.isna() & ~missing
+    n = len(values)
+    (LOGGER.warning if missing.any() or unrecognised.any() else LOGGER.info)(
+        "realised_student_participation: has_pt_subscription missing for %d/%d (%.2f%%) and "
+        "unrecognised for %d/%d (%.2f%%; examples %s) persons; both read as no flat-rate ticket.",
+        int(missing.sum()), n, 100.0 * missing.sum() / max(n, 1), int(unrecognised.sum()), n,
+        100.0 * unrecognised.sum() / max(n, 1), sorted({str(v) for v in values[unrecognised]})[:5])
+    return mapped.eq(True).to_numpy(dtype=bool)
+
+
+def realised_student_participation(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
+                                   controls=None) -> pd.DataFrame:
+    """Per-Kreis realised share of each student entry (A3 of the student design, ADR-0211).
+
+    Mirrors :func:`realised_universe_participation`: each entry is measured over its OWN age range
+    (``min_age`` / ``max_age`` of its ``REGISTRY`` entry, inclusive), from the realised trips (eqasim
+    trip schema only, :func:`_purpose_leg_person_ids`). A student is a person with ``P_TAET ==
+    attributes.STUDENT_TAET``; a ``P_TAET`` that is missing or not a number counts as no student and
+    is logged as a count. The labels follow the seed derivation
+    (``mid.participation.derive_student_status_seed_columns``): the education entries cross the
+    student status with an education leg, the work entry with a work leg (the ``work`` purpose, as
+    for ``work_by_employment``), the ticket entry with ``has_pt_subscription`` (derived from the same
+    flat-rate ticket types as the seed's ``pt_ticket_group4`` groups, ADR-0087).
+
+    ``persons_kreis`` must carry ``person_id``, ``ars5``, ``age`` and ``P_TAET``, plus
+    ``has_pt_subscription`` when the ticket entry is measured (``KeyError`` naming what is absent;
+    a missing or unrecognised value of it reads as no ticket and is counted, :func:`_flatrate_flag`).
+    ``controls``: the entry names to measure (default: all four). Returns ``ars5, control,
+    category, realised_share, n_persons`` (``n_persons`` = the entry's universe in that Kreis); a
+    Kreis without a member of an entry's universe has no row for it. An empty universe is logged
+    as a WARNING. HONESTY CAVEAT: these targets steer the raking, so a good fit is convergence, not
+    independent validation (module docstring).
+    """
+    entries = [_student_entry(name) for name in
+               (sorted(kac.STUDENT_ENTRY_NAMES) if controls is None else controls)]
+    needed = ["person_id", "ars5", "age", "P_TAET"]
+    if any(ctl.name == kac.STUDENT_SEASON_TICKET for ctl in entries):
+        needed.append("has_pt_subscription")
+    missing = [c for c in needed if c not in persons_kreis.columns]
+    if missing:
+        raise KeyError(f"realised_student_participation: persons_kreis is missing required "
+                       f"column(s) {missing} (has {list(persons_kreis.columns)}).")
+    if "person_id" not in trips.columns:
+        raise KeyError("realised_student_participation: trips is missing required column "
+                       f"'person_id' (has {list(trips.columns)}).")
+    participants = _purpose_leg_person_ids(trips, ("work", "education"))
+    n_total = len(persons_kreis)
+    taet = pd.to_numeric(persons_kreis["P_TAET"], errors="coerce")
+    n_unreadable = int(taet.isna().sum())
+    (LOGGER.warning if n_unreadable else LOGGER.info)(
+        "realised_student_participation: %d/%d (%.1f%%) persons have no readable P_TAET and count "
+        "as no student.", n_unreadable, n_total, 100.0 * n_unreadable / max(n_total, 1))
+    student = (taet == STUDENT_TAET).to_numpy()
+    ages = pd.to_numeric(persons_kreis["age"], errors="coerce").to_numpy()
+    ars5 = persons_kreis["ars5"].to_numpy()
+    education = persons_kreis["person_id"].isin(participants["education"]).to_numpy()
+    work = persons_kreis["person_id"].isin(participants["work"]).to_numpy()
+
+    def labels_of(name: str) -> np.ndarray:
+        if name == kac.STUDENT_EDUCATION_18_29:
+            return np.select([student & education, student, education],
+                             [kac.STUDENT_LABEL_STUDENT_EDU, kac.STUDENT_LABEL_STUDENT_NOEDU,
+                              kac.STUDENT_LABEL_OTHER_EDU], default=kac.STUDENT_LABEL_OTHER_NOEDU)
+        if name == kac.STUDENT_EDUCATION_30PLUS:
+            return np.select([student, education],
+                             [kac.STUDENT_LABEL_STUDENT, kac.STUDENT_LABEL_OTHER_EDU],
+                             default=kac.STUDENT_LABEL_OTHER_NOEDU)
+        if name == kac.STUDENT_WORK_LEG:
+            flag = work
+            yes, no = kac.STUDENT_LABEL_STUDENT_WORK, kac.STUDENT_LABEL_STUDENT_NOWORK
+        else:
+            flag = _flatrate_flag(persons_kreis["has_pt_subscription"])
+            yes, no = kac.STUDENT_LABEL_STUDENT_FLATRATE, kac.STUDENT_LABEL_STUDENT_NO_FLATRATE
+        return np.select([student & flag, student], [yes, no], default=kac.STUDENT_LABEL_NOT_STUDENT)
+
+    frames = []
+    for ctl in entries:
+        in_universe = ages >= ctl.min_age
+        if ctl.max_age is not None:
+            in_universe = in_universe & (ages <= ctl.max_age)
+        if not in_universe.any():
+            LOGGER.warning("realised_student_participation: entry '%s' universe is EMPTY (0/%d "
+                           "persons); check the 'age' column.", ctl.name, n_total)
+        frames.append(_category_shares(ars5[in_universe], labels_of(ctl.name)[in_universe], ctl.name,
+                                       tuple(label for label, _ in ctl.categories)))
+    return pd.concat(frames, ignore_index=True)[
+        ["ars5", "control", "category", "realised_share", "n_persons"]]
+
+
+def student_participation_fit(trips: pd.DataFrame, persons_kreis: pd.DataFrame,
+                              student_targets: pd.DataFrame) -> pd.DataFrame:
+    """Join :func:`realised_student_participation` to the student targets of the run.
+
+    ``student_targets`` is the long table the popsim stage writes for its active student entries
+    (``stage.STUDENT_TARGETS_FILE``; needs :data:`STUDENT_TARGET_COLUMNS`): only the entries in it
+    are measured, so the report lists the run's active student entries. A control that is not a
+    student entry raises ``ValueError``; realised cells without a target row are logged and
+    dropped, as in :func:`universe_participation_fit`. Returns the columns of
+    :func:`universe_participation_fit`. Same HONESTY CAVEAT (module docstring).
+    """
+    missing = [c for c in STUDENT_TARGET_COLUMNS if c not in student_targets.columns]
+    if missing:
+        raise KeyError(f"student_participation_fit: the student targets lack column(s) {missing} "
+                       f"(has {list(student_targets.columns)}).")
+    targets = student_targets[list(STUDENT_TARGET_COLUMNS)].copy()
+    targets["ars5"] = targets["ars5"].astype(str).str.zfill(5)
+    controls = list(dict.fromkeys(targets["control"]))
+    realised = realised_student_participation(trips, persons_kreis, controls)
+    merged = realised.merge(targets, on=["ars5", "control", "category"], how="left", indicator=True)
+    unmatched = merged[merged["_merge"] == "left_only"]
+    if not unmatched.empty:
+        LOGGER.warning(
+            "student_participation_fit: %d realised (ars5, control, category) cell(s) have no "
+            "target and are excluded from the fit; examples: %s", len(unmatched),
+            list(zip(unmatched["ars5"], unmatched["control"], unmatched["category"]))[:5])
     merged = merged[merged["_merge"] == "both"].drop(columns="_merge")
     merged["abs_error"] = (merged["realised_share"] - merged["target_share"]).abs()
     return merged[["ars5", "control", "category", "realised_share", "n_persons",

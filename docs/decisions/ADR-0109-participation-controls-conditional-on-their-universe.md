@@ -1,5 +1,6 @@
 # ADR-0109 · 2026-09-07 · Participation controls are conditional on their universe
 - **Status:** active
+- **Amended by [ADR-0211](ADR-0211-students-lower-the-employed-target-and-get-their-own-education-entries.md) (2026-11-27), for the adult band:** two hard entries by student status on the age ranges 18 to 29 and 30 or older replace `education_18plus` (one switch `student_education_kreis_control`); the other bands of the education-by-age family and the other participation controls are unchanged.
 - **Numbering:** ADR-0109 is the next free id after ADR-0108. Allocated 2026-09-07 and
   RE-VERIFIED on 2026-09-07 before the record was written: `docs/decisions/` was listed on every
   remote branch of `TUBS-IVS/eqasim-bs` (17 heads, `git ls-remote --heads origin` piped through

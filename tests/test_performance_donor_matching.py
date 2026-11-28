@@ -379,7 +379,7 @@ def test_completed_donor_declares_default_on_matching_performance_flag():
         def __init__(self):
             self.calls = {}
 
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):  # synpp ConfigurationContext signature
             self.calls[key] = default
 
     context = Recorder()
@@ -418,6 +418,10 @@ def test_completed_donor_execute_forwards_matching_performance_flag(
             "braunschweig.population.popsim.donor_match_fine_child_age_bands": True,
             "braunschweig.population.popsim.donor_match_passenger_access": True,
             "braunschweig.population.popsim.donor_match_lift_free_never_passenger": True,
+            # execute() reads every declared key with the strict one-argument config(); the double must know
+            # the A1 keys (ADR-0211) like it knows the others.
+            "braunschweig.population.popsim.donor_match_student_status": False,
+            "braunschweig.population.popsim.donor_match_student_fallback_warn_share": None,
             "braunschweig.performance.donor_matching": precompute_matching,
             "mid_passenger_availability": passenger_availability_enabled,
         }

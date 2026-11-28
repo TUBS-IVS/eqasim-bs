@@ -31,11 +31,17 @@ def source_origin_breakdown(trace: pd.DataFrame) -> pd.DataFrame:
 def hh_match_level_funnel(trace: pd.DataFrame) -> pd.DataFrame:
     """Counts per ``match_level`` among ``resolution == "hh_match"`` rows -- the
     spec's promised breakdown of HH-match relaxation depth (0 = strict … N = loosest).
+
+    A trace built with the student donor key (ADR-0211) carries ``hh_student_ladder``: a household with a
+    student matches on a ladder one key longer, so the same level number means something else there. The
+    funnel then groups by that column too and the two ladders never share a row; a trace without the
+    column (key off) gives the funnel it always did.
     """
     hh = trace[trace["resolution"] == "hh_match"]
-    out = (hh.groupby("match_level").size().rename("n").reset_index())
+    keys = ["match_level"] + (["hh_student_ladder"] if "hh_student_ladder" in trace.columns else [])
+    out = (hh.groupby(keys).size().rename("n").reset_index())
     out["share"] = out["n"] / out["n"].sum() if len(hh) else 0.0
-    return out.sort_values("match_level").reset_index(drop=True)
+    return out.sort_values(keys).reset_index(drop=True)
 
 
 # Raw MiD id columns that must never appear in an exported analysis CSV.

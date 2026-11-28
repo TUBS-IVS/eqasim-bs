@@ -133,3 +133,36 @@ def test_the_stage_declares_the_source_with_the_exact_per_sex_default():
 
     popsim_stage.configure(_Recording())
     assert declared[SOURCE_KEY] == popsim_stage.EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX
+
+
+def test_the_active_student_concept_lowers_the_injected_grid_and_reports_the_applied_targets(tmp_path):
+    """Design A2 (ADR-0211) on the stage path: the per-Kreis grid sums drop by exactly the students
+    counted as employed, and the stage report rows are the targets the grid carries."""
+    from braunschweig.popsim import student_level
+
+    students = {("03101", "M", "16_29"): 5.0, ("03101", "F", "30_39"): 3.0,
+                ("03151", "M", "30_39"): 2.0}
+    settings = popsim_stage.StudentEmploymentSettings(
+        enabled=True, level=student_level.StudentLevel(table=pd.DataFrame(), omega=0.5),
+        students_employed_by_group=students)
+    source = popsim_stage.EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX
+    today = _inject(tmp_path / "today", source)
+    kreis_dir, data_path = _write_inputs(tmp_path / "a2")
+    context = _Context({KREIS_DIR_KEY: kreis_dir, "data_path": data_path, SOURCE_KEY: source})
+    lowered = popsim_stage._inject_employment_grid_columns(
+        context, _cells(), True, student_employment=settings)
+
+    report = settings.report()
+    assert report["active"] is True and report["subtracted_persons_total"] == pytest.approx(10.0)
+    rows = {(r["KREIS"], r["sex"], r["grid_age_group"]): r for r in report["rows"]}
+    assert len(rows) == 2 * 2 * 2
+    for kreis in ("03101", "03151"):
+        for sex in "MF":
+            for group in ("16_29", "30_39", "40_49", "50_59", "60plus"):
+                column = f"EMPLOYED_{sex}_{group}_agg"
+                applied = lowered.loc[lowered["KREIS"] == kreis, column].sum()
+                before = today.loc[today["KREIS"] == kreis, column].sum()
+                assert applied == pytest.approx(before - students.get((kreis, sex, group), 0.0))
+                if (kreis, sex, group) in rows:
+                    assert rows[(kreis, sex, group)]["employed_target_persons"] == pytest.approx(applied)
+                    assert rows[(kreis, sex, group)]["zensus_employed_persons"] == pytest.approx(before)

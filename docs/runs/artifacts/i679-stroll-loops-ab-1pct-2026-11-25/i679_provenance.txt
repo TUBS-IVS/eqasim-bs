@@ -1,0 +1,43 @@
+# Provenance of the i679 arms (issue #679, task C7), written 2026-11-26T02:53:24+01:00 on the run server; paths relative to the home directory
+## bundles (sha256)
+4eaad1f646b5e8bf106fcc98a74a5501623aa53ce1e4dee3a9896551db98bbe0  i679_66da6ee0.bundle
+255eb0a1378821927467c13578c93399e40eb5e3acaebaacab621ec25af91305  i679_0611505f.bundle
+91d56e85df46692177dbb5865dbc6bc65f0cc44587684a92fd4fbda9b180bda2  i679_ff83decf.bundle
+## code archive of the comparison script commit 84a91698 (sha256)
+50b78560b30619ec3ff63908b9b79faa61da02304304847947a9f340f0a5b400  i679_84a91698_code.tgz
+## eqasim jar of the runtime stage (md5), arms A and C (cache copied from the same runtime stage)
+926f6dce5a4b309589830ec67cc2c60b  ~/i679_a/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+926f6dce5a4b309589830ec67cc2c60b  ~/i679_c/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+## PopulationSim environment of arm C (version)
+populationsim 0.10.0+bs.3
+## run.json setup and launches
+i679_off setup 2026-11-25T13:59:51+01:00 commits {'eqasim-bs': '66da6ee0a088', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/popsim100_20261120/cache cache_bytes 63660021887
+   launch 2026-11-25T14:01:14+01:00 gate gated commits {'eqasim-bs': '66da6ee0a088', 'eqasim-java-bs': 'cb7e81fa3851'}
+   launch 2026-11-25T14:05:51+01:00 gate gated commits {'eqasim-bs': '66da6ee0a088', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_on setup 2026-11-25T16:34:31+01:00 commits {'eqasim-bs': '66da6ee0a088', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_off/cache cache_bytes 64551003224
+   launch 2026-11-25T16:35:44+01:00 gate gated commits {'eqasim-bs': '66da6ee0a088', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_off2 setup 2026-11-25T20:23:04+01:00 commits {'eqasim-bs': '0611505f3900', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_off/cache cache_bytes 64551003224
+   launch 2026-11-25T20:24:17+01:00 gate gated commits {'eqasim-bs': '0611505f3900', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_on2 setup 2026-11-25T20:14:20+01:00 commits {'eqasim-bs': '0611505f3900', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_on/cache cache_bytes 64695541247
+   launch 2026-11-25T20:15:31+01:00 gate gated commits {'eqasim-bs': '0611505f3900', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_c setup 2026-11-25T23:28:53+01:00 commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_on2/cache cache_bytes 64679955112
+   launch 2026-11-25T23:30:12+01:00 gate gated commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_b setup 2026-11-26T02:13:01+01:00 commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_c/cache cache_bytes 65987971436
+   launch 2026-11-26T02:21:06+01:00 gate gated commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'}
+i679_a setup 2026-11-26T02:19:20+01:00 commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'} cache_from ~/i679_c/cache cache_bytes 65987971436
+   launch 2026-11-26T02:21:53+01:00 gate gated commits {'eqasim-bs': 'ff83decf83b6', 'eqasim-java-bs': 'cb7e81fa3851'}
+## isolated-run start/exit lines
+[isolated-run] run=i679_off eqasim-bs=66da6ee0a088c5d01a2c5870f7184f225070dec3 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T14:01:15+01:00
+[isolated-run] run=i679_off eqasim-bs=66da6ee0a088c5d01a2c5870f7184f225070dec3 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=1 end=2026-11-25T14:04:56+01:00
+[isolated-run] run=i679_off eqasim-bs=66da6ee0a088c5d01a2c5870f7184f225070dec3 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T14:05:51+01:00
+[isolated-run] run=i679_off eqasim-bs=66da6ee0a088c5d01a2c5870f7184f225070dec3 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-25T16:23:57+01:00
+[isolated-run] run=i679_on eqasim-bs=66da6ee0a088c5d01a2c5870f7184f225070dec3 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T16:35:44+01:00
+[isolated-run] run=i679_off2 eqasim-bs=0611505f3900a4d66567320e13af4018c5faec3e eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T20:24:18+01:00
+[isolated-run] run=i679_off2 eqasim-bs=0611505f3900a4d66567320e13af4018c5faec3e eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-25T20:32:36+01:00
+[isolated-run] run=i679_on2 eqasim-bs=0611505f3900a4d66567320e13af4018c5faec3e eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T20:15:32+01:00
+[isolated-run] run=i679_c eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-25T23:30:13+01:00
+[isolated-run] run=i679_c eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-26T02:03:13+01:00
+[isolated-run] run=i679_b eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-26T02:21:06+01:00
+[isolated-run] run=i679_b eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-26T02:32:23+01:00
+[isolated-run] run=i679_a eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 start=2026-11-26T02:21:54+01:00
+[isolated-run] run=i679_a eqasim-bs=ff83decf83b61646dd02c638f76a6b6d8b179bd6 eqasim-java-bs=cb7e81fa3851c1338cfd80921c9d55aaeef2e600 exit=0 end=2026-11-26T02:44:53+01:00

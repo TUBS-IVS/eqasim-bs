@@ -1,0 +1,26 @@
+{
+  "work_dir": "RUN_DIR/popsim_work",
+  "batches": [
+    "batch_030"
+  ],
+  "seed_groups": {
+    "6dd281036d6a23eda96d8c27ee434ae25cdc9b4a8d734d4c04ec9e72613cec36": [
+      "batch_030"
+    ]
+  },
+  "repository_commit": "7c6edc8fd7d121ff497a5dc7e0d27e99624b0e37",
+  "thresholds": {
+    "weight_class_gap_pp": 5.0,
+    "coverage_ratio_low": 0.5,
+    "coverage_ratio_high": 2.0,
+    "universe_ratio_tolerance": 0.02,
+    "sequential_fallback_rate": 0.05,
+    "coverage_multi_hit_max": 0.0,
+    "rounding_shift_bound": 0.1,
+    "rounding_min_target": 40.0
+  },
+  "misfit": true,
+  "chunk_rows": 5000000,
+  "mid_households": null,
+  "utc_timestamp": "2026-11-27T19:30:10.040106+00:00"
+}

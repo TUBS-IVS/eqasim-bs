@@ -1,0 +1,72 @@
+dataset: student_level_table
+title: Student level by home Kreis, sex and age group, with the share counted as employed
+provider: derived in-repo from the student balance (student_od_balance), MiD 2023 age and sex cells, LSN-Online population aged 20 to 29 and Zensus 2022
+vintage: enrollment WS 2025/26 balance (WS 2022/23 for omega); population change 2022-12-31 to 2025-12-31; SrV 2023, MiD 2023, Zensus 2022 (reference date 2022-05-15)
+geography: |
+  One block per ZGB Kreis (the eight Kreise of the study region): students living in the Kreis,
+  split by sex and by the four age groups 18_19, 20_24, 25_29 and 30plus (the joint MiD 2023 share of
+  (sex, age group), the same mix in every Kreis). The split of the total over the Kreise follows the
+  census (assumptions A18 and A19).
+crs: null
+roles:
+- reference_table
+used_by:
+- data.census.filtered
+acquisition:
+  method: committed
+  source: |
+    Written by the balance sub-command of scripts/build_student_balance.py with --final (the
+    same run as the four tables of record student_od_balance); the header carries omega
+    with Z, S and both ratios, the day factor with its two SrV shares (for Phases 3 and 4;
+    the table counts heads, no day factor applied), the weight triple, the mover share and
+    their source, and the sha256 of every input.
+  script: scripts/build_student_balance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/student_level_table.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file is committed with the
+    checkout. Read by the PopulationSim stage (data.census.filtered resolved to braunschweig.popsim.stage)
+    through braunschweig.popsim.student_level for the student employment concept (A2) and the counts of
+    the student entries (A3, ADR-0211); Phase 4 of #140 is not built. The CLI end to end on
+    synthetic local-only inputs: tests/test_build_student_balance_cli.py. The path is ignored
+    by the catch-all eqasim-data/* rule (checked with git check-ignore), so the file is
+    committed with git add -f; the .gitignore comment next to the CHE entry lists it.
+requirements:
+  synthesis: required
+  matsim: not_needed
+  production: required
+licensing:
+  license: derived from CHE (committed by owner decision of 2026-11-25), LSN (dl-de/by-2-0), SrV, MiD and Zensus 2022 (dl-de/by-2-0) aggregates
+  restricted: false
+  redistribution: allowed
+  notes: |
+    Derived from the CHE origin table (owner decision of 2026-11-25) through the student
+    balance, and from LSN enrollment (dl-de/by-2-0); the Zensus 2022 and SrV/MiD figures
+    enter as aggregates only.
+limitations: |
+  The table counts heads, never days (no day factor applied). Age and sex are the national joint
+  MiD cell, the same mix in every Kreis (A9); the regiostar7_* rows of the MiD table show what that
+  leaves out. The split over the Kreise follows the census pattern carried to the model year with
+  the population change of the ages 20 to 29 (A18, A19); the total is the balance's. omega (A12)
+  is one number for all Kreise, built in one year (census year, enrollment WS 2022/23). A2 (CHE
+  origin is the Kreis of the school-leaving certificate) reaches the level through the balance,
+  and A6 (a student who does not live in the origin Kreis lives in the site Kreis) through the
+  movers; A16 (the balance counts enrolled students, SrV counts students by main activity; two
+  errors in opposite directions) affects the comparison with SrV. The assumptions are documented
+  in braunschweig/calibration/student_level_table.py and
+  braunschweig/data/education/student_od_table.py, the owners of the wording. The level is
+  decided (owner, 2026-11-27, ADR-0210 Decision 5): it is not scaled to SrV; the gate triggers
+  still compare the balance row sums with SrV, and the stated uncertainty of the level is in the
+  run manifest.
+
+  The header of the file names the source of the weight triple and the mover share (the optimum
+  of a decided calibration stage, or set by the owner); the values are in the header and the run
+  manifest, not repeated here.
+notes: |
+  Phase 2 of the student layer (issue #140). The level gate against SrV and the employed-target
+  pre-check of the same run are run artifacts, not committed tables.
+  Run manifest docs/runs/student-balance-2026-11-27.yml (omega, gate rows, level and its uncertainty) and ADR-0210 (decisions).

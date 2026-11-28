@@ -39,12 +39,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from braunschweig.popsim.attributes import EMPLOYED_TAET
+from braunschweig.popsim.attributes import EMPLOYED_TAET, STUDENT_TAET
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 from braunschweig.popsim.seed import WEEKDAY_KERNWO
 from braunschweig.popsim.weekend_plan_match import (
-    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, SPLIT_CHILD_AGE_RANGE, age_band_index,
-    match_person, passenger_never_class, prepare_person_pool,
+    AGE_BAND_EDGES, DONOR_LIFT_COLUMN, FINE_CHILD_AGE_BAND_EDGES, SPLIT_CHILD_AGE_RANGE, StudentMatchCounts,
+    age_band_index, log_student_match_counts, match_person, passenger_never_class, prepare_person_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,9 @@ class DiaryMatchReport:
     #: frames carry ``P_VAUTO`` (``None`` when they do not, i.e. with the MiD passenger availability
     #: off). The class is a SOFT key, so a residual with the key on is a ladder relaxation.
     n_crossed_passenger_class: "int | None" = None
+    #: A1 (ADR-0211), only with ``student_key``: primary (student donor) versus fallback (non-student donor)
+    #: counts of the remapped student targets (``P_TAET == STUDENT_TAET``). ``None`` with the key off.
+    student_counts: "StudentMatchCounts | None" = None
 
 
 def _require(frame, columns, what):
@@ -277,18 +280,20 @@ def _count_fine_child_band_crossings(persons, donor_pool, remapped_index):
     return int(in_split_band.sum()), int(crossed.sum())
 
 
-def _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never):
+def _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never,
+                             student_key=False):
     """Full content check of every prepared pool against its source pool (before and after the loop);
     ``match_person`` itself checks only the O(1) binding per call."""
     for name, prepared in prepared_pools.items():
-        prepared.validate(pools[name], age_band_edges, passenger_key, lift_free_never)
+        prepared.validate(pools[name], age_band_edges, passenger_key, lift_free_never, student_key)
 
 
 def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclude_rbw_legs,
                                     exclude_holidays, drop_leading_arrive_home_leg,
                                     hard_employment, fine_child_age_bands,
                                     precompute_matching=True, passenger_key=False,
-                                    car_passenger_diaries=None):
+                                    car_passenger_diaries=None, student_key=False,
+                                    student_fallback_warn_share=None):
     """Remap every person whose plan source has no realisable weekday diary.
 
     ``hard_employment``: when True, ``employed`` is passed to ``match_person`` as an
@@ -322,6 +327,15 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     over its OWN diary, so each donor is flagged by its own keys, and a "never" passenger prefers a
     "never" donor whose diary is lift-free (``match_person(lift_free_never=True)``). The flag is set
     on the pools only; ``persons`` keeps its columns.
+
+    ``student_key`` (default False, A1 of the student design, ADR-0211): a remapped STUDENT
+    (``P_TAET == STUDENT_TAET``) prefers a student donor, a key that is relaxed last
+    (:func:`weekend_plan_match.match_person`); every other person keeps today's candidate set, and every
+    call draws exactly once. The hard employment key stays: a student is never employed, so it never
+    conflicts. With it on the trace gains ``target_is_student`` and ``donor_is_student`` (the latter only
+    for a student target), the report gains :attr:`DiaryMatchReport.student_counts`, and the primary
+    (student donor) versus fallback (non-student donor) rate is logged, as a WARNING above
+    ``student_fallback_warn_share`` (``None`` = report only). With it off nothing differs from before A1.
     """
     flags = dict(exclude_rbw_legs=exclude_rbw_legs, exclude_holidays=exclude_holidays,
                  drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
@@ -351,12 +365,15 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     if precompute_matching and len(to_remap):
         prepared_pools = {
             name: prepare_person_pool(pool, age_band_edges=age_band_edges, passenger_key=passenger_key,
-                                      lift_free_never=lift_free_never)
+                                      lift_free_never=lift_free_never, student_key=student_key)
             for name, pool in pools.items()
         }
     # "Before" check of the owner's before/after rule (docs/codebase/notes/performance-equivalence.md);
     # it cannot fail right after preparation but states the contract the after-loop check enforces.
-    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never)
+    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never, student_key)
+    n_student_targets = 0
+    n_student_donor = 0
+    donor_is_student = pd.Series(pd.NA, index=persons.index, dtype="boolean")
     # Iterate in SORTED index order, not the frame's row order: this fixes the RNG draw
     # sequence independent of row order on its own, which matters here because the
     # completed-donor frame this consumes is built in a fixed order upstream
@@ -381,15 +398,18 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
             if not known_count:
                 n_unknown_holiday_sources += 1
             pool = pools["mobile"] if (known_count and 0 < src_anz < 800) else pools["any"]
-        sh, sp, level = match_person(persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys,
-                                     age_band_edges=age_band_edges,
-                                     prepared_pool=prepared_pools.get(
-                                         "mobile" if pool is pools["mobile"] else "any"),
-                                     passenger_key=passenger_key, lift_free_never=lift_free_never)
+        sh, sp, level, *student_result = match_person(
+            persons.loc[ridx], pool, rng=rng, hard_keys=hard_keys, age_band_edges=age_band_edges,
+            prepared_pool=prepared_pools.get("mobile" if pool is pools["mobile"] else "any"),
+            passenger_key=passenger_key, lift_free_never=lift_free_never, student_key=student_key)
         persons.at[ridx, "source_H_ID"] = sh
         persons.at[ridx, "source_P_ID"] = sp
         match_level.at[ridx] = level
-    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never)
+        if student_result and student_result[0] is not None:
+            n_student_targets += 1
+            n_student_donor += int(student_result[0])
+            donor_is_student.at[ridx] = bool(student_result[0])
+    _validate_prepared_pools(prepared_pools, pools, age_band_edges, passenger_key, lift_free_never, student_key)
     counts = reasons.value_counts().to_dict()
     n_remapped = int(reasons.isin(REASONS_REMAP).sum())
     share = n_remapped / max(len(persons), 1)
@@ -399,12 +419,19 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
     crossed = _count_employment_boundary_crossings(persons, pools["any"], to_remap)
     n_split_band, crossed_band = _count_fine_child_band_crossings(persons, pools["any"], to_remap)
     crossed_passenger = _count_passenger_class_crossings(persons, pools["any"], to_remap)
+    student_counts = None
+    if student_key:
+        student_counts = StudentMatchCounts(n_student_targets=n_student_targets, n_student_donor=n_student_donor,
+                                            n_non_student_donor=n_student_targets - n_student_donor)
+        log_student_match_counts(logger, "diary_plan_match.student_donor", student_counts,
+                                 warn_share=student_fallback_warn_share)
     report = DiaryMatchReport(n_persons=len(persons), n_remapped=n_remapped, counts_by_reason=counts,
                               match_level_counts=match_level.dropna().astype(int).value_counts().sort_index().to_dict(),
                               share_remapped=share, n_crossed_employment_boundary=crossed,
                               n_remapped_in_split_child_band=n_split_band,
                               n_crossed_fine_child_age_band=crossed_band,
-                              n_crossed_passenger_class=crossed_passenger)
+                              n_crossed_passenger_class=crossed_passenger,
+                              student_counts=student_counts)
     logger.info("[diary_plan_match] %d/%d persons (%.2f%%) remapped to a realisable weekday diary; reasons %s; "
                 "match levels %s (levels count SOFT-key relaxations; hard_employment=%s)",
                 n_remapped, len(persons), 100.0 * share, counts, report.match_level_counts, hard_employment)
@@ -434,4 +461,7 @@ def reassign_diaryless_plan_sources(persons, donor_persons, facts, *, rng, exclu
                           "reason": reasons.to_numpy(), "match_level": match_level.to_numpy(),
                           "plan_source_H_ID": persons["source_H_ID"].to_numpy(),
                           "plan_source_P_ID": persons["source_P_ID"].to_numpy()})
+    if student_key:
+        trace["target_is_student"] = persons["P_TAET"].eq(STUDENT_TAET).to_numpy()
+        trace["donor_is_student"] = donor_is_student.to_numpy()
     return persons, trace, report

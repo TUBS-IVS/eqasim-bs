@@ -65,7 +65,7 @@ class _ConfigureRecorder:
     def stage(self, name, **_kwargs):
         self.stages.append(name)
 
-    def config(self, name, default=None):
+    def config(self, name, default=None, volatile=False):
         # Return the default, as synpp's ConfigurationContext.config(name, default) does: a
         # configure() that VALIDATES what it declares (e.g. config_keys.require_positive on
         # the passive-escort pairing parameters) reads the resolved value back, so a stub

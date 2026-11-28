@@ -1,0 +1,36 @@
+2026-11-26 02:48:02,528 INFO __main__: [secondary-validate] W12 targets loaded: shop 5.2 km, leisure 15.0 km, other 11.3 km.
+2026-11-26 02:48:02,649 INFO __main__: [secondary-validate] run resolution, activities: PRIMARY, 'braunschweig.synthesis.commute_day.activities_day_stage__885e84966dcc325f1d5b03d7632b8a0c' is the pickle the legs' pickle 'braunschweig.synthesis.commute_day.spatial_locations_day__993ba04654f5845d4d94a391550b96f2' depends on (pipeline.json); 28 activities pickle(s) in the cache.
+2026-11-26 02:48:02,658 INFO __main__: [secondary-validate] run resolution, trips: PRIMARY, 'braunschweig.synthesis.portal_trips.trips_final__885e84966dcc325f1d5b03d7632b8a0c' is the pickle the legs' pickle 'braunschweig.synthesis.commute_day.spatial_locations_day__993ba04654f5845d4d94a391550b96f2' depends on (pipeline.json); 16 trips pickle(s) in the cache.
+2026-11-26 02:48:02,664 INFO __main__: [secondary-validate] run resolution, secondary locations: PRIMARY, 'braunschweig.synthesis.locations.secondary_chainsolvers__993ba04654f5845d4d94a391550b96f2' is the pickle the legs' pickle 'braunschweig.synthesis.commute_day.spatial_locations_day__993ba04654f5845d4d94a391550b96f2' depends on (pipeline.json); 25 secondary locations pickle(s) in the cache.
+2026-11-26 02:48:02,669 INFO __main__: Loading cache pickle '~/i679_a/cache/braunschweig.synthesis.commute_day.spatial_locations_day__993ba04654f5845d4d94a391550b96f2.p'
+2026-11-26 02:48:02,845 INFO __main__: Loading cache pickle '~/i679_a/cache/braunschweig.synthesis.commute_day.activities_day_stage__885e84966dcc325f1d5b03d7632b8a0c.p'
+2026-11-26 02:48:02,849 INFO __main__: Loading cache pickle '~/i679_a/cache/braunschweig.synthesis.portal_trips.trips_final__885e84966dcc325f1d5b03d7632b8a0c.p'
+2026-11-26 02:48:02,964 INFO __main__: Loaded locations (45932 rows), activities (45932 rows) and trips (34466 rows).
+2026-11-26 02:48:03,100 INFO __main__: Merged locations+activities: 45932 rows (from 45932 locations, 45932 activities).
+2026-11-26 02:48:03,100 INFO __main__: Loading stage 'synthesis.population.spatial.secondary.locations' from '~/i679_a/cache/braunschweig.synthesis.locations.secondary_chainsolvers__993ba04654f5845d4d94a391550b96f2.p'
+2026-11-26 02:48:03,109 INFO __main__: [secondary-validate] loop_origin: the secondary locations result has no 'loop_origin' column (secondary_loop_zero_displacement OFF); legs are left unchanged.
+2026-11-26 02:48:03,126 INFO __main__: Leg construction: 34466/45932 legs are within-person (dropped 11466 first-activity rows).
+2026-11-26 02:48:03,135 INFO __main__: [secondary-validate] secondary legs (shop/leisure/other): 11203 / 34466 total legs.
+2026-11-26 02:48:03,236 INFO __main__: [secondary-validate] mode join: primary 11203/11203 (100%, no fallback).
+2026-11-26 02:48:03,239 INFO __main__: [secondary-validate] purpose=shop: 3003 legs, mean euclidean=4.67 km.
+2026-11-26 02:48:03,242 INFO __main__: [secondary-validate] purpose=leisure: 5491 legs, mean euclidean=5.73 km.
+2026-11-26 02:48:03,244 INFO __main__: [secondary-validate] purpose=other: 2709 legs, mean euclidean=6.78 km.
+2026-11-26 02:48:03,244 INFO __main__: [secondary-validate] measurement: primary (direct from cache) 11203/11203 (100%); no fallback path exists.
+2026-11-26 02:48:03,282 INFO __main__: [secondary-validate] per-group subtype distances: NOT available in this cache (the 'activity_subtype' column is not yet exposed by the cached stage output -- see issue #127 Task 6 follow-up). Skipping subtype rows.
+2026-11-26 02:48:03,282 INFO __main__: [secondary-validate] leisure_visit placement share: NOT available in this cache (neither 'activity_subtype' nor 'pot_visit' is exposed by the cached stage output -- see issue #127 Task 6 follow-up). Skipping.
+2026-11-26 02:48:03,286 INFO __main__: [secondary-validate] wrote comparison CSV to '~/i679_c7/i679_a_validate_key.csv'.
+2026-11-26 02:48:03,286 INFO __main__: [secondary-validate] This is the OFF-path baseline (secondary_purpose_distributions: false). The ON comparison requires a synpp re-run with the feature flags enabled -- that step is DEFERRED (server run).
+
+------------------------------------------------------------------------------
+Secondary trip distances: model vs MiD 2023 W12
+  Routed-equiv = per-leg circuity scaling by mode network (car/pt/walk)
+  EMD computed on the 9 W12 distance bands after per-leg circuity scaling
+------------------------------------------------------------------------------
+purpose            n   mean_euc_km  mean_routed_km   w12_mean_km    emd_vs_w12
+------------------------------------------------------------------------------
+shop            3003          4.67            6.07           5.2        0.0526
+leisure         5491          5.73            7.45          15.0        0.0301
+other           2709          6.78            8.81          11.3        0.0374
+------------------------------------------------------------------------------
+
+rc=0

@@ -89,6 +89,19 @@ config:
   # subtype split (issue #127). Defaults False elsewhere -> byte-identical.
   secondary_leisure_subtype_split: true
   secondary_other_subtype_split: true
+  # Strolls and dog walks (issue #679): a leisure walk or ride that is a loop (MiD W_ZWD
+  # 710/711, or drawn where the detail was not asked) is placed at the place of the
+  # activity it starts from (zero displacement, eqasim-france Paris model); the trip after
+  # it starts there. ADR-0207; rule: docs/codebase/notes/leisure-loops.md. Defaults False in code;
+  # false -> byte-identical to the behaviour before #679.
+  secondary_loop_zero_displacement: true
+  # Leaves those loop legs (710/711 on foot or by bicycle) out of the leisure subtype draw
+  # P(subtype | mode, travel time) and of the leisure subtype distance layers, so both describe
+  # the leisure legs the model still places (issue #679). Requires
+  # secondary_leisure_subtype_split and secondary_loop_zero_displacement. ADR-0207;
+  # rule: docs/codebase/notes/leisure-loops.md. Defaults False in code; false -> today's
+  # estimates (with the loops).
+  secondary_leisure_estimates_without_loops: true
   # Places leisure_visit legs on residential building potential (pot_visit)
   # instead of the generic leisure potential; requires the leisure split above.
   leisure_visit_building_potential: true
@@ -296,6 +309,10 @@ config:
   # previous shape: exact for the 3 kreisfreie Staedte only, the national shape for the 5
   # Landkreise, one shape for both sexes.
   braunschweig.population.popsim.employment_grid_age_shape_source: zensus2022_kreis_by_sex
+  # ADR-0211 (#140, A2): the employed targets of the grid groups 16_29 and 30_39 are lowered by the
+  # students the Zensus counts as employed (committed student_level_table.csv); KREIS "employed" and
+  # the employment families follow the grid (meaning and refusals: popsim/stage/config_keys.py).
+  braunschweig.population.popsim.student_employment_concept: true
   # Ownership grid (issue #240): 9 per-1km-cell car/bike ownership shape controls
   # (OWN_CARS_{0,1,2,3plus}_agg + OWN_BIKES_{0,1,2,3,4plus}_agg). Shape from the
   # committed MiD B1 RS7 x haustyp conditionals; level raked per Kreis to the SAME
@@ -375,6 +392,11 @@ config:
   # 0-5 was 73.4 % against 65.6 % (same arm-3 run manifest).
   braunschweig.population.popsim.education_by_age_kreis_control: "on"
   braunschweig.population.popsim.education_participation_kreis_control: "off"
+  # ADR-0211 (#140, A3): the student KREIS entries, counts built from student_level_table.csv; the two
+  # education entries replace education_18plus (meaning, refusals and the home areas: config_keys.py).
+  braunschweig.population.popsim.student_education_kreis_control: "on"
+  braunschweig.population.popsim.student_work_leg_kreis_control: "on"
+  braunschweig.population.popsim.student_season_ticket_kreis_control: "on"
 
   # --- Plan structure: realisable plan sources, rbW legs, home closure -------
   # Six MiD-ONLY keys (issues #365 / #366 / #367; ADR-0106 / ADR-0107 / ADR-0108).
@@ -424,6 +446,14 @@ config:
   # handed-over diary has no car-passenger trip (a "never" respondent may report a lift
   # themselves, and a household may have no "never" member in the age band).
   braunschweig.population.popsim.donor_match_lift_free_never_passenger: true
+  # ADR-0211 (#140, A1): a re-drawn plan of a student (a household with a student aged 18 or older, a
+  # student member, a student person target) comes from a student donor, a key relaxed last; every
+  # other target keeps its candidate set. Primary (student donor) vs fallback (non-student donor) is
+  # counted per match path. The warn bound below is an ASSUMPTION; its measurement and rule live in
+  # docs/runs/student-synthesis-smoke-20261127.yml. Volatile (a log threshold only): changing it
+  # rebuilds neither completed_donor nor PopulationSim.
+  braunschweig.population.popsim.donor_match_student_status: true
+  braunschweig.population.popsim.donor_match_student_fallback_warn_share: 0.2
   # Exclude MiD reporting days that fell on a public holiday at the residence
   # (feiertag == 1, 5.2 % of weekday diary persons) from plan sources AND from the
   # remap donor pool: every SrV target is a normal-WEEKDAY level (ADR-0106).
@@ -1062,12 +1092,38 @@ config:
   braunschweig.plan_check.fail_on_threshold: false
   # Long pt-as-walk trips (over plan_check.pt_as_walk_bound_min_distance_m) of frozen resident tours become one
   # car_passenger leg before the plan check (ADR-0189, #575). The lifted share is judged against
-  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lift has no bound of its own.
+  # plan_check.max_frozen_pt_as_walk_share (ADR-0188/0189); the lifted walk and bicycle trips have their own bound,
+  # braunschweig.frozen_pt_walk_lift.max_share_other_modes (ADR-0206).
   braunschweig.frozen_pt_walk_lift.enabled: true
+  # Which trips the mode choice can change (ADR-0206, #678). isolate_outside_trips: true selects the finer tour rule
+  # (tour finder IsolatedOutsideTrips, vehicle constraint BorderTourVehicleContinuity), so a trip of a tour that
+  # touches outside the region can be re-chosen on its own; max_tour_length is the longest tour (in trips) the
+  # mode choice still handles (tourFilter:TourLength). "initial" is the one standalone mode choice before iteration
+  # 0, "mode_choice" the MATSim loop. Values that restore today's behaviour: initial false and 6, loop false and 6.
+  braunschweig.initial_mode_choice.isolate_outside_trips: true
+  # Owner decision of 2026-11-25: the initial choice uses the loop's limit of 11, because a limit of 13 would add
+  # hours of computing time (timing manifest i678-long-tour-timing-prod100-2026-11-25); longer tours stay unreached.
+  braunschweig.initial_mode_choice.max_tour_length: 11
+  braunschweig.mode_choice.isolate_outside_trips: false
+  braunschweig.mode_choice.max_tour_length: 11
+  # The lift also repairs long walk and bicycle trips that the mode choice cannot reach, not only pt-as-walk
+  # (ADR-0206, #678); false restores today's behaviour (the pt rule alone). max_share_other_modes has no today value:
+  # it is the bound of this new walk/bicycle lift, as a share of all resident trips.
+  braunschweig.frozen_pt_walk_lift.all_modes: true
+  braunschweig.frozen_pt_walk_lift.max_share_other_modes: 0.002
   # eqasim's standalone mode choice runs at the end of the prepare stage on the final population with free-flow
   # travel times, before iteration 0 (ADR-0178, #542). It replaces the first-replanning strategy of ADR-0155.
   # The key braunschweig.initial_mode_choice.weight is retired and refused.
   braunschweig.initial_mode_choice.enabled: true
+  # Same-facility leisure trips (strolls placed at their start and the way home after them, #679) and the trip into
+  # an out-and-back stroll (a stroll from home whose next diary trip goes home) may only be walk or bicycle in the
+  # mode choice: the prepare stage adds the trip constraints SameFacilityLeisureNonMotorised and StrollNonMotorised
+  # to the DiscreteModeChoice tripConstraints of the final config before the standalone mode choice. Needs an
+  # eqasim-java-bs jar with both constraints (jar check and report: docs/codebase/notes/leisure-loops.md,
+  # "Mode choice"). The stroll rule reads the activity attribute outAndBackStroll, which exists only while
+  # secondary_loop_zero_displacement is on. Code default false (loop_mode_rule.DEFAULT_ENABLED); false -> the
+  # config as before (ADR-0207, #679).
+  braunschweig.mode_choice.loop_trips_non_motorised: true
   # WARN when more than this share of the external points miss the distance band, or of the
   # work/education legs fall back to the donor's reported distance (the primary method is then suspect).
   braunschweig.portal.fallback_warn_share: 0.1

@@ -1,0 +1,165 @@
+id: student-commuting-phase0-reference-2026-11-25
+date: '2026-11-25'
+repository:
+  commit: f8c79e4d
+  branch: feature/i140-student-commuters
+  notes: >-
+    The SrV tables carry code state fbb54d76 and are committed in 0dccb364. The four MiD tables and the three
+    decision tables were re-run on 2026-11-26 at code state f8c79e4d, after the MiD behaviour table started to read a
+    diary the popsim seed replaces (only rbW legs; only a leading arrive-home leg) as an unknown day, like a missing
+    diary; they are committed in 172fd501. This manifest is a MEASUREMENT over raw survey microdata
+    and published tables, not a pipeline run. It replaces the first extraction of the same day (code state f99b0658,
+    see the git history of this file), which kept MiD reporting days that fell on a public holiday.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    No model configuration. The MiD extraction reads three settings from configs/base_bs.yml: exclude_rbw_legs,
+    exclude_holiday_plan_sources and drop_leading_arrive_home_leg (all true); their effects are counted in the
+    Exclusions headers of the MiD tables (n_work_legs_dropped_rbw, n_holiday_reporting_day, and in the behaviour
+    table n_students_only_rbw_diary, n_non_students_only_rbw_diary, n_students_emptied_by_arrive_home_drop,
+    n_non_students_emptied_by_arrive_home_drop).
+sampling:
+  rate: not applicable (survey microdata, weighted with SrV GEWICHT_P_ZENSUS and MiD P_GEW)
+  scope: >-
+    SrV 2023 Braunschweig and RGB (the surveyed Kreise of the ZGB-8; Wolfsburg 03103 is not surveyed; persons at home
+    at some point of the reporting day), MiD 2023 Germany (adults 18+, reporting day Tuesday to Thursday and not a
+    public holiday for the day tables), census 2022 Kreis table of pupils and students WITHOUT paid work aged 20-29.
+  notes: >-
+    Universes of the level estimates (columns of student_level_gate.csv; definitions in its header): the SrV estimate
+    is the weighted share of students aged 20-29 in the surveyed municipalities times the census population aged 20-29
+    of the whole Kreis; the census estimate scales the census group of pupils and students without paid work by the
+    MiD-to-census ratio; enrollment is the head count at local university sites (where students study, all ages, one
+    semester), a comparison figure, neither residents nor one day's presence.
+pipeline:
+  targets:
+  - scripts/extract_srv_student_reference.py
+  - scripts/extract_mid_student_reference.py
+  - scripts/build_student_control_evidence.py
+  notes: >-
+    (1) python -X utf8 scripts/extract_srv_student_reference.py --raw <main checkout>/eqasim-data/data/braunschweig/srv/srv2023_raw
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit fbb54d76 (raw directory local-only, never committed).
+    (2) python -X utf8 scripts/extract_mid_student_reference.py --raw <local Downloads>/MiD2023/MiD2023_B1_Datensatzpaket/CSV
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit f8c79e4d (restricted raw directory, local-only).
+    (3) python -X utf8 scripts/build_student_control_evidence.py --srv-dir eqasim-data/data/braunschweig/srv
+    --mid-dir eqasim-data/data/braunschweig/mid --census eqasim-data/data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv
+    --sites eqasim-data/data/braunschweig/schools/lsn_university_sites.csv --out-dir
+    docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25 --source-commit f8c79e4d (census and site table
+    are local-only and stay uncommitted; their sha256 are in the header of student_level_gate.csv). Step (1) ran at
+    fbb54d76 on 2026-11-25; steps (2) and (3) were re-run at f8c79e4d on 2026-11-26 (the earlier runs at fbb54d76 and
+    1b6fb56b are in the git history of this file). All exited 0; the log is extraction_logs.txt. The re-run changed
+    the data rows of the MiD behaviour table and of student_control_build_rule.csv only; the other three MiD tables,
+    student_level_gate.csv and student_comparison_only.csv changed in their header lines only. Afterwards the header
+    wording of student_control_build_rule.csv about the MiD bases was corrected (persons with an unknown day, i.e. no
+    diary or a diary the popsim seed replaces, are absent; the earlier wording named the missing diary only); step (3)
+    was re-run on 2026-11-28 for it, no data row and no figure changed, and the other two decision tables were not
+    re-committed. The MiD extraction (2) was re-run on 2026-11-28 after the rbW-leg selector was switched to the
+    seed's own rule: all four MiD tables are identical apart from the generation date in their header, so they were
+    not re-committed.
+    sha256 of the committed blobs (git show 0dccb364:<path> for the SrV tables, git show 172fd501:<path> for the
+    MiD tables, the other two decision tables and the log; student_control_build_rule.csv is the blob of the commit
+    that corrected its header) -
+    srv2023_student_behaviour.csv 1171934f0154bb0196b5f42ee6158170bb446c7a552abdad6ff07fab632d5674,
+    srv2023_student_comparison.csv 3063cc8489fbf180bf650ed483782b96f6941dd1ab09a6813d3dce9298a11fac,
+    srv2023_student_education_distance_by_kreis.csv ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23,
+    srv2023_student_share_by_kreis.csv addfa1a3e70ca2d42021f410c2775b21955759fd5863141884534bf09fb32934,
+    srv2023_education_status_by_age.csv f9e8eb68aa69a1fb659e640e390fe439b65be35dcf38cb0a7ff44d7c15eb7385,
+    mid2023_student_behaviour_seed.csv 3b291472447347f2fb905eb6aa4e9673751ecad6fc173529b0bf366afbc8c521,
+    mid2023_student_education_distance_mode.csv 73e8a2efc0d9b8725f10a789f500394e0ef5bb4b2b4cffb29c08150dfc6b958d,
+    mid2023_student_share_20_29_by_land.csv 491150d7dda6fabf872c1d1a7472c98602a7a1a4dd65bc25c92b0c801e54a8c2,
+    mid2023_student_status_by_age.csv ba12a3dcb15f1472608095a219c5773fb502bdb07cf4d9c93e55a39856a1532c,
+    student_control_build_rule.csv 3f7a226fe100de3a6f622039f038186fa81c487809f02fa9e35f6cb60d11227b,
+    student_level_gate.csv 256d7fb2ebf3d910c22cefeea890813a3ba181b75beac2e6e31ae9a2b7d72dfa,
+    student_comparison_only.csv 0bb571114693ddafac309af946fbfbe690504b341833b7ee05aeea1b251c1c07,
+    extraction_logs.txt fa1d3947c1b705146fb66b5d2371adb0f7a42c1bbf05913c84035ccea481c2a6.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Classified smoke because the run-manifest schema has no measurement class: this is a measurement over raw surveys
+    and published tables, not a validation. No reference is compared; the verdicts below are outputs of an assumed
+    rule, not confirmations.
+validation:
+- metric: build-rule verdict per candidate behaviour control (SrV vs MiD, students universe)
+  reference: none (measurement)
+  result: >-
+    Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_control_build_rule.csv
+    (columns verdict and difference_in_se): every control is comparison_only. All 14 cells pass rule 1 (at least 30
+    SrV respondents); no cell passes rule 2 (more than 2.0 standard errors). Largest absolute difference per control:
+    status_x_education_leg 1.902765672 (student_edu; student_noedu -1.902765672), arrival -1.913354468
+    (student_no_education_leg), trip_class -1.424407399 (student_trips_1_2), work_leg 1.270387539 (student_nowork;
+    student_work -1.270387539), season_ticket 0.9246324781 (student_flatrate; student_no_flatrate -0.9246324781). Rule 3 (one-batch
+    smoke) is pending_phase2 for all. Finding for the owner: the status control (students with and without an
+    education leg on the reporting day) does not pass the build rule; it sits just below the assumed threshold. The
+    first extraction of 2026-11-25, which kept public-holiday reporting days in MiD, had it at 2.180108458, and the
+    run before the unknown-day rule for diaries the seed replaces at 1.92565954 (git history of this file), so this
+    verdict turns on how MiD reporting days are filtered and on a threshold that is an assumption.
+    It also rests on universes that are not identical: the regional survey leaves out students who were away from
+    home all day (73 adult students dropped against 438 adult students kept; n_adult_students_away_from_home and
+    n_students in the Exclusions header of eqasim-data/data/braunschweig/srv/srv2023_student_behaviour.csv), while
+    MiD keeps them; how the share with an education leg would move with them is not measured (the regional survey
+    records no day for them). Second finding: the arrival cell student_no_education_leg and the status cell
+    student_noedu share one definition, on slightly different control bases (the arrival base leaves out students
+    with an unreadable start or arrival hour), so the arrival cell nearly repeats the status difference; none of the
+    three arrival-time cells passes rule 2 (generated Overlap line of the same file, which gives both cells'
+    unweighted counts and states that the two controls must not be built together). car_availability and
+    driving_licence are comparison tables by decision (file student_comparison_only.csv).
+- metric: level gate, students aged 20-29, Braunschweig (03101) and the pooled covered area (03ZGB = ZGB without the
+    unsurveyed Wolfsburg)
+  reference: none (measurement)
+  result: >-
+    Read from docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/student_level_gate.csv. Braunschweig
+    (03101): srv_estimate_students_20_29_persons is 16776.12607 (residents aged 20-29 of the regional survey, persons
+    away from home all day left out) and enrollment_local_sites_persons is 16534 (winter semester 2024/25, as the file
+    header states; students of all ages at the local university sites, in-commuters included, residents who study
+    elsewhere left out). These are different quantities (limitation c), so the size of their difference does not
+    corroborate either figure. Derived from the same row and rounded: the difference srv_estimate_students_20_29_persons
+    minus enrollment_local_sites_persons is 242.13 persons, which is 0.195 standard errors of the estimate (its own
+    standard error srv_se_student_share_20_29 (0.03382719049) x census_population_20_29_persons (36640) is 1239.43
+    persons). Enrollment moves between
+    semesters: the committed CHE table (eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv) has
+    the Technische Universitaet Braunschweig at 16809 students in winter semester 2022/23, the site table
+    (scripts/seed_lsn_university_sites.py, SITE_ROWS) at 15632 in winter semester 2024/25. The survey's own expansion
+    of adult students of all ages in the same row, srv_students_weighted_persons, is 15577.31682. Pooled area
+    (03ZGB): the pooled estimate srv_estimate_students_20_29_persons 36697.77653 is the pooled share times the pooled
+    census population and differs from the sum of the seven surveyed Kreis rows of that column, 33532.074204 (summed
+    from the same file); the survey's own expansion srv_students_weighted_persons is 26214.89897 and the enrollment
+    26054 (local sites in four of the seven Kreise; the other three are listed in the file's Exclusions line). All SrV figures exclude persons away from home all day (see
+    limitation a). The census-based estimates and the third estimate (residents implied by enrollment, empty until
+    Phase 1) are in the same file.
+issues:
+- '#140'
+- '#279'
+decisions: []
+notes: >-
+  Limitations. (a) Universe differences between the two surveys in the behaviour comparison. The MiD cells of the four
+  diary-dependent controls (status_x_education_leg, trip_class, arrival, work_leg) exclude persons with an unknown day,
+  students and non-students alike: no diary of the day, or a diary the popsim seed replaces by a donor's (only rbW
+  legs; only a leading arrive-home leg). The counts are n_students_without_diary, n_non_students_without_diary,
+  n_students_only_rbw_diary, n_non_students_only_rbw_diary, n_students_emptied_by_arrive_home_drop and
+  n_non_students_emptied_by_arrive_home_drop in the Exclusions header of
+  eqasim-data/data/braunschweig/mid/mid2023_student_behaviour_seed.csv. The comparison therefore rests on a reduced MiD
+  base and assumes persons with an unknown day are not a distinct group. The SrV universe drops persons away
+  from home all day, MiD keeps them: the adult students dropped this way are n_adult_students_away_from_home in the
+  Exclusions header of eqasim-data/data/braunschweig/srv/srv2023_student_behaviour.csv, against n_students adult
+  students kept in the same line. Both behaviour headers state this gap. MiD public-holiday reporting days are
+  excluded (n_holiday_reporting_day), as the SrV reference days exclude public holidays. (b) Rule 2 compares shares
+  within students and uses only the standard error of the regional survey (the SrV Kish effective size of the
+  students universe); the MiD sampling error is not included, the standard error ignores the clustering of persons in
+  households (the Kish size reflects only the unequal weights), and the 14 cells of the five controls are tested
+  without a correction for multiple comparisons. (c) The level gate compares students by main activity in the surveys
+  (V_ERW 7, working students included) with the census group of pupils and students without paid work. Enrollment is
+  a comparison figure, not a bound: residents who study elsewhere or by distance learning are survey students but not
+  local enrollment (the CHE Kreis view for Braunschweig, by Kreis of the school leaving certificate, lists the
+  FernUniversitaet in Hagen and the IU Internationale Hochschule among its ten largest destinations; file
+  che_student_origins_ws2022_23.csv), and local
+  enrollment includes students who live elsewhere; it counts all ages for one semester, where the estimates cover
+  residents aged 20-29. The third estimate (residents implied by enrollment) follows in Phase 1. (d) The two thresholds
+  of the build rule (MIN_RESPONDENTS_PER_CELL and MIN_DIFFERENCE_STANDARD_ERRORS, values in the header of
+  student_control_build_rule.csv) are assumptions, not sourced values. (e) This is a measurement, not a validation; no
+  reference or ground truth was compared; the owner decides the level from the level gate.
+source: >-
+  scripts/extract_srv_student_reference.py, scripts/extract_mid_student_reference.py and
+  scripts/build_student_control_evidence.py over the inputs under pipeline.notes; outputs committed under
+  eqasim-data/data/braunschweig/srv, eqasim-data/data/braunschweig/mid and
+  docs/runs/artifacts/student-commuting-phase0-reference-2026-11-25/.

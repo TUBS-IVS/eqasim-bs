@@ -1,0 +1,192 @@
+{
+  "input": {
+    "residents/frozen": {
+      "n_persons": 151733,
+      "n_plans_late": 5,
+      "share_plans_late": 3.295262072192601e-05,
+      "n_plans_non_monotonic": 3766,
+      "n_plans_non_monotonic_large": 1726,
+      "share_plans_non_monotonic_large": 0.01137524467320886,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 1739,
+        "1_5min": 97,
+        "5_15min": 203,
+        "15_60min": 860,
+        "60min_plus": 867
+      },
+      "n_pt_trips": 45469,
+      "n_pt_as_walk_long": 1785,
+      "share_pt_as_walk_long": 0.03925751610987706,
+      "n_unreached_unfit": 3320,
+      "n_trips_fixed_border": 698210,
+      "n_trips_fixed_length": 4277,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "residents/in_region": {
+      "n_persons": 1053493,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 304471,
+      "n_pt_as_walk_long": 10077,
+      "share_pt_as_walk_long": 0.03309674813036381,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 89234,
+      "n_bicycle_trips_over_reached": 1702
+    },
+    "freight/frozen": {
+      "n_persons": 0,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 0,
+      "n_pt_as_walk_long": 0,
+      "share_pt_as_walk_long": 0.0,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "freight/in_region": {
+      "n_persons": 56364,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 0,
+      "n_pt_as_walk_long": 0,
+      "share_pt_as_walk_long": 0.0,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "seconds": 422
+  },
+  "after_initial": {
+    "residents/frozen": {
+      "n_persons": 151733,
+      "n_plans_late": 5,
+      "share_plans_late": 3.295262072192601e-05,
+      "n_plans_non_monotonic": 3766,
+      "n_plans_non_monotonic_large": 1722,
+      "share_plans_non_monotonic_large": 0.01134888257663132,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 1737,
+        "1_5min": 98,
+        "5_15min": 208,
+        "15_60min": 865,
+        "60min_plus": 858
+      },
+      "n_pt_trips": 41140,
+      "n_pt_as_walk_long": 95,
+      "share_pt_as_walk_long": 0.0023091881380651433,
+      "n_unreached_unfit": 1568,
+      "n_trips_fixed_border": 698210,
+      "n_trips_fixed_length": 4277,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "residents/in_region": {
+      "n_persons": 1053493,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 190838,
+      "n_pt_as_walk_long": 0,
+      "share_pt_as_walk_long": 0.0,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 1817,
+      "n_bicycle_trips_over_reached": 182
+    },
+    "freight/frozen": {
+      "n_persons": 0,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 0,
+      "n_pt_as_walk_long": 0,
+      "share_pt_as_walk_long": 0.0,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "freight/in_region": {
+      "n_persons": 56364,
+      "n_plans_late": 0,
+      "share_plans_late": 0.0,
+      "n_plans_non_monotonic": 0,
+      "n_plans_non_monotonic_large": 0,
+      "share_plans_non_monotonic_large": 0.0,
+      "non_monotonic_by_lateness_band": {
+        "0_1min": 0,
+        "1_5min": 0,
+        "5_15min": 0,
+        "15_60min": 0,
+        "60min_plus": 0
+      },
+      "n_pt_trips": 0,
+      "n_pt_as_walk_long": 0,
+      "share_pt_as_walk_long": 0.0,
+      "n_unreached_unfit": 0,
+      "n_trips_fixed_border": 0,
+      "n_trips_fixed_length": 0,
+      "n_walk_trips_over_reached": 0,
+      "n_bicycle_trips_over_reached": 0
+    },
+    "seconds": 447
+  }
+}

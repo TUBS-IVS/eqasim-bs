@@ -1,0 +1,307 @@
+{
+  "loop_keys": 746,
+  "routed": {
+    "counts": {
+      "persons": 12667,
+      "trips": 39199,
+      "trips_same_coordinate": 3636,
+      "trips_same_facility": 3324,
+      "trips_without_routing_mode": 521
+    },
+    "examples": [
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "618139.6039285689",
+          "y": "5809117.777258899"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "430866",
+          "type": "freight_start",
+          "x": "649269.400942141",
+          "y": "5786064.266088886"
+        },
+        "person_id": "freight_incoming_1382",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "595345.4664857639",
+          "y": "5768202.140644774"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "6555",
+          "type": "freight_start",
+          "x": "571349.9365370045",
+          "y": "5737184.334317092"
+        },
+        "person_id": "freight_incoming_154",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "623948.3084869481",
+          "y": "5718607.517975084"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "625384",
+          "type": "freight_start",
+          "x": "625024.566762265",
+          "y": "5719968.318247349"
+        },
+        "person_id": "freight_incoming_1580",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "618096.3649459855",
+          "y": "5808643.15570678"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "430866",
+          "type": "freight_start",
+          "x": "649269.400942141",
+          "y": "5786064.266088886"
+        },
+        "person_id": "freight_incoming_1654",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "625775.8776376796",
+          "y": "5811013.5443693595"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "6555",
+          "type": "freight_start",
+          "x": "571349.9365370045",
+          "y": "5737184.334317092"
+        },
+        "person_id": "freight_incoming_166",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "601778.1872466145",
+          "y": "5750254.310150206"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "638483",
+          "type": "freight_start",
+          "x": "621033.379380095",
+          "y": "5748311.84218921"
+        },
+        "person_id": "freight_incoming_1676",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "617961.4530513348",
+          "y": "5813814.496330672"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "430866",
+          "type": "freight_start",
+          "x": "649269.400942141",
+          "y": "5786064.266088886"
+        },
+        "person_id": "freight_incoming_1942",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "577344.5041643599",
+          "y": "5762205.016014721"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "6555",
+          "type": "freight_start",
+          "x": "571349.9365370045",
+          "y": "5737184.334317092"
+        },
+        "person_id": "freight_incoming_224",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "578638.2828272213",
+          "y": "5773166.121900645"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "6555",
+          "type": "freight_start",
+          "x": "571349.9365370045",
+          "y": "5737184.334317092"
+        },
+        "person_id": "freight_incoming_254",
+        "trip": 0
+      },
+      {
+        "destination": {
+          "facility": null,
+          "link": null,
+          "type": "freight_end",
+          "x": "629672.2539242838",
+          "y": "5761168.01664506"
+        },
+        "legs": [
+          {
+            "mode": "truck",
+            "routingMode": null
+          }
+        ],
+        "loop_origin": null,
+        "origin": {
+          "facility": null,
+          "link": "346446",
+          "type": "freight_start",
+          "x": "629399.5493686832",
+          "y": "5761017.995879328"
+        },
+        "person_id": "freight_incoming_2666",
+        "trip": 0
+      }
+    ],
+    "loop_trips_by_origin": {
+      "education": 7,
+      "home": 593,
+      "secondary": 126,
+      "work": 20
+    },
+    "loop_trips_without_routing_mode_by_origin": {},
+    "loop_trips_without_routing_mode_by_position": {},
+    "without_routing_mode_by_activity_types": {
+      "freight_start->freight_end": 521
+    },
+    "without_routing_mode_by_class": {
+      "same_facility=False,same_link=False,same_coordinate=False,legs=1": 517,
+      "same_facility=False,same_link=False,same_coordinate=True,legs=1": 1,
+      "same_facility=False,same_link=True,same_coordinate=False,legs=1": 3
+    },
+    "without_routing_mode_by_first_leg_mode": {
+      "truck": 521
+    },
+    "without_routing_mode_by_subpopulation": {
+      "freight": 521
+    }
+  },
+  "writer": {
+    "counts": {
+      "persons": 12146,
+      "trips": 35826,
+      "trips_same_coordinate": 3125,
+      "trips_same_facility": 3121
+    },
+    "examples": [],
+    "loop_trips_by_origin": {
+      "education": 7,
+      "home": 593,
+      "secondary": 126,
+      "work": 20
+    },
+    "loop_trips_without_routing_mode_by_origin": {},
+    "loop_trips_without_routing_mode_by_position": {},
+    "without_routing_mode_by_activity_types": {},
+    "without_routing_mode_by_class": {},
+    "without_routing_mode_by_first_leg_mode": {},
+    "without_routing_mode_by_subpopulation": {}
+  }
+}

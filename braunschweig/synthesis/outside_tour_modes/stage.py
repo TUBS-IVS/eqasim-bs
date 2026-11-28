@@ -60,6 +60,8 @@ _DEFERRED_HELPER_MODULE_NAMES = ("braunschweig.data.spatial.cordon", "braunschwe
                                  "braunschweig.data.transit.router_cache",
                                  "braunschweig.data.transit.schedule", "braunschweig.matsim.simulation.plan_check",
                                  "braunschweig.popsim.plan_validation",
+                                 # plan_check imports mode_choice_reach, which imports config_modules (#678)
+                                 "braunschweig.matsim.simulation.mode_choice_reach", "braunschweig.matsim.config_modules",
                                  # reached through the plan check's imports (the closure gate of ADR-0136)
                                  "braunschweig.popsim.closure_dwell", "data.hts.hts",
                                  # Declared stages this stage runs as libraries, and their imports (ADR-0194): the

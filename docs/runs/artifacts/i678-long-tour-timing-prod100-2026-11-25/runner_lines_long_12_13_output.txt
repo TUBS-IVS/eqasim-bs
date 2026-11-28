@@ -1,0 +1,19 @@
+2026-11-25T14:21:31,653  INFO CommandLine:539    compression = gzip
+2026-11-25T14:21:31,654  INFO CommandLine:539    config-path = braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+2026-11-25T14:21:31,654  INFO CommandLine:539    eqasim-configurator = org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-25T14:21:31,654  INFO CommandLine:539    skip-scenario-check = true
+2026-11-25T14:21:31,654  INFO CommandLine:539    write-input-csv-trips = true
+2026-11-25T14:21:31,654  INFO CommandLine:539    write-output-csv-trips = true
+2026-11-25T14:21:31,657  INFO CommandLine:549       standaloneModeChoice.removePersonsWithNoValidAlternatives = true
+2026-11-25T14:21:31,658  INFO CommandLine:549       plans.inputPlansFile = long_12_13.xml.gz
+2026-11-25T14:21:31,658  INFO CommandLine:549       global.numberOfThreads = 16
+2026-11-25T14:21:31,658  INFO CommandLine:549       standaloneModeChoice.chunkSize = 1
+2026-11-25T14:21:31,658  INFO CommandLine:549       standaloneModeChoice.outputDirectory = mode_choice
+2026-11-25T14:23:22,393  INFO StandaloneModeChoicePerformer:129 Splitting 329 plans into 329 chunks (1 each) over 16 threads
+2026-11-25T14:52:52,461  INFO ParallelProgress:86 [Standalone mode choice, 1/329, (0.30%)]
+2026-11-25T14:53:12,467  INFO ParallelProgress:86 [Standalone mode choice, 2/329, (0.61%), RT:20s, 0.10s/it, ~54:30]
+2026-11-25T14:53:22,470  INFO ParallelProgress:86 [Standalone mode choice, 6/329, (1.82%), RT:30s, 0.20s/it, ~26:55]
+2026-11-25T14:53:32,471  INFO ParallelProgress:86 [Standalone mode choice, 7/329, (2.13%), RT:40s, 0.18s/it, ~30:40]
+2026-11-25T14:53:42,472  INFO ParallelProgress:86 [Standalone mode choice, 11/329, (3.34%), RT:50s, 0.22s/it, ~24:05]
+2026-11-25T14:53:52,474  INFO ParallelProgress:86 [Standalone mode choice, 15/329, (4.56%), RT:01:00, 0.25s/it, ~20:56]
+2026-11-25T14:54:02,475  INFO ParallelProgress:86 [Standalone mode choice, 16/329, (4.86%), RT:01:10, 0.23s/it, ~22:49]

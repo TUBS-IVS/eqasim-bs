@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.popsim import input_consistency as ic
+from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.control_spec import backbone_age_bands
 
 HH_TOTAL = "Insgesamt_Haushalte_Groesse_des_privaten_Haushalts_100m_Gitter_adj_ZENSUS100m"
@@ -231,3 +232,71 @@ def test_summarize_writes_unmatched_kreis_and_nan_excluded_cells_as_rows():
     assert nan_rows["households_without_persons"] == 1
     assert long.loc[long["check"].isin(["kreis_without_grid", "grid_without_kreis"]),
                     "amount"].isna().all()
+
+
+# ---------------------------------------------------------------------------------------------
+# student entries (A3, design "Guard and fit report")
+# ---------------------------------------------------------------------------------------------
+_NON_STUDENT = {ctl.name for ctl in kac.REGISTRY} - kac.STUDENT_ENTRY_NAMES
+_ALL_STUDENT = (_NON_STUDENT - {"education_18plus"}) | kac.STUDENT_ENTRY_NAMES
+_WORK_PAIR = "students_work_within_nonemployed_work"
+_TICKET_PAIR = "students_flatrate_within_flatrate"
+
+
+def _bands(*labels):
+    return tuple(f"{sex}_AGE_{label}_agg_ZENSUS100m" for sex in ("M", "F") for label in labels)
+
+
+def test_student_pairs_replace_the_18plus_pair_only_when_active():
+    # OFF path: no student entry -> exactly today's pairs, so the table gains no skipped row.
+    assert ic.kreis_pairs(set()) == ic.KREIS_FINE_PAIRS
+    assert ic.kreis_pairs(_NON_STUDENT) == ic.KREIS_FINE_PAIRS
+
+    pairs = {p.label: p for p in ic.kreis_pairs(_ALL_STUDENT)}
+    today = {p.label for p in ic.KREIS_FINE_PAIRS}
+    assert set(pairs) == (today - {"persons_18plus"}) | {
+        "persons_18_29", "persons_30plus", _WORK_PAIR, _TICKET_PAIR}
+    young, old = pairs["persons_18_29"], pairs["persons_30plus"]
+    assert (young.relation, old.relation) == ("equal", "equal")
+    assert set(young.kreis_controls) == {
+        f"student_education_18_29_{label}_KREIS"
+        for label in ("student_edu", "student_noedu", "other_edu", "other_noedu")}
+    assert set(young.fine_controls) == set(_bands("18_19", "20_29"))
+    assert set(old.kreis_controls) == {
+        f"student_education_30plus_{label}_KREIS" for label in ("student", "other_edu", "other_noedu")}
+    assert set(old.fine_controls) == set(_bands("30_39", "40_49", "50_59", "60_69", "70_79", "80_plus"))
+    work, ticket = pairs[_WORK_PAIR], pairs[_TICKET_PAIR]
+    assert (work.relation, work.kreis_controls, work.fine_controls) == (
+        "at_most", ("student_work_leg_student_work_KREIS",),
+        ("work_by_employment_nonemployed_work_KREIS",))
+    assert (ticket.relation, ticket.kreis_controls) == (
+        "at_most", ("student_season_ticket_student_flatrate_KREIS",))
+    assert set(ticket.fine_controls) == {"pt_ticket_group4_deutschlandticket_KREIS",
+                                         "pt_ticket_group4_other_flatrate_KREIS"}
+
+    # Each pair follows its own entry: the work entry alone adds the work pair and keeps 18+.
+    only_work = {p.label for p in ic.kreis_pairs(_NON_STUDENT | {"student_work_leg"})}
+    assert only_work == today | {_WORK_PAIR}
+
+
+@pytest.mark.parametrize("label, student_column, fine_values", [
+    (_WORK_PAIR, "student_work_leg_student_work_KREIS",
+     {"work_by_employment_nonemployed_work_KREIS": (50.0, 40.0)}),
+    (_TICKET_PAIR, "student_season_ticket_student_flatrate_KREIS",
+     {"pt_ticket_group4_deutschlandticket_KREIS": (30.0, 25.0),
+      "pt_ticket_group4_other_flatrate_KREIS": (20.0, 15.0)}),
+])
+def test_each_at_most_pair_fails_on_a_toy_violation(label, student_column, fine_values):
+    """Both sides are KREIS columns of the same table: 60 students against 50 holders in 3101 is
+    a contradiction of 10; 10 students against 40 in 3153 holds. No grid zone is involved."""
+    kreis = _kreis(**{student_column: {3101: 60.0, 3153: 10.0}},
+                   **{column: {3101: a, 3153: b} for column, (a, b) in fine_values.items()})
+    pair = {p.label: p for p in ic.kreis_pairs(_ALL_STUDENT)}[label]
+
+    long = ic.summarize(kreis, _cells(), CROSSWALK, pairs=(pair,))
+
+    rows = long[long["check"] == label].set_index("key")
+    assert rows.loc["3101", ["amount", "cells", "base"]].tolist() == [10.0, 1, 50.0]
+    assert rows.loc["3101", "share"] == pytest.approx(0.2)
+    assert rows.loc["3153", ["amount", "cells"]].tolist() == [0.0, 0]
+    assert not long["check"].isin(["skipped", "kreis_without_grid", "grid_without_kreis"]).any()

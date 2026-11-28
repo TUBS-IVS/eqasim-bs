@@ -44,6 +44,27 @@ def require_positive(key: str, value):
     return value
 
 
+def require_loop_free_estimate_prerequisites(*, leisure_subtype_split: bool,
+                                             loop_zero_displacement: bool, stage_tag: str) -> None:
+    """The configure-time guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS (issue #679).
+
+    Called by both stages that declare that key, only when it is on: the loop-free estimates
+    change the leisure subtype layers and decider (which exist only with
+    ``secondary_leisure_subtype_split``) and leave out the loops that
+    KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT takes out of the chain (with that switch off the loops
+    are placed as destination trips and must stay in the estimates). Raises ``ValueError`` naming
+    the missing key(s), so synpp fails the DAG before any stage runs.
+    """
+    missing = [key for key, on in (("secondary_leisure_subtype_split", leisure_subtype_split),
+                                   (KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, loop_zero_displacement))
+               if not on]
+    if missing:
+        raise ValueError(
+            f"{stage_tag} {KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}: true requires "
+            f"{' and '.join(f'{key}: true' for key in missing)}; set them or disable "
+            f"{KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}.")
+
+
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
 KEY_MID = "braunschweig.population.popsim.mid_raw_path"
@@ -184,6 +205,14 @@ from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROW
 # changed threshold takes effect only when the stage executes.
 # ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
 KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
+# Smoke mode of the student design (ADR-0211, and the one-batch smoke manifest it names): with true the
+# stage runs as usual up to and including the writing of every batch folder, the input-consistency table,
+# the stage report and student_kreis_targets.csv, then raises AssembleBatchesOnlyStop BEFORE PopulationSim,
+# so synpp caches no stage output and one batch can be run by hand from the written folders. Default
+# false: the stage is unchanged. Volatile: it changes no result of a completed run (a run with it on never
+# completes), so declaring it does not change the stage hash.
+KEY_ASSEMBLE_BATCHES_ONLY = "braunschweig.population.popsim.assemble_batches_only"
+DEFAULT_ASSEMBLE_BATCHES_ONLY = False
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.
@@ -531,6 +560,60 @@ DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
 # mid_passenger_availability). Default ON; read ONLY by braunschweig.popsim.completed_donor.
 KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = "braunschweig.population.popsim.donor_match_lift_free_never_passenger"
 DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = True
+# A1 of the student design (ADR-0211): a household with a student, a student member and a student person
+# target re-drawing a plan source prefer a student donor, a key relaxed last; every other target keeps its
+# candidate set and every call still draws once. Counted per match path as primary (student donor) versus
+# fallback (non-student donor). Default ON; read ONLY by braunschweig.popsim.completed_donor. OFF is
+# byte-identical to the build before A1.
+KEY_DONOR_MATCH_STUDENT_STATUS = "braunschweig.population.popsim.donor_match_student_status"
+DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
+# Share of student targets relaxed to a non-student donor, per match path, above which the build logs a
+# WARNING. None = report only (no bound is set and the log says so): the bound comes from the one-batch smoke
+# of ADR-0211, never from a guess. Valid range: null or a share in [0, 1] (checked at DAG build by
+# completed_donor.validate_student_fallback_warn_share). Read ONLY by braunschweig.popsim.completed_donor, which
+# declares it volatile: it only sets a log level, so a changed bound rebuilds neither the donor nor
+# PopulationSim and takes effect the next time the stage executes. Whatever the bound, a path where no student
+# target got a student donor always logs a WARNING.
+KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
+DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
+# A2 of the student design (ADR-0211): the employed target of the employment-grid groups 16_29 and
+# 30_39 is lowered, per Kreis and sex, by the students the Zensus counts as employed, read from the
+# committed student level table (braunschweig.popsim.student_level; its rules: ADR-0210, Decision 5).
+# The KREIS control "employed" and the KREIS employment families follow the lowered grid through
+# kreis_controls_follow_grids and the employment-level bridge. true/false, default true (on); false is
+# byte-identical to the stage before A2. With it on, the refusals and warnings are listed in the
+# docstring of braunschweig.popsim.stage._read_student_employment_config.
+KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
+DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
+# The student KREIS entries of A3 (ADR-0211; kreis_attribute_control.STUDENT_ENTRY_NAMES), "on" / "off",
+# each default "on"; all "off" is byte-identical in the entry set and the stage tables to the stage
+# before A3. Their targets are counts built once per run from the student level table
+# (braunschweig.popsim.student_targets). The refusals are listed in the docstring of
+# braunschweig.popsim.stage.source_resolution._apply_student_entry_rules.
+#   student_education_kreis_control: the two hard entries (education leg by student status, ages 18 to
+#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name). A2 also reads it
+#       (see KEY_STUDENT_EMPLOYMENT_CONCEPT).
+#   student_work_leg_kreis_control: the soft work-leg entry.
+#   student_season_ticket_kreis_control: the soft season-ticket entry.
+KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
+DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
+KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"
+KEY_STUDENT_SEASON_TICKET_CONTROL = "braunschweig.population.popsim.student_season_ticket_kreis_control"
+# The home areas of the student entries (ADR-0211; the season-ticket share differs by area, A20), as
+# {area: [Kreis codes]}. Every Kreis of the study region (the Kreise of the student level table) except
+# Wolfsburg (03103, not surveyed by SrV) lies in exactly one area; Wolfsburg lies in none and takes the
+# SrV value of the region (A21). A run over fewer Kreise keeps these areas; its Kreise must lie in the
+# region. Checked by student_targets.area_of_kreis_from_home_areas, and the areas with their Kreise must equal
+# the ``# Home areas:`` header of the committed SrV table by area (student_targets.read_student_shares raises
+# otherwise: a Kreis moved between areas would silently take the other area's ticket share). Read only while a
+# student entry is on; Phase 4 reads the same key. The default equals
+# braunschweig.calibration.srv_student_reference.HOME_AREAS, which writes the SrV tables by area and that header
+# (a test compares them; the stage does not import the calibration module).
+KEY_STUDENT_HOME_AREA_KREISE = "braunschweig.population.popsim.student_home_area_kreise"
+DEFAULT_STUDENT_HOME_AREA_KREISE = {
+    "braunschweig": ["03101"],
+    "surrounding": ["03102", "03151", "03153", "03154", "03157", "03158"],
+}
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
@@ -722,6 +805,30 @@ DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 # the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
 KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
 DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+
+# secondary_loop_zero_displacement (issue #679, ADR-0207): the secondary location stage places a
+# stroll or dog walk on foot or by bicycle at the place of the activity it starts from
+# (braunschweig.synthesis.locations.secondary_chainsolvers.loops, whose KEY_ENABLED is this
+# constant). Its home is here because braunschweig.popsim.distance_distributions reads it too (the
+# guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS below) and cannot import the loop module,
+# which imports it. Code default False (the byte-identical OFF path); production true in
+# configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
+DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
+
+# secondary_leisure_estimates_without_loops (issue #679, ADR-0207): with the loop placement on,
+# the loop legs (purpose_subtype.drop_loop_legs: the strolls that are no out-and-back stroll) leave
+# the chain, so ON leaves them out of the two leisure estimates the remaining legs use: the leisure
+# subtype distance layers (braunschweig.popsim.distance_distributions.run, Step 8) and the leisure
+# subtype decider's P(group | mode, tt_band)
+# (secondary_chainsolvers.deciders._build_leisure_subtype_decider). Both stages declare it with
+# these constants and must resolve the same value, or a leg labelled from a loop-free mix would
+# draw its distance from a pool with loops (or the reverse). Requires
+# secondary_leisure_subtype_split and KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT (both configure()
+# calls raise otherwise). Code default False = today's estimates (byte-identical); production true
+# in configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = "secondary_leisure_estimates_without_loops"
+DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = False
 # Departure-time (start-time) model of the trip build and of the commute-day plan replacement
 # (issue #123, ADR-0114): which of the three models in
 # braunschweig.popsim.departure_time_model.MODELS shapes a person's FIRST departure --
@@ -866,6 +973,11 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "education_0_5": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_6_17": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
+    # The two hard student entries share ONE toggle key (A3, ADR-0211).
+    "student_education_18_29": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": KEY_STUDENT_WORK_LEG_CONTROL,
+    "student_season_ticket": KEY_STUDENT_SEASON_TICKET_CONTROL,
 }
 
 # Shared default for the three education_by_age entries (Plan B, issue #368, ADR-0109):
@@ -905,6 +1017,12 @@ _KREIS_CONTROL_DEFAULT = {
     "education_0_5": _EDUCATION_BY_AGE_DEFAULT,
     "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
     "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
+    # A3 of the student design (ADR-0211): the two hard entries read the shared default of their
+    # one toggle, like the education-by-age family above.
+    "student_education_18_29": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": "on",
+    "student_season_ticket": "on",
 }
 
 

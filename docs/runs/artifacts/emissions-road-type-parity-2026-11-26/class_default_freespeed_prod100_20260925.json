@@ -1,0 +1,155 @@
+{
+  "question": "how many drivable links carry the pt2matsim class default as freespeed",
+  "inputs": {
+    "network": {
+      "path": "/home/felix/prod100_20260925/output/matsim_output/output_network.xml.gz",
+      "sha256": "158c9b901ae4388c775573714bf2289307f9c39021470e8f3f0aed08199145ca"
+    },
+    "osm_config": {
+      "path": "/home/felix/eqasim-bs/eqasim-data/cache_shared/matsim.scenario.supply.osm__e5a6270e322d2630b0905a0beabc8b01.cache/config.xml",
+      "sha256": "7d66581303b32090a0c5946691b927b2467b2f2f4a724f2342d7a12ca72c958a"
+    },
+    "emitting_network_modes": [
+      "car",
+      "truck"
+    ],
+    "speed_tolerance_meters_per_second": 1e-06
+  },
+  "assumption": "a class default that is a multiple of 10 km/h can also be a signed limit (ambiguous: upper bound); any other default cannot (unambiguous)",
+  "links": 220980,
+  "drivable_links": 214807,
+  "drivable_length_km": 27619.433,
+  "on_class_default": {
+    "unambiguous": {
+      "links_on_default": 52964,
+      "length_km_on_default": 7407.316,
+      "share_of_drivable_links": 0.246566,
+      "share_of_drivable_length": 0.268192
+    },
+    "ambiguous": {
+      "links_on_default": 13027,
+      "length_km_on_default": 1595.451,
+      "share_of_drivable_links": 0.060645,
+      "share_of_drivable_length": 0.057766
+    }
+  },
+  "by_osm_class": {
+    "living_street": {
+      "class_default_kmh": 10.0,
+      "default_kind": "ambiguous",
+      "links": 6506,
+      "length_km": 530.909,
+      "links_on_default": 6127,
+      "length_km_on_default": 495.488,
+      "share_of_class_links_on_default": 0.941746
+    },
+    "motorway": {
+      "class_default_kmh": 120.0,
+      "default_kind": "ambiguous",
+      "links": 2637,
+      "length_km": 696.196,
+      "links_on_default": 221,
+      "length_km_on_default": 49.067,
+      "share_of_class_links_on_default": 0.083807
+    },
+    "motorway_link": {
+      "class_default_kmh": 80.0,
+      "default_kind": "ambiguous",
+      "links": 1242,
+      "length_km": 142.926,
+      "links_on_default": 763,
+      "length_km_on_default": 89.891,
+      "share_of_class_links_on_default": 0.614332
+    },
+    "primary": {
+      "class_default_kmh": 80.0,
+      "default_kind": "ambiguous",
+      "links": 15480,
+      "length_km": 2300.482,
+      "links_on_default": 1118,
+      "length_km_on_default": 200.221,
+      "share_of_class_links_on_default": 0.072222
+    },
+    "primary_link": {
+      "class_default_kmh": 60.0,
+      "default_kind": "ambiguous",
+      "links": 361,
+      "length_km": 22.434,
+      "links_on_default": 215,
+      "length_km_on_default": 15.14,
+      "share_of_class_links_on_default": 0.595568
+    },
+    "residential": {
+      "class_default_kmh": 15.0,
+      "default_kind": "unambiguous",
+      "links": 115892,
+      "length_km": 11577.383,
+      "links_on_default": 38709,
+      "length_km_on_default": 4047.967,
+      "share_of_class_links_on_default": 0.334009
+    },
+    "secondary": {
+      "class_default_kmh": 30.0,
+      "default_kind": "ambiguous",
+      "links": 25122,
+      "length_km": 3919.587,
+      "links_on_default": 3826,
+      "length_km_on_default": 670.164,
+      "share_of_class_links_on_default": 0.152297
+    },
+    "secondary_link": {
+      "class_default_kmh": 30.0,
+      "default_kind": "ambiguous",
+      "links": 270,
+      "length_km": 11.123,
+      "links_on_default": 87,
+      "length_km_on_default": 3.58,
+      "share_of_class_links_on_default": 0.322222
+    },
+    "tertiary": {
+      "class_default_kmh": 25.0,
+      "default_kind": "unambiguous",
+      "links": 34736,
+      "length_km": 5687.308,
+      "links_on_default": 8534,
+      "length_km_on_default": 1864.877,
+      "share_of_class_links_on_default": 0.245682
+    },
+    "tertiary_link": {
+      "class_default_kmh": 25.0,
+      "default_kind": "unambiguous",
+      "links": 268,
+      "length_km": 14.999,
+      "links_on_default": 140,
+      "length_km_on_default": 6.933,
+      "share_of_class_links_on_default": 0.522388
+    },
+    "trunk": {
+      "class_default_kmh": 80.0,
+      "default_kind": "ambiguous",
+      "links": 1467,
+      "length_km": 245.271,
+      "links_on_default": 215,
+      "length_km_on_default": 31.392,
+      "share_of_class_links_on_default": 0.146558
+    },
+    "trunk_link": {
+      "class_default_kmh": 50.0,
+      "default_kind": "ambiguous",
+      "links": 574,
+      "length_km": 54.06,
+      "links_on_default": 455,
+      "length_km_on_default": 40.508,
+      "share_of_class_links_on_default": 0.792683
+    },
+    "unclassified": {
+      "class_default_kmh": 25.0,
+      "default_kind": "unambiguous",
+      "links": 10252,
+      "length_km": 2416.754,
+      "links_on_default": 5581,
+      "length_km_on_default": 1487.54,
+      "share_of_class_links_on_default": 0.544382
+    }
+  }
+}

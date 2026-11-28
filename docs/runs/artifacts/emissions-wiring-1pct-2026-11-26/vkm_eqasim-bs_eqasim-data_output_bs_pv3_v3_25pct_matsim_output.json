@@ -1,0 +1,56 @@
+{
+  "archive": "/home/felix/eqasim-bs/eqasim-data/output_bs_pv3_v3_25pct/matsim_output",
+  "event_lines": 114252324,
+  "total_vehicle_km": 8123481.2278662715,
+  "car_vehicle_km": 7337273.350066393,
+  "default_car_share_of_car_vehicle_km": 0.1365423982939217,
+  "default_car_share_of_car_vehicles": 0.4123944379976255,
+  "convention": "full link length per 'entered link' event; sample values, unscaled",
+  "rows": [
+    {
+      "group": "default_car",
+      "vehicles": 122962,
+      "vehicles_with_link_entry": 25684,
+      "departures": 82159,
+      "link_entries": 6900407,
+      "vehicle_km": 1001848.9001561427,
+      "share_of_all_vehicle_km": 0.12332753311714
+    },
+    {
+      "group": "default_car_passenger",
+      "vehicles": 300855,
+      "vehicles_with_link_entry": 0,
+      "departures": 0,
+      "link_entries": 0,
+      "vehicle_km": 0.0,
+      "share_of_all_vehicle_km": 0.0
+    },
+    {
+      "group": "fleet_typed_car",
+      "vehicles": 175204,
+      "vehicles_with_link_entry": 127945,
+      "departures": 406394,
+      "link_entries": 39981513,
+      "vehicle_km": 6335424.44991025,
+      "share_of_all_vehicle_km": 0.779890329305817
+    },
+    {
+      "group": "heavy_truck",
+      "vehicles": 14103,
+      "vehicles_with_link_entry": 12299,
+      "departures": 12339,
+      "link_entries": 3310771,
+      "vehicle_km": 786207.8777998798,
+      "share_of_all_vehicle_km": 0.096782137577043
+    },
+    {
+      "group": "transit",
+      "vehicles": 14923,
+      "vehicles_with_link_entry": 0,
+      "departures": 0,
+      "link_entries": 0,
+      "vehicle_km": 0.0,
+      "share_of_all_vehicle_km": 0.0
+    }
+  ]
+}

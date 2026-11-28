@@ -21,7 +21,17 @@ docstring for the stage-level context.
 
 from braunschweig.popsim import sources
 
-from .config_keys import _KREIS_CONTROL_TOGGLE_KEY
+from .config_keys import (
+    _KREIS_CONTROL_TOGGLE_KEY,
+    KEY_EDUCATION_BY_AGE_CONTROL,
+    KEY_EDUCATION_PARTICIPATION_CONTROL,
+    KEY_EMPLOYMENT_STATUS_KREIS_CONTROL,
+    KEY_PT_TICKET_NEVER_GROUP,
+    KEY_STUDENT_EDUCATION_CONTROL,
+    KEY_STUDENT_SEASON_TICKET_CONTROL,
+    KEY_STUDENT_WORK_LEG_CONTROL,
+    KEY_WORK_BY_EMPLOYMENT_CONTROL,
+)
 
 
 def _resolve_source(source_name: str) -> sources.PopsimSource:
@@ -96,6 +106,10 @@ def active_kreis_entries(context, source_name):
     when that entry is on) -- without this check the config would resolve silently and abort
     deep inside the popsim stage with a ``KeyError`` instead of failing at config time.
 
+    The four student entries (A3 of the student design, ADR-0211) follow
+    :func:`_apply_student_entry_rules`: with the student education switch on, the two hard
+    entries replace ``education_18plus`` by name; contradictory combinations raise.
+
     Returns the entries in REGISTRY order (economic_status first), so downstream
     catalog rendering and count-table merges are deterministic.
     """
@@ -148,4 +162,63 @@ def active_kreis_entries(context, source_name):
             "braunschweig.population.popsim.education_participation_kreis_control are both 'on'. The "
             "age-range controls REPLACE the all-persons one (issue #368, ADR-0109); turn "
             "braunschweig.population.popsim.education_participation_kreis_control off.")
+    return _apply_student_entry_rules(active, {e.name for e in active}, _kac)
+
+
+def _apply_student_entry_rules(active, names, kac):
+    """The A3 rules of the student entries (ADR-0211); returns ``active`` without ``education_18plus``
+    when the two hard student entries are on, ``active`` unchanged when no student entry is.
+
+    Refusals (``ValueError`` naming the student switch and the key in conflict), at config time:
+    any student entry without ``employment_status`` (the student seed derivation checks every adult
+    student against it); the hard entries with ``education_participation`` on (the legacy all-ages
+    entry would steer the same persons) or with the education-by-age family off (the hard entries
+    replace only its 18-plus band, the ages 0 to 17 would lose their control); the work-leg entry
+    without ``work_by_employment`` (its seed reads that work flag); the season-ticket entry without
+    ``pt_ticket_group4`` (its seed reads those flat-rate groups). The batch split by the population
+    share is refused in ``stage.KreisConsistencySettings.require_run_support``.
+    """
+    students = names & kac.STUDENT_ENTRY_NAMES
+    if not students:
+        return active
+    switch_of = {name: _KREIS_CONTROL_TOGGLE_KEY[name] for name in sorted(students)}
+    switches = ", ".join(sorted(set(switch_of.values())))
+    if "employment_status" not in names:
+        raise ValueError(
+            f"active_kreis_entries: {switches} 'on' but {KEY_EMPLOYMENT_STATUS_KREIS_CONTROL} is 'off'. "
+            "The student seed derivation checks every adult student against the employment_status "
+            f"column (ADR-0211); enable {KEY_EMPLOYMENT_STATUS_KREIS_CONTROL} or switch the student "
+            "entries off.")
+    education = {kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS} & students
+    if education:
+        if "education_participation" in names:
+            raise ValueError(
+                f"active_kreis_entries: {KEY_STUDENT_EDUCATION_CONTROL} and "
+                f"{KEY_EDUCATION_PARTICIPATION_CONTROL} are both 'on'. The student education entries "
+                "replace the adult band of the education-by-age family, which replaces the all-ages "
+                f"entry (ADR-0211, ADR-0109); turn {KEY_EDUCATION_PARTICIPATION_CONTROL} off.")
+        family = set(kac.EDUCATION_BY_AGE_ENTRY_NAMES) - {"education_18plus"}
+        if not family <= names:
+            raise ValueError(
+                f"active_kreis_entries: {KEY_STUDENT_EDUCATION_CONTROL} is 'on' but "
+                f"{KEY_EDUCATION_BY_AGE_CONTROL} is 'off'. The student education entries replace only "
+                f"the 18-plus band of that family; the persons aged 0 to 17 would lose their education "
+                f"control (ADR-0211). Enable {KEY_EDUCATION_BY_AGE_CONTROL} or turn "
+                f"{KEY_STUDENT_EDUCATION_CONTROL} off.")
+    if kac.STUDENT_WORK_LEG in students and "work_by_employment" not in names:
+        raise ValueError(
+            f"active_kreis_entries: {KEY_STUDENT_WORK_LEG_CONTROL} is 'on' but "
+            f"{KEY_WORK_BY_EMPLOYMENT_CONTROL} is 'off'. The student work leg is the direct-work-leg "
+            f"flag of that entry (ADR-0211); enable {KEY_WORK_BY_EMPLOYMENT_CONTROL} or turn "
+            f"{KEY_STUDENT_WORK_LEG_CONTROL} off.")
+    if kac.STUDENT_SEASON_TICKET in students and "pt_ticket_group4" not in names:
+        raise ValueError(
+            f"active_kreis_entries: {KEY_STUDENT_SEASON_TICKET_CONTROL} is 'on' but the four-group "
+            f"PT-ticket entry ({KEY_PT_TICKET_NEVER_GROUP}) is not active. The student season ticket "
+            f"reads its flat-rate groups (ADR-0211); enable {KEY_PT_TICKET_NEVER_GROUP} or turn "
+            f"{KEY_STUDENT_SEASON_TICKET_CONTROL} off.")
+    if education:
+        # The hard entries REPLACE education_18plus (one switch, design A3): the number of adults
+        # with an education leg is the sum of the students' and the other adults' targets.
+        return [entry for entry in active if entry.name != "education_18plus"]
     return active

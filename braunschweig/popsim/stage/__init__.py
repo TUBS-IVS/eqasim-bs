@@ -301,6 +301,14 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_EDUCATION_BY_AGE_CONTROL,
     KEY_EDUCATION_PARTICIPATION_CONTROL,
     KEY_EMPLOYMENT_GRID,
+    KEY_STUDENT_EMPLOYMENT_CONCEPT,
+    DEFAULT_STUDENT_EMPLOYMENT_CONCEPT,
+    KEY_STUDENT_EDUCATION_CONTROL,
+    DEFAULT_STUDENT_EDUCATION_CONTROL,
+    KEY_STUDENT_WORK_LEG_CONTROL,
+    KEY_STUDENT_SEASON_TICKET_CONTROL,
+    KEY_STUDENT_HOME_AREA_KREISE,
+    DEFAULT_STUDENT_HOME_AREA_KREISE,
     KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE,
     EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX,
     EMPLOYMENT_GRID_AGE_SHAPE_SOURCES,
@@ -351,6 +359,8 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
     KEY_SEED_DAY_FILTER,
     KEY_SETTINGS,
+    KEY_ASSEMBLE_BATCHES_ONLY,
+    DEFAULT_ASSEMBLE_BATCHES_ONLY,
     KEY_SOLVER_FALLBACK_ERROR_RATE,
     KEY_SOURCE,
     KEY_STATUS_KREIS_CONTROL,
@@ -541,6 +551,8 @@ _HELPER_MODULES = (
 #                                               _inject_ownership_grid_columns
 #   braunschweig.popsim.placement_income        _resolve_placement_income_flag,
 #                                               the placement_income block
+#   braunschweig.popsim.student_level           _read_student_employment_config,
+#                                               StudentEmploymentSettings
 #   braunschweig.popsim.zensus_employment_age   _inject_employment_grid_columns
 #   braunschweig.synthesis.population.enriched.housing_tenure
 #                                               _apply_housing_tenure_parity
@@ -596,12 +608,19 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.popsim.minor_child_targets",
     "braunschweig.popsim.ownership_grid",
     "braunschweig.popsim.placement_income",
+    # The student level table of A2 (ADR-0211): reader, schema and grid-group mapping.
+    "braunschweig.popsim.student_level",
+    # The student KREIS targets of A3 (ADR-0211), imported inside
+    # _derive_kreis_attribute_control_targets and configure.
+    "braunschweig.popsim.student_targets",
     "braunschweig.popsim.trips",
     "braunschweig.popsim.zensus_employment_age",
     "braunschweig.synthesis.population.enriched.housing_tenure",
     # The rest of this stage's import closure: modules its helpers import, whose code
     # this stage runs without importing it itself (ADR-0136).
     "braunschweig.constants",
+    # Reached through student_level (the omega header of the student level table, A2).
+    "braunschweig.data.csv_header",
     # A declared stage that this stage's helpers run as a library: the DAG edge covers its
     # output, not this code (ADR-0194).
     "braunschweig.data.bbsr.regiostar",
@@ -664,7 +683,10 @@ _TOKEN_CLOSURE_BOUNDARIES = {
 #: * ``tenure_by_income`` loaders (``_apply_housing_tenure`` fallback, a donor without a tenure
 #:   column),
 #: * ``zensus_employment_age.load_age_shares`` (employment grid, age-shape source
-#:   ``zensus2022_2000S_2001``; the production source reads a local-only file, see ``validate``).
+#:   ``zensus2022_2000S_2001``; the production source reads a local-only file, see ``validate``),
+#: * ``student_level.read_student_level_table`` (students counted as employed, A2, ADR-0211),
+#: * ``student_targets.read_student_shares`` (the SrV shares of the student KREIS entries, A3,
+#:   ADR-0211; the level table is the student entries' ``target_csv_relpath``).
 _COMMITTED_DATA_FILES = (
     "braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv",
     "braunschweig/mid/mid2023_bikes_by_rs7_haustyp.csv",
@@ -675,6 +697,10 @@ _COMMITTED_DATA_FILES = (
     "braunschweig/mid/mid2023_income_by_tenure_bundesland.csv",
     "braunschweig/mid/mid2023_income_by_tenure_raumtyp.csv",
     "braunschweig/popsim/zensus2022_employment_by_age_ref.csv",
+    "braunschweig/popsim/student_level_table.csv",
+    "braunschweig/srv/srv2023_student_parameters.csv",
+    "braunschweig/srv/srv2023_student_parameters_by_area.csv",
+    "braunschweig/srv/srv2023_education_leg_by_student_status.csv",
 )
 
 
@@ -947,6 +973,9 @@ def configure(context):
     context.config(KEY_FAST_PATHS, False)
     # Solver-path gate threshold (meaning: KEY_SOLVER_FALLBACK_ERROR_RATE in config_keys).
     context.config(KEY_SOLVER_FALLBACK_ERROR_RATE, None, volatile = True)
+    # Smoke mode (ADR-0211; meaning: KEY_ASSEMBLE_BATCHES_ONLY in config_keys). Volatile: a declared
+    # default-false key must not devalidate the cached stage of every run.
+    context.config(KEY_ASSEMBLE_BATCHES_ONLY, DEFAULT_ASSEMBLE_BATCHES_ONLY, volatile = True)
     # Member completion (D3). Default True; False -> legacy path (see execute()).
     context.config(KEY_COMPLETE_MEMBERS, True)
     # Sex codes 3 / 9 resolved once per donor person (issue #647). Default True.
@@ -983,6 +1012,16 @@ def configure(context):
     # Its age shape (ADR-0137). Default: the Zensus 2022 Regionaltabelle's exact shape per Kreis
     # and sex; the previous 2000S-2001 source stays selectable and byte-identical.
     context.config(KEY_EMPLOYMENT_GRID_AGE_SHAPE_SOURCE, EMPLOYMENT_GRID_AGE_SHAPE_KREIS_BY_SEX)
+    # Students counted as employed lower the young employed-grid targets (A2, ADR-0211). Default on;
+    # its input data_path (the level table) is declared only when it is on. The student education
+    # switch it reads for its warning is declared with the KREIS attribute controls below.
+    _student_employment_on = context.config(
+        KEY_STUDENT_EMPLOYMENT_CONCEPT, DEFAULT_STUDENT_EMPLOYMENT_CONCEPT)
+    if not isinstance(_student_employment_on, bool):
+        raise ValueError(f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} must be true or false, "
+                         f"got {_student_employment_on!r}")
+    if _student_employment_on:
+        context.config("data_path")
     # Ownership grid control (issue #240). Default "on" (project rule: new features
     # default on); "off" is byte-identical to the pre-#240 control set. Effective only
     # for source="mid" -- an ENTD run logs and skips it (see _read_control_config).
@@ -1067,6 +1106,18 @@ def configure(context):
     # education_18plus); they share a single seed column and universe mechanism, so they
     # are switched together (see _KREIS_CONTROL_TOGGLE_KEY in config_keys.py).
     context.config(KEY_EDUCATION_BY_AGE_CONTROL, _KREIS_CONTROL_DEFAULT["education_6_17"])
+    # The student entries (A3 of the student design, ADR-0211; meaning, defaults and refusals at the
+    # keys in config_keys). The two hard entries share one switch. Their inputs -- data_path (the
+    # level table and the SrV shares) and the home areas (checked against the run's Kreise at the
+    # start of execute()) -- are declared only while a student entry is on.
+    _student_switches_on = [
+        str(context.config(key, _KREIS_CONTROL_DEFAULT[name])).strip().lower() == "on"
+        for key, name in ((KEY_STUDENT_EDUCATION_CONTROL, "student_education_18_29"),
+                          (KEY_STUDENT_WORK_LEG_CONTROL, "student_work_leg"),
+                          (KEY_STUDENT_SEASON_TICKET_CONTROL, "student_season_ticket"))]
+    if any(_student_switches_on):
+        context.config("data_path")
+        context.config(KEY_STUDENT_HOME_AREA_KREISE, DEFAULT_STUDENT_HOME_AREA_KREISE)
     # Default "H_ANZPED": the server-verified MiD household e-bike column (see
     # KEY_EBIKE_SEED_COLUMN above); configurable in case a future MiD delivery renames it.
     context.config(KEY_EBIKE_SEED_COLUMN, "H_ANZPED")
@@ -1553,7 +1604,8 @@ class KreisConsistencySettings:
         return (self.apportionment == "population" and not self.follow_grids
                 and self.employment_level_source == "survey")
 
-    def require_run_support(self, *, has_kreis_table: bool, employment_grid_on: bool) -> None:
+    def require_run_support(self, *, has_kreis_table: bool, employment_grid_on: bool,
+                            student_entry_names=()) -> None:
         """Raise when a table-shaping key is off its legacy value but the run cannot honour it.
 
         Called at the start of ``execute()`` so the mismatch costs seconds, not the cell load and
@@ -1564,8 +1616,19 @@ class KreisConsistencySettings:
                 ``kreis_controls_follow_grids`` true or ``employment_level_source`` "zensus" is set
                 in a run without a KREIS table (no Tier-3 KREIS controls and no active KREIS
                 attribute control), or ``employment_level_source`` "zensus" with the employment
-                grid off (the Zensus level is the sum of the employed-grid targets).
+                grid off (the Zensus level is the sum of the employed-grid targets), or when a
+                student entry (``student_entry_names``, the active ones) is split over the batches
+                by the population share: every batch part would get the Kreis-average share of the
+                students instead of its share of the persons of the entry's age universe (A3,
+                ADR-0211, ADR-0203).
         """
+        if student_entry_names and self.apportionment != "universe":
+            switches = sorted({_KREIS_CONTROL_TOGGLE_KEY[name] for name in student_entry_names})
+            raise ValueError(
+                f"{', '.join(switches)} 'on' needs {KEY_KREIS_BATCH_APPORTIONMENT} 'universe', got "
+                f"{self.apportionment!r}: the student targets must be split over the batches by the "
+                "persons of their own age universe (ADR-0211, ADR-0203). Set "
+                f"{KEY_KREIS_BATCH_APPORTIONMENT} to 'universe' or switch the student entries off.")
         if not has_kreis_table:
             wrong = [f"{key} ({value!r}, legacy {legacy!r})" for key, value, legacy in (
                 (KEY_KREIS_BATCH_APPORTIONMENT, self.apportionment, "population"),
@@ -1612,12 +1675,17 @@ class KreisConsistencySettings:
                     len(self.apportion_map), len(set(self.apportion_map.values())))
         return batch_cells
 
-    def open_recorder(self, work_dir):
-        """Create the per-run recorder writing ``<work_dir>/popsim_input_consistency.csv``."""
+    def open_recorder(self, work_dir, active_entry_names=()):
+        """Create the per-run recorder writing ``<work_dir>/popsim_input_consistency.csv``.
+
+        ``active_entry_names``: the run's active KREIS entries; they choose the measured pairs
+        (``input_consistency.kreis_pairs``: today's pairs unless a student entry is active).
+        """
         self.recorder = _icg.ConsistencyRecorder(
             Path(work_dir) / _icg.TABLE_FILE_NAME,
             check_grid_pairs=self.follow_grids, check_age_pairs=self.apportionment == "universe",
-            age_tolerance=self.fine_tolerance, min_persons=self.fine_min_persons)
+            age_tolerance=self.fine_tolerance, min_persons=self.fine_min_persons,
+            pairs=_icg.ic.kreis_pairs(active_entry_names))
         return self.recorder
 
     def run_popsim_mid_kwargs(self) -> dict:
@@ -1667,6 +1735,115 @@ def _read_kreis_consistency_config(context) -> KreisConsistencySettings:
     )
     validate_kreis_consistency_keys(*values, _mid_batch_folders.EMPLOYMENT_LEVEL_SOURCES)
     return KreisConsistencySettings(*values)
+
+
+#: Top-level key of the A2 entry (students counted as employed, ADR-0211) in the stage report file
+#: ``CENSUS_FILTERED_REPORT_FILE``.
+STUDENT_EMPLOYMENT_REPORT_KEY = "student_employment"
+
+
+class StudentEmploymentSettings:
+    """The A2 switch of a run (design A2 of the student layer, ADR-0211) and what it produced.
+
+    ``level`` is the checked level table (``student_level.StudentLevel``) and
+    ``students_employed_by_group`` the persons subtracted per ``(Kreis, "M"|"F", grid group)``;
+    both ``None`` when the concept is not active (switched off, or no entry point because the
+    employment grid is off: ``reason``). :meth:`record_lowered_levels` stores the lowered Kreis
+    levels of the grid (``employment_grid.students_lowered_kreis_levels``) for :meth:`report`.
+    """
+
+    def __init__(self, *, enabled: bool, level=None, students_employed_by_group=None,
+                 reason: str | None = None):
+        self.enabled = enabled
+        self.level = level
+        self.students_employed_by_group = students_employed_by_group
+        self.reason = reason
+        self.lowered = None
+
+    @property
+    def active(self) -> bool:
+        return self.students_employed_by_group is not None
+
+    def record_lowered_levels(self, lowered: pd.DataFrame) -> None:
+        self.lowered = lowered
+
+    def report(self) -> dict:
+        """The ``student_employment`` entry of the stage report.
+
+        Inactive: ``enabled``, ``active`` False and the ``reason``. Active: ``omega``, the level
+        table, one row per Kreis, sex and grid group (Zensus employed, students counted as employed,
+        the remaining employed target), the total subtracted and the smallest remaining target.
+        """
+        if not self.active:
+            return {"enabled": self.enabled, "active": False, "reason": self.reason}
+        from braunschweig.popsim import student_level as _sl
+        out = {"enabled": True, "active": True, "omega": self.level.omega,
+               "level_table": _sl.STUDENT_LEVEL_TABLE_RELPATH, "rows": None,
+               "subtracted_persons_total": None, "smallest_employed_target": None}
+        if self.lowered is not None and len(self.lowered):
+            out["rows"] = self.lowered.to_dict(orient="records")
+            out["subtracted_persons_total"] = float(
+                self.lowered["students_counted_employed_persons"].sum())
+            smallest = self.lowered.loc[self.lowered["employed_target_persons"].idxmin()]
+            out["smallest_employed_target"] = {
+                key: smallest[key] for key in ("KREIS", "sex", "grid_age_group",
+                                               "employed_target_persons")}
+        return out
+
+
+def _read_student_employment_config(context, *, employment_grid_on: bool, follow_grids: bool,
+                                    employment_level_source: str, kreise) -> StudentEmploymentSettings:
+    """Read the A2 switch in ``execute()`` (one-argument ``context.config``; declared in configure).
+
+    Off: nothing else is read. On with the employment grid off: the concept has no entry point (the
+    subtraction happens where the grid columns are built), so the run continues on today's path with
+    a WARNING and the reason in the stage report. On with the grid on: refuses with
+    ``kreis_controls_follow_grids`` false (the KREIS control ``employed`` would keep the Zensus level
+    against the lowered grid), with ``employment_level_source`` other than "zensus" (the employed
+    classes of the KREIS families would keep their survey level instead of following the lowered
+    grid through the bridge) and when the level table is missing or malformed
+    (``student_level.read_student_level_table``); warns when the student education KREIS entries are
+    off (the places A2 frees then go to whoever fits).
+
+    Raises:
+        ValueError: naming ``KEY_STUDENT_EMPLOYMENT_CONCEPT`` and the key or file in conflict.
+    """
+    if not bool(context.config(KEY_STUDENT_EMPLOYMENT_CONCEPT)):
+        logger.info("[popsim.stage] %s off: the employed grid targets keep the Zensus level",
+                    KEY_STUDENT_EMPLOYMENT_CONCEPT)
+        return StudentEmploymentSettings(enabled=False, reason="switched off")
+    if not employment_grid_on:
+        reason = (f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but inactive because {KEY_EMPLOYMENT_GRID} "
+                  "is off: the students counted as employed are subtracted where the employed grid "
+                  "targets are built, and this run builds none")
+        logger.warning("[popsim.stage] %s", reason)
+        return StudentEmploymentSettings(enabled=True, reason=reason)
+    if not follow_grids:
+        raise ValueError(
+            f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but {KEY_KREIS_CONTROLS_FOLLOW_GRIDS} is false: the "
+            "KREIS control 'employed' would keep the Zensus level against the lowered employed grid "
+            f"(ADR-0211). Set {KEY_KREIS_CONTROLS_FOLLOW_GRIDS} true or {KEY_STUDENT_EMPLOYMENT_CONCEPT} "
+            "false.")
+    if employment_level_source != "zensus":
+        raise ValueError(
+            f"{KEY_STUDENT_EMPLOYMENT_CONCEPT} is on but {KEY_EMPLOYMENT_LEVEL_SOURCE} is "
+            f"{employment_level_source!r}: the employed classes of the KREIS employment families would "
+            "keep their survey level instead of following the lowered employed grid (ADR-0211). Set "
+            f"{KEY_EMPLOYMENT_LEVEL_SOURCE} to 'zensus' or {KEY_STUDENT_EMPLOYMENT_CONCEPT} false.")
+    from braunschweig.popsim import student_level as _sl
+    level = _sl.read_student_level_table(context.config("data_path"), kreise)
+    education = str(context.config(KEY_STUDENT_EDUCATION_CONTROL)).strip().lower()
+    if education != "on":
+        logger.warning(
+            "[popsim.stage] %s is on but %s is %r: the employed places freed for the students are "
+            "not steered to students and go to whoever fits (allowed for diagnostics, ADR-0211)",
+            KEY_STUDENT_EMPLOYMENT_CONCEPT, KEY_STUDENT_EDUCATION_CONTROL, education)
+    students = _sl.employed_students_by_grid_group(level)
+    logger.info("[popsim.stage] %s on: %.1f students counted as employed (omega %.6g) are "
+                "subtracted from the employed grid groups %s",
+                KEY_STUDENT_EMPLOYMENT_CONCEPT, sum(students.values()), level.omega,
+                sorted({group for _, _, group in students}))
+    return StudentEmploymentSettings(enabled=True, level=level, students_employed_by_group=students)
 
 
 #: Top-level keys of the #659 (Part B) entries in the stage report file ``CENSUS_FILTERED_REPORT_FILE``.
@@ -2448,7 +2625,9 @@ def _read_total_hh_control(settings_path) -> str:
     return str(settings["total_hh_control"])
 
 
-def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool) -> pd.DataFrame:
+def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_grid_on: bool,
+                                    student_employment: StudentEmploymentSettings | None = None,
+                                    ) -> pd.DataFrame:
     """Inject the ten per-cell employment-grid target columns (Task 5).
 
     Employment grid control (Task 5): inject the ten per-cell
@@ -2460,6 +2639,11 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
     the Landkreise, one shape for both sexes). It is rescaled per Kreis x sex x group to the census
     Erwerbstaetige Kreis level (kreis_erwerbsstatus.parquet). The former GENESIS SvB synpp stage
     dependency is no longer used. When OFF, none of this runs -> byte-identical.
+
+    ``student_employment`` (design A2, ADR-0211): when active, the students counted as employed are
+    subtracted from the Kreis level of the grid groups 16_29 and 30_39 before the spread over the
+    cells, and the lowered levels are recorded on it for the stage report. ``None`` or inactive ->
+    today's targets.
 
     Returns: the cells frame with the ten ``EMPLOYED_*_agg`` columns (MUST be
     reassigned); returned unchanged when the control is off.
@@ -2581,8 +2765,17 @@ def _inject_employment_grid_columns(context, cells: pd.DataFrame, employment_gri
                     len(_eg_exact), len(_eg_kreise), len(_eg_fallback), _eg_fallback,
                 )
 
+        # A2: the lowered Kreis levels are computed ONCE; the same frame is applied to the cells and
+        # recorded for the stage report, so the report shows the applied targets by construction.
+        _eg_lowered = None
+        if student_employment is not None and student_employment.active:
+            _eg_lowered = _eg.students_lowered_kreis_levels(
+                _eg_census_levels, _eg_age_shares, student_employment.students_employed_by_group,
+                _eg_kreise)
+            student_employment.record_lowered_levels(_eg_lowered)
         cells = _eg.add_employment_grid_columns(
             cells, _eg_census_levels, _eg_age_shares, kreis_col=_folders.GEO_KREIS,
+            lowered_kreis_levels=_eg_lowered,
         )
         logger.info(
             "[popsim.stage] employment grid control ON: injected 10 "
@@ -2901,6 +3094,92 @@ def _prepare_batch_runner(context, uv_path, popsimprep_dir, stratify_regiostar: 
     return run_one
 
 
+#: File the stage writes into ``context.path()`` while a student entry is active (A3, ADR-0211): the
+#: targets of the student entries in long form (``student_targets.student_targets_long``), which the
+#: population validation reads for its fit report.
+STUDENT_TARGETS_FILE = "student_kreis_targets.csv"
+#: Top-level key of the A3 entry in the stage report file ``CENSUS_FILTERED_REPORT_FILE``.
+STUDENT_TARGETS_REPORT_KEY = "student_kreis_targets"
+
+
+def _student_level_and_home_areas(context, names, run_kreise):
+    """``(level table, {run Kreis: home area})`` of the student entries ``names`` (A3, ADR-0211).
+
+    Reads the level table (``student_level.read_student_level_table``, every cell of ``run_kreise``
+    required) and checks the home areas (``KEY_STUDENT_HOME_AREA_KREISE``) against the STUDY region,
+    the Kreise of the level table, so a run over fewer Kreise keeps the default areas; every Kreis of
+    the run must lie in that region (``student_targets.area_of_kreis_from_home_areas``).
+
+    Raises:
+        ValueError: the level table is missing (naming the student switches) or a check fails.
+    """
+    from braunschweig.popsim import student_level as _sl
+    from braunschweig.popsim import student_targets as _st
+    data_path = context.config("data_path")
+    level_path = Path(data_path) / _sl.STUDENT_LEVEL_TABLE_RELPATH
+    if not level_path.is_file():
+        # Checked here: the reader's own message names the A2 switch, which may be off.
+        switches = sorted({_KREIS_CONTROL_TOGGLE_KEY[name] for name in names})
+        raise ValueError(
+            f"{', '.join(switches)} 'on' but the student level table {level_path} does not exist. It "
+            "is the input of the student entries' counts (ADR-0211); restore the committed file "
+            "(scripts/build_student_balance.py writes it) or switch the student entries off.")
+    level = _sl.read_student_level_table(data_path, run_kreise)
+    region = sorted(set(level.table["code"].astype(str)))
+    area_of_kreis = _st.area_of_kreis_from_home_areas(
+        context.config(KEY_STUDENT_HOME_AREA_KREISE), region, run_kreise)
+    return level, area_of_kreis
+
+
+def _build_student_kreis_targets(context, student_entries, kreise, *, young_persons, old_persons) -> dict:
+    """Build the count tables of the active student entries once per run (A3 of the student design).
+
+    ``kreise`` are the Kreise of the cells; ``young_persons`` / ``old_persons`` the census persons
+    aged 18 to 29 / 30 or older per Kreis, the totals the entries' rows partition. Reads the level
+    table (``student_level.read_student_level_table``) and the committed SrV shares
+    (``student_targets.read_student_shares``), maps each Kreis to its home area
+    (``KEY_STUDENT_HOME_AREA_KREISE``, checked against the run's Kreise ``KEY_KREISE``) and calls
+    ``student_targets.student_kreis_targets_with_diagnostics``. Writes :data:`STUDENT_TARGETS_FILE`
+    and the report entry :data:`STUDENT_TARGETS_REPORT_KEY` (the entries, the student count and the
+    rate of (Kreis, quantity) cells that took the SrV value of the region under the Wolfsburg rule
+    A21). Returns ``{entry name: table with ARS_kreis + control_columns(entry)}``.
+
+    Raises:
+        ValueError: the level table is missing (naming the student switches), a Kreis of the cells
+            is not a Kreis of the run, or any check of the readers and the builder fails.
+    """
+    from braunschweig.popsim import student_level as _sl
+    from braunschweig.popsim import student_targets as _st
+    names = [entry.name for entry in student_entries]
+    data_path = context.config("data_path")
+    level, area_of_kreis = _student_level_and_home_areas(
+        context, names, [str(kreis) for kreis in context.config(KEY_KREISE)])
+    outside = [kreis for kreis in kreise if kreis not in area_of_kreis]
+    if outside:
+        raise ValueError(f"[popsim.stage] cells of Kreis(e) {outside} lie outside the run's Kreise "
+                         f"({KEY_KREISE}); the student entries have no home area for them")
+    # The level table covers the study region; only the Kreise of the cells get targets.
+    counts = _st.student_counts(level)
+    counts = counts[counts["ars5"].isin(kreise)].reset_index(drop=True)
+    shares = _st.read_student_shares(
+        data_path, kreise, home_areas=context.config(KEY_STUDENT_HOME_AREA_KREISE))
+    persons_by_range = {}
+    for kreis in kreise:
+        persons_by_range[(kreis, _st.AGE_RANGE_YOUNG)] = float(young_persons[kreis])
+        persons_by_range[(kreis, _st.AGE_RANGE_OLD)] = float(old_persons[kreis])
+    tables, diagnostics = _st.student_kreis_targets_with_diagnostics(
+        counts, persons_by_range, shares, {kreis: area_of_kreis[kreis] for kreis in kreise}, names)
+    path = Path(context.path()) / STUDENT_TARGETS_FILE
+    _st.student_targets_long(tables, persons_by_range).to_csv(path, index=False, lineterminator="\n")
+    students = int(counts["students_count"].sum())
+    _update_stage_report(context, STUDENT_TARGETS_REPORT_KEY, {
+        "entries": names, "level_table": _sl.STUDENT_LEVEL_TABLE_RELPATH, "table": str(path),
+        "students_count": students, **diagnostics})
+    logger.info("[popsim.stage] student KREIS entries %s: %d students in %d Kreise (rounded once); "
+                "targets written to %s", names, students, len(kreise), path)
+    return tables
+
+
 def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active_entries, status_prior_n: float,
         kreis_table, kreis_controls_map, household_control_names: set,
         fine_teen_bands_on: bool = True):
@@ -2957,6 +3236,21 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # bounds here is how the two drifted apart before (education_6_17 over ages 10-17).
         _kac_age_bands = age_band_by_entry_name(active_entries)
         _kac_persons_by_kreis_age_band: dict = {}
+
+        def _band_total(_band, _open_ended):
+            # Both entry points sum the SAME single-year columns over the band; an open-ended
+            # band keeps the min_age one so a coverage failure names the function its caller
+            # would recognise. Cached per band, so entries sharing a universe (and the student
+            # counts below) use one and the same total.
+            if _band not in _kac_persons_by_kreis_age_band:
+                if _open_ended:
+                    _kac_persons_by_kreis_age_band[_band] = person_total_by_kreis_min_age(
+                        cells, _kac_kreis, _band[0])
+                else:
+                    _kac_persons_by_kreis_age_band[_band] = person_total_by_kreis_age_range(
+                        cells, _kac_kreis, _band[0], _band[1])
+            return _kac_persons_by_kreis_age_band[_band]
+
         # The crosswalk Kreise the per-Kreis control totals are built over; each active
         # target CSV must cover them (load_kreis_target fail-fasts on a missing Kreis row).
         _kac_expected_ars5 = sorted(_kac_hh_by_kreis)
@@ -2964,13 +3258,23 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
         # (kreis_attribute_control.TARGET_SHARE_TOLERANCE, which documents WHY the loader's
         # tighter 1e-6 default cannot be used), shared with the 1 km ownership grid.
         _kac_share_tol = _kac.TARGET_SHARE_TOLERANCE
+        # The student entries (A3, ADR-0211) take COUNT tables built ONCE here for all of them,
+        # so their student labels add up to one rounded student count per Kreis and age range;
+        # the persons of their two age ranges are the band totals the loop below partitions.
+        _student_entries = [c for c in active_entries if c.name in _kac.STUDENT_ENTRY_NAMES]
+        _student_tables = {}
+        if _student_entries:
+            _student_bands = age_band_by_entry_name(
+                [c for c in _kac.REGISTRY
+                 if c.name in (_kac.STUDENT_EDUCATION_18_29, _kac.STUDENT_EDUCATION_30PLUS)])
+            _student_tables = _build_student_kreis_targets(
+                context, _student_entries, _kac_expected_ars5,
+                young_persons=_band_total(_student_bands[_kac.STUDENT_EDUCATION_18_29], False),
+                old_persons=_band_total(_student_bands[_kac.STUDENT_EDUCATION_30PLUS], True))
         for _ctl in active_entries:
             # economic_status keeps the configurable Dirichlet shrinkage prior (status_prior_n);
             # the S1c blended targets are FINAL (CONSUMER NOTE in the CSV headers) -> prior_n = 0.
             _entry_prior_n = status_prior_n if _ctl.name == "economic_status" else 0.0
-            _tgt = _kac.load_kreis_target(
-                _kac_data_path, _ctl, expected_ars5=_kac_expected_ars5,
-                share_tolerance=_kac_share_tol)
             # Per-entry total by level: household entries partition the per-Kreis household
             # total; person entries (e.g. trip_class) partition the per-Kreis PERSON total
             # (sum of the 18 age-x-sex 100m band columns), so the category targets partition
@@ -2985,17 +3289,8 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
                 _entry_band = _kac_age_bands.get(_ctl.name)
                 if _entry_band is not None:
                     _lo, _hi = _entry_band
-                    if _entry_band not in _kac_persons_by_kreis_age_band:
-                        # Both entry points sum the SAME single-year columns over the band;
-                        # an entry with no max_age keeps the min_age one so a
-                        # coverage failure names the function its caller would recognise.
-                        if getattr(_ctl, "max_age", None) is None:
-                            _kac_persons_by_kreis_age_band[_entry_band] = person_total_by_kreis_min_age(
-                                cells, _kac_kreis, _lo)
-                        else:
-                            _kac_persons_by_kreis_age_band[_entry_band] = person_total_by_kreis_age_range(
-                                cells, _kac_kreis, _lo, _hi)
-                    _total_by_kreis = _kac_persons_by_kreis_age_band[_entry_band]
+                    _total_by_kreis = _band_total(
+                        _entry_band, getattr(_ctl, "max_age", None) is None)
                     # An open-ended universe is reported as "age>=lower": its upper bound is
                     # the single-year census cap, not a bound the control itself declares.
                     _total_label = (f"persons (age>={_lo})"
@@ -3010,8 +3305,16 @@ def _derive_kreis_attribute_control_targets(context, cells: pd.DataFrame, active
             else:
                 _total_by_kreis = _kac_hh_by_kreis
                 _total_label = "households"
-            _tbl = _kac.attribute_kreis_count_table(
-                _ctl, _tgt, _total_by_kreis, prior_n=_entry_prior_n)
+            if _ctl.name in _student_tables:
+                # Counts built above from the level table; each row sums to the rounded
+                # persons of the entry's age range (_total_by_kreis).
+                _tbl = _student_tables[_ctl.name]
+            else:
+                _tgt = _kac.load_kreis_target(
+                    _kac_data_path, _ctl, expected_ars5=_kac_expected_ars5,
+                    share_tolerance=_kac_share_tol)
+                _tbl = _kac.attribute_kreis_count_table(
+                    _ctl, _tgt, _total_by_kreis, prior_n=_entry_prior_n)
             _map = _kreis_controls_map(_cs_kac.attribute_kreis_controls([_ctl]))
             # Household-level entries (economic_status, number_of_cars, number_of_bicycles,
             # has_ebike) are apportioned across batches by the household share (issue #148);
@@ -3143,6 +3446,25 @@ def _batch_settings_yaml(context, settings_path, settings_overrides) -> str:
         Path(settings_path).read_text(encoding="utf-8"),
         bool(context.config(KEY_WRITE_DATA_DICTIONARY)),
         settings_overrides)
+
+
+class AssembleBatchesOnlyStop(RuntimeError):
+    """Raised by the smoke mode ``assemble_batches_only`` (ADR-0211) instead of running PopulationSim.
+
+    It is the intended end of such a run, not a failure of the stage: the batch folders, the
+    input-consistency table, the stage report and ``student_kreis_targets.csv`` are written, and no
+    stage output is cached.
+    """
+
+
+def _assemble_batches_only_run_one(work_dir):
+    """Build the ``run_one`` that replaces PopulationSim in the smoke mode: it only raises the stop."""
+    def run_one(folder):
+        raise AssembleBatchesOnlyStop(
+            f"assemble_batches_only is on (smoke mode, ADR-0211): the batch folders are written "
+            f"under {work_dir} (first folder: {folder}) and PopulationSim was not run; the stage "
+            f"stops here, so synpp caches no output. Run one batch from these folders by hand.")
+    return run_one
 
 
 def _run_populationsim_batches(context, cells: pd.DataFrame, base_cols, controls_df: pd.DataFrame,
@@ -3803,9 +4125,21 @@ def execute(context) -> pd.DataFrame:
     # Refuse keys this run cannot honour now, before the cell load and the seed build: a KREIS table
     # exists when the Tier-3 KREIS controls are loaded or a KREIS attribute control is active
     # (_derive_kreis_attribute_control_targets merges one table per active entry).
+    from braunschweig.popsim.kreis_attribute_control import STUDENT_ENTRY_NAMES as _student_names
+    _active_student_names = [name for name in active_entry_names if name in _student_names]
     consistency.require_run_support(
         has_kreis_table=(kreis_table is not None and bool(kreis_controls_map)) or bool(active_entries),
-        employment_grid_on=employment_grid_on)
+        employment_grid_on=employment_grid_on, student_entry_names=_active_student_names)
+    if _active_student_names:
+        # The level table and the home areas of the student entries (A3, ADR-0211): a bad value
+        # costs seconds here, not the cell load and the seed build before the targets are built.
+        _student_level_and_home_areas(
+            context, _active_student_names, [str(kreis) for kreis in kreise])
+    # Students counted as employed (A2, ADR-0211): refuse an inconsistent switch state and read the
+    # level table now, before the cell load and the seed build.
+    student_employment = _read_student_employment_config(
+        context, employment_grid_on=employment_grid_on, follow_grids=consistency.follow_grids,
+        employment_level_source=consistency.employment_level_source, kreise=kreise)
     # The Tier-3 control names BEFORE the attribute controls are merged in: the universe of the
     # Tier-3 person controls (age 15+) is part of the apportionment universes.
     tier3_control_names = list(kreis_controls_map or ())
@@ -3851,7 +4185,9 @@ def execute(context) -> pd.DataFrame:
         no_tenure_control_reason=(
             _tenure_control_inactive_reason(controls_source, source_name, control_tiers)
             if tenure_owner_limited else None))
-    cells = _inject_employment_grid_columns(context, cells, employment_grid_on)
+    cells = _inject_employment_grid_columns(
+        context, cells, employment_grid_on, student_employment=student_employment)
+    _update_stage_report(context, STUDENT_EMPLOYMENT_REPORT_KEY, student_employment.report())
     cells = _inject_ownership_grid_columns(
         context, cells, ownership_grid_on, active_entry_names, kreise)
 
@@ -3920,6 +4256,14 @@ def execute(context) -> pd.DataFrame:
     run_one = _prepare_batch_runner(
         context, uv_path, popsimprep_dir, stratify_regiostar,
     )
+    if bool(context.config(KEY_ASSEMBLE_BATCHES_ONLY)):
+        # Smoke mode (ADR-0211): every folder is written before the first run_one call, so the
+        # first call stops the stage, and PopulationSim is never invoked.
+        logger.warning(
+            "[popsim.stage] assemble_batches_only is ON: the batch folders will be written under %s "
+            "and the stage then stops before PopulationSim (smoke mode); it caches no output.",
+            work_dir)
+        run_one = _assemble_batches_only_run_one(work_dir)
     kreis_table, kreis_controls_map = _derive_kreis_attribute_control_targets(
         context, cells, active_entries, status_prior_n, kreis_table,
         kreis_controls_map, household_control_names, fine_teen_bands_on,
@@ -3946,7 +4290,7 @@ def execute(context) -> pd.DataFrame:
     # attributes joined onto the output and must not gain them.
     batch_cells = consistency.prepare_cells(cells, active_entries, tier3_control_names)
     if kreis_table is not None:
-        consistency.open_recorder(work_dir)
+        consistency.open_recorder(work_dir, [entry.name for entry in active_entries])
     else:
         logger.info("[popsim.stage] no KREIS table in this run: the KREIS input consistency is "
                     "not measured")

@@ -214,6 +214,27 @@ def persons_with_purpose(legs: pd.DataFrame, purpose_codes) -> tuple[set, dict]:
 
 
 # --------------------------------------------------------------------------- universe
+def require_average_weekday(persons: pd.DataFrame) -> None:
+    """Universe guard 1 of :func:`prepare_universe_persons`: every ``MITTL_WERKTAG`` is
+    :data:`AVERAGE_WEEKDAY`.
+
+    Raises ``ValueError`` ("universe drift") otherwise. Public so that a builder that reads the raw
+    person file WITHOUT the universe (the away-all-day share of the student parameter table)
+    applies exactly the same rule instead of measuring a different day universe.
+    """
+    _require_columns(persons, ["MITTL_WERKTAG"], "persons")
+    weekday = pd.to_numeric(persons["MITTL_WERKTAG"], errors="coerce")
+    foreign_weekday = weekday[weekday != AVERAGE_WEEKDAY]   # NaN != 1 is True, so NaN is caught
+    if len(foreign_weekday) > 0:
+        raise ValueError(
+            "universe drift: %d of %d persons have MITTL_WERKTAG != %d (found %s, plus %d "
+            "non-numeric/missing); these aggregates are defined on the average-weekday "
+            "(Tuesday-Thursday) delivery only"
+            % (len(foreign_weekday), len(persons), AVERAGE_WEEKDAY,
+               sorted(foreign_weekday.dropna().unique().tolist()),
+               int(foreign_weekday.isna().sum())))
+
+
 def _employment_flag(employment_code: pd.Series, is_unreadable) -> pd.array:
     """``employed`` as a NULLABLE boolean: ``pd.NA`` where ``V_ERW`` could not be read.
 
@@ -275,16 +296,7 @@ def prepare_universe_persons(persons: pd.DataFrame,
 
     n_persons_total = len(persons)
 
-    weekday = pd.to_numeric(persons["MITTL_WERKTAG"], errors="coerce")
-    foreign_weekday = weekday[weekday != AVERAGE_WEEKDAY]   # NaN != 1 is True, so NaN is caught
-    if len(foreign_weekday) > 0:
-        raise ValueError(
-            "universe drift: %d of %d persons have MITTL_WERKTAG != %d (found %s, plus %d "
-            "non-numeric/missing); these aggregates are defined on the average-weekday "
-            "(Tuesday-Thursday) delivery only"
-            % (len(foreign_weekday), n_persons_total, AVERAGE_WEEKDAY,
-               sorted(foreign_weekday.dropna().unique().tolist()),
-               int(foreign_weekday.isna().sum())))
+    require_average_weekday(persons)
 
     # A non-numeric E_ANZ_WEGE coerces to NaN, and NaN passes BOTH "< 0" and "== -7" as False:
     # such a person would neither raise nor be counted as away-from-home, and would silently

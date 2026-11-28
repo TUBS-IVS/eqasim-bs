@@ -6,7 +6,9 @@ with the popsimprep directory as working directory
 (same uv executable, same working directory) which ``populationsim`` it has installed, so
 a run on an environment that lacks the configured fork fails before any seed is built.
 Meaning and format of the configured version: ``KEY_POPSIM_VERSION`` in
-``braunschweig.popsim.stage.config_keys``.
+``braunschweig.popsim.stage.config_keys``. Every package installed in the project
+environment (.venv), not only the PopulationSim stack, is checked against ``uv.lock``
+(:func:`require_environment_in_sync`); modules added through PYTHONPATH are not covered.
 """
 from __future__ import annotations
 
@@ -39,6 +41,19 @@ _LOCK_GIT_SOURCE = re.compile(r'^source = \{ git = "[^"#]*#(?P<commit>[0-9a-f]{4
 
 #: Solver-stack packages whose installed version must equal the lock (besides PopulationSim).
 _LOCKED_STACK = ("ortools", "numpy", "pandas")
+
+#: Arguments of the read-only whole-environment check ``uv <args>`` (exit 0 = the installed
+#: environment equals the lock, non-zero = uv would change something).
+#: ``--frozen``: use ``uv.lock`` as it is, never re-resolve or rewrite it.
+#: ``--check``: change nothing in the environment, only report whether a sync would.
+#: ``--offline``: no network at stage start (a check must not need an index to answer).
+SYNC_CHECK_ARGS = ("sync", "--frozen", "--check", "--offline")
+
+#: Exit code of ``uv sync --frozen --check`` when the environment differs from the lock
+#: (measured 2026-11-27 with uv 0.11.21 on the run server: "The environment is outdated", exit 1;
+#: run manifest ``popsim-env-security-update-2026-11-27``). Any OTHER non-zero exit means
+#: the check itself could not run (unreadable lock, unknown option of an old uv, ...).
+SYNC_CHECK_OUTDATED_EXIT = 1
 
 #: Keys of the report, in the order they are logged.
 REPORT_KEYS = ("populationsim", "commit", "ortools", "numpy", "pandas", "python")
@@ -212,6 +227,49 @@ def installed_tool_report(uv_path: str, project_dir: str, *,
     return {key: report[key] for key in REPORT_KEYS}
 
 
+def require_environment_in_sync(uv_path: str, project_dir, *,
+                                subprocess_run=subprocess.run) -> None:
+    """Raise unless every package installed in the project environment (.venv) equals ``uv.lock``.
+
+    One read-only subprocess, ``[uv, *SYNC_CHECK_ARGS]`` with ``cwd=project_dir``. It catches
+    what the report of :func:`installed_tool_report` cannot: a differing version of any
+    package outside the PopulationSim stack (for example one raised for a security fix). It does
+    not cover modules added through PYTHONPATH.
+
+    Raises:
+        RuntimeError: exit ``SYNC_CHECK_OUTDATED_EXIT`` (the environment differs; the message
+            carries the tail of uv's output, which lists the would-be changes), any other
+            non-zero exit (the check could not run), timeout, or uv could not be started; each with the sync hint.
+    """
+    command = [str(uv_path), *SYNC_CHECK_ARGS]
+    try:
+        completed = subprocess_run(
+            command, cwd=str(project_dir), capture_output=True, text=True,
+            timeout=REPORT_TIMEOUT_S, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"environment check (uv sync --frozen --check) timed out after "
+            f"{REPORT_TIMEOUT_S} s in {str(project_dir)!r}. {_sync_hint(project_dir)}") from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"environment check could not start {str(uv_path)!r} ({exc}). "
+            f"Check the uv_path config key. {_sync_hint(project_dir)}") from exc
+    if completed.returncode != 0:
+        output = ((completed.stdout or "") + (completed.stderr or "")).strip()[-1000:]
+        if completed.returncode != SYNC_CHECK_OUTDATED_EXIT:
+            raise RuntimeError(
+                f"environment check (uv sync --frozen --check) could not run "
+                f"(exit {completed.returncode}) in {str(project_dir)!r}: {output}. Check the "
+                f"uv version (the check needs `uv sync --check`; see environments/populationsim/README.md) "
+                f"and the lock file. {_sync_hint(project_dir)}")
+        raise RuntimeError(
+            f"the installed popsimprep environment differs from {LOCK_FILE_NAME} "
+            f"(uv sync --frozen --check, exit {completed.returncode}) in "
+            f"{str(project_dir)!r}: {output}. {_sync_hint(project_dir)}")
+    logger.info("[popsim.tool] installed environment equals %s (uv sync --frozen --check)",
+                LOCK_FILE_NAME)
+
+
 def require_populationsim_version(installed: str, expected: str, *,
                                   project_dir) -> None:
     """Raise unless the installed PopulationSim version equals the configured one.
@@ -237,7 +295,9 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
     Always runs (no switch to bypass it). Two checks: the installed version equals the
     configured one, and the installed git commit equals the commit ``<project_dir>/uv.lock``
     pins (:func:`expected_populationsim_commit`): the version string alone cannot tell two
-    builds of the fork apart. Logs the report at INFO and stores it as
+    builds of the fork apart. Then every package installed in the project environment (.venv)
+    must equal the lock (:func:`require_environment_in_sync`; modules added through PYTHONPATH
+    are not covered). Logs the report at INFO and stores it as
     ``context.set_info("populationsim_tool_report", report)``.
 
     Returns: the report; after this returns, ``report["commit"]`` is the locked commit.
@@ -246,7 +306,8 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
         RuntimeError: from :func:`installed_tool_report`,
             :func:`require_populationsim_version` or :func:`expected_populationsim_commit`,
             or when the installed commit is unknown or differs from the locked one, or when the
-            installed ortools, numpy or pandas version differs from the lock.
+            installed ortools, numpy or pandas version differs from the lock, or from
+            :func:`require_environment_in_sync` when any other installed package differs.
     """
     report = installed_tool_report(uv_path, project_dir, subprocess_run=subprocess_run)
     logger.info("[popsim.tool] installed PopulationSim stack: %s",
@@ -264,5 +325,6 @@ def check_populationsim_environment(context, uv_path: str, project_dir: str, exp
             raise RuntimeError(
                 f"{name} in the popsimprep environment is version {report[name]!r}, but "
                 f"{LOCK_FILE_NAME} pins {locked[name]!r}. {_sync_hint(project_dir)}")
+    require_environment_in_sync(uv_path, project_dir, subprocess_run=subprocess_run)
     context.set_info("populationsim_tool_report", report)
     return report

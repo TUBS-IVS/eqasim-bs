@@ -1,0 +1,54 @@
+dataset: che_student_origins
+title: CHE student origins by Kreis of the school leaving certificate (WS 2022/23, hand-read)
+provider: CHE Centrum fuer Hochschulentwicklung (data - Statistisches Bundesamt)
+vintage: WS 2022/23
+geography: |
+  Origin Kreise (5-digit ARS) of students of universities in and around the study region, in
+  two views: per institution the largest origin Kreise, per origin Kreis the largest
+  institutions (column view).
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: CHE DatenCHECK 2/2024 pages (data - Statistisches Bundesamt), read by hand
+  script: scripts/seed_che_student_origins.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file ships committed with the
+    checkout, so there is nothing to download or check the presence of.
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: none stated on the source page
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The CHE page names no licence. Committed by owner decision of 2026-11-25.
+limitations: |
+  Origin is the Kreis of the school leaving certificate, not the place of residence (assumption
+  A2, documented in braunschweig/data/education/student_od_table.py). Cells below the tenth value are censored by the source; abroad and other rows carry
+  the remainder.
+
+  Omission: the art academy in Braunschweig (Hochschule fuer Bildende Kuenste Braunschweig), a
+  local institution of the site table lsn_university_sites, has no origin list. The CHE
+  institution view lists only institutions with at least 1,000 students and its institution
+  selector does not offer this one (checked 2026-11-25); it appears only as a destination in the
+  Kreis view. No list is invented (reason also in the INSTITUTION_ORIGINS comment of
+  scripts/seed_che_student_origins.py). The rule for its origins (its Kreis-view cells, the
+  rest of its LSN enrollment as locals) and the crosswalk from the LSN short names of the site
+  table to the CHE institution names (INSTITUTION_CROSSWALK, OUTSIDE_LSN_CROSSWALK) are in
+  braunschweig/data/education/student_od_table.py; ADR-0210 records the rule.
+notes: |
+  used_by lists synpp stages and stays empty: the script scripts/build_student_balance.py (Phase 2 of #140) reads
+  this table, no stage does yet.
+  The list of origin Kreise to read comes from
+  python scripts/seed_che_student_origins.py --list-required-kreise.

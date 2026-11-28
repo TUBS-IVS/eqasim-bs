@@ -20,6 +20,7 @@ Restricted datasets are never committed or redistributed.
 | [building_activity_potentials](../registry/data/building_activity_potentials.yml) | derived_input | derived | `data/braunschweig/buildings/building_activity_potentials.parquet` | o/-/- | no |
 | [building_potentials_redistribution](../registry/data/building_potentials_redistribution.yml) | derived_input, spatial_input | derived | `data/braunschweig/buildings/08_redistribution.gpkg` | o/-/r | no |
 | [buildings_with_households](../registry/data/buildings_with_households.yml) | derived_input | derived | `data/braunschweig/popsim/buildings/buildings_with_households_zgb.parquet` | o/-/r | no |
+| [che_student_origins](../registry/data/che_student_origins.yml) | reference_table | manual_download (`scripts/seed_che_student_origins.py`) | `data/braunschweig/schools/che_student_origins_ws2022_23.csv` | o/-/o | no |
 | [clc_backbone](../registry/data/clc_backbone.yml) | spatial_input | manual_download | `data/ (user-provided)` | o/-/o | no |
 | [cleancensus_kreis_controls](../registry/data/cleancensus_kreis_controls.yml) | control | derived | `data/braunschweig/popsim/kreis_controls/` | o/-/r | no |
 | [copernicus_landuse_100m](../registry/data/copernicus_landuse_100m.yml) | derived_input | derived | `data/braunschweig/preprocessed/inspire_landuse.parquet` | -/-/- | no |
@@ -31,6 +32,11 @@ Restricted datasets are never committed or redistributed.
 | [genesis_svb_workplace](../registry/data/genesis_svb_workplace.yml) | control | manual_download | `data/braunschweig/13111-01-03-5.xlsx` | r/-/r | no |
 | [german_wide_freight_v3](../registry/data/german_wide_freight_v3.yml) | supply_input, network, assumption_basis | auto_script (`scripts/download_german_wide_freight.py`) | `data/braunschweig/freight/german-wide-freight-v3/` | -/r/r | no |
 | [gtfs_feed](../registry/data/gtfs_feed.yml) | supply_input | manual_download | `data/gtfs_cordon/de_full_2026-06-02.zip` | -/r/r | no |
+| [hbefa_emission_factors](../registry/data/hbefa_emission_factors.yml) | reference_table | restricted_delivery | `No fixed path. The four files are named by the config keys hbefa_cold_average_path,
+hbefa_warm_average_path, hbefa_cold_detailed_path and hbefa_warm_detailed_path, which have no default
+(stage braunschweig.data.hbefa). Keep the files outside the repository or under the gitignored
+; never commit them.
+` | -/-/o | YES |
 | [hsn_tsn_lookup](../registry/data/hsn_tsn_lookup.yml) | derived_input | scrape (`scripts/scrape_hsn_tsn.py`) | `data/braunschweig/kba/hsn_tsn_lookup.csv` | o/-/r | no |
 | [inkar_household_income](../registry/data/inkar_household_income.yml) | control, reference_table | manual_download | `data/braunschweig/E_Haushaltseinkommen.xls` | r/-/r | no |
 | [inkar_indicators](../registry/data/inkar_indicators.yml) | reference_table | manual_download | `data/braunschweig/E_*.xls` | o/-/o | no |
@@ -42,8 +48,10 @@ Restricted datasets are never committed or redistributed.
 | [lsn_bbs_share_by_age](../registry/data/lsn_bbs_share_by_age.yml) | reference_table | committed | `data/braunschweig/nds_bbs_share_by_age.csv` | o/-/o | no |
 | [lsn_income_tax](../registry/data/lsn_income_tax.yml) | reference_table | auto_script (`scripts/extract_lsn_income_tax_kreis.py`) | `data/braunschweig/lsn/lsn2022_income_tax_by_kreis.csv` | -/-/- | no |
 | [lsn_kitas](../registry/data/lsn_kitas.yml) | supply_input | manual_download (`scripts/extract_nds_kitas.py`) | `data/braunschweig/schools/nds_kitas_zgb.csv` | o/-/r | no |
+| [lsn_population_20_29_by_kreis](../registry/data/lsn_population_20_29_by_kreis.yml) | reference_table | manual_download | `data/braunschweig/popsim/lsn_population_20_29_by_kreis.csv` | -/-/o | no |
 | [lsn_schools](../registry/data/lsn_schools.yml) | supply_input | manual_download (`scripts/extract_nds_schools.py`) | `data/braunschweig/schools/nds_schools_zgb.csv` | o/-/r | no |
 | [lsn_universities](../registry/data/lsn_universities.yml) | supply_input | manual_download (`scripts/seed_nds_hochschulen.py`) | `data/braunschweig/schools/nds_hochschulen.csv` | o/-/r | no |
+| [lsn_university_sites](../registry/data/lsn_university_sites.yml) | supply_input, reference_table | manual_download (`scripts/seed_lsn_university_sites.py`) | `data/braunschweig/schools/lsn_university_sites.csv` | o/-/o | no |
 | [mid2023_P13](../registry/data/mid2023_P13.yml) | calibration_target, validation_reference, reference_table | committed (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/mid2023_P13.csv` | o/-/o | no |
 | [mid2023_P13_commute_distance_by_rs7](../registry/data/mid2023_P13_commute_distance_by_rs7.yml) | calibration_target, reference_table | committed (`scripts/extract_mid_p13_rs7.py`) | `data/braunschweig/mid/mid2023_P13_commute_distance_by_rs7.csv` | -/-/- | no |
 | [mid2023_T43_school_distance_by_rs7](../registry/data/mid2023_T43_school_distance_by_rs7.yml) | calibration_target, validation_reference | committed (`scripts/seed_mid_t43_school_distance.py`) | `data/braunschweig/mid/mid2023_T43_school_distance_by_rs7.csv` | -/-/- | no |
@@ -69,7 +77,9 @@ variables.
 | [mid2023_mit_tables](../registry/data/mid2023_mit_tables.yml) | reference_table | manual_download (`scripts/extract_mid_income_by_size.py`) | `data/braunschweig/mid/ (mid2023_income_by_*.csv sources)` | o/-/o | no |
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |
 | [mid2023_regional_report](../registry/data/mid2023_regional_report.yml) | validation_reference, calibration_target | restricted_delivery (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/ (source PDFs local-only)` | o/-/o | YES |
+| [mid2023_student_reference](../registry/data/mid2023_student_reference.yml) | reference_table, validation_reference | committed (`scripts/extract_mid_student_reference.py`) | `data/braunschweig/mid/{mid2023_student_status_by_age,mid2023_student_education_distance_mode,mid2023_student_share_20_29_by_land,mid2023_student_behaviour_seed,mid2023_student_age_sex}.csv` | -/-/o | no |
 | [mid2023_w_zwd_group_reference](../registry/data/mid2023_w_zwd_group_reference.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zwd_groups.py`) | `data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` | -/-/- | no |
+| [mid2023_w_zwd_group_reference_without_loops](../registry/data/mid2023_w_zwd_group_reference_without_loops.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zwd_groups.py`) | `data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv` | -/-/- | no |
 | [mid2023_w_zweck_by_hwzweck1](../registry/data/mid2023_w_zweck_by_hwzweck1.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zweck_hwzweck1.py`) | `data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv` | -/-/- | no |
 | [mid2023_workday_location](../registry/data/mid2023_workday_location.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_workday_location.py`) | `data/braunschweig/mid/mid2023_workday_location_by_commute_distance.csv` | r/-/r | no |
 | [mikrozensus_pendler_modes](../registry/data/mikrozensus_pendler_modes.yml) | validation_reference, calibration_target | auto_script (`scripts/download_mikrozensus_pendler.py`) | `data/braunschweig/mikrozensus/mikrozensus2024_*.csv` | o/-/r | no |
@@ -114,9 +124,12 @@ add-on modules SrV2023_Personen_Zusatz_{Braunschweig,RGB}.csv, codebook in
 srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 ` | -/-/o | YES |
 | [srv2023_reference_tables](../registry/data/srv2023_reference_tables.yml) | control, calibration_target, validation_reference | committed | `data/braunschweig/srv/srv2023_*.csv` | o/-/r | no |
+| [srv2023_student_reference](../registry/data/srv2023_student_reference.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_student_reference.py`) | `data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison,srv2023_student_parameters,srv2023_young_adult_status_by_kreis,srv2023_student_post_matsim_reference,srv2023_student_education_destination,srv2023_student_parameters_by_area,srv2023_education_leg_by_student_status,srv2023_student_area_rule}.csv` | r/-/r | no |
 | [srv2023_ticket_groups4_14plus_by_kreis](../registry/data/srv2023_ticket_groups4_14plus_by_kreis.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_kreis_tables.py`) | `data/braunschweig/srv/srv2023_ticket_groups4_14plus_by_kreis.csv` | -/-/o | no |
 | [srv2023_work_by_employment](../registry/data/srv2023_work_by_employment.yml) | calibration_target, reference_table | committed (`scripts/extract_srv_participation_universe.py`) | `data/braunschweig/srv/srv2023_work_by_employment_by_kreis.csv` | -/-/o | no |
 | [srv2023_work_participation](../registry/data/srv2023_work_participation.yml) | validation_reference | committed (`scripts/extract_srv_work_participation.py`) | `data/braunschweig/srv/srv2023_work_participation_by_kreis.csv` | -/-/r | no |
+| [student_level_table](../registry/data/student_level_table.yml) | reference_table | committed (`scripts/build_student_balance.py`) | `data/braunschweig/popsim/student_level_table.csv` | r/-/r | no |
+| [student_od_balance](../registry/data/student_od_balance.yml) | reference_table | committed (`scripts/build_student_balance.py`) | `data/braunschweig/schools/{student_od_table,student_balance_by_site,student_balance_out_commuters,student_balance_in_commuters_by_origin}.csv` | -/-/o | no |
 | [target2026_education_by_age_by_kreis](../registry/data/target2026_education_by_age_by_kreis.yml) | control, calibration_target | committed (`scripts/build_participation_universe_targets.py`) | `data/braunschweig/targets/target2026_education_{0_5,6_17,18plus}_by_kreis.csv` | o/-/o | no |
 | [target2026_pt_ticket_group4_by_kreis](../registry/data/target2026_pt_ticket_group4_by_kreis.yml) | control, calibration_target | committed (`scripts/build_blended_kreis_targets.py`) | `data/braunschweig/targets/target2026_pt_ticket_group4_by_kreis.csv` | o/-/o | no |
 | [target2026_work_by_employment_by_kreis](../registry/data/target2026_work_by_employment_by_kreis.yml) | control, calibration_target | committed (`scripts/build_participation_universe_targets.py`) | `data/braunschweig/targets/target2026_work_by_employment_by_kreis.csv` | o/-/o | no |
@@ -134,3 +147,4 @@ srv2023_raw/codebook/ (local-only, like the MiD B1 package; see mid2023_b1)
 | [zensus2022_grid_open](../registry/data/zensus2022_grid_open.yml) | spatial_input | auto_script (`scripts/download_zensus_grid.py`) | `data/zensus_grid/population_100m.parquet` | r/-/r | no |
 | [zensus2022_households_size](../registry/data/zensus2022_households_size.yml) | control | manual_download | `data/braunschweig/5000H-2001_de_flat.csv` | r/-/o | no |
 | [zensus2022_households_type](../registry/data/zensus2022_households_type.yml) | control | manual_download | `data/braunschweig/1000A-2081_de_flat.zip` | o/-/- | no |
+| [zensus2022_students_20_29_kreis](../registry/data/zensus2022_students_20_29_kreis.yml) | control, reference_table | derived (`scripts/extract_zensus2022_students_by_age.py`) | `data/braunschweig/popsim/zensus2022_students_20_29_kreis.csv` | o/-/o | no |

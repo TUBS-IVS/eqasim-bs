@@ -1,0 +1,4 @@
+# 2026-11-27T17:49:18+01:00 read-only check of the source cache of popsim100_20261120 after the driver run
+# command: find <source cache> -newer <driver script> (files changed after the driver was copied; empty = none)
+# end of find output
+# pipeline.json mtime: 2026-11-20 16:31:07.702987961 +0100

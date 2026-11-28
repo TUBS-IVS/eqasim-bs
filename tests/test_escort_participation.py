@@ -167,9 +167,10 @@ def test_off_path_excludes_escort_independently():
     assert "escort_participation" not in names
     # The other default-on participation-family controls are unaffected. work_participation
     # / education_participation are NOT asserted here: they default "off" since Plan B
-    # (issue #368, ADR-0109) -- work_by_employment / education_by_age replace them.
-    assert {"leisure_participation", "work_by_employment",
-            "education_0_5", "education_6_17", "education_18plus"} <= names
+    # (issue #368, ADR-0109) -- work_by_employment / education_by_age replace them; the
+    # student education entries replace education_18plus (A3, ADR-0211).
+    assert {"leisure_participation", "work_by_employment", "education_0_5", "education_6_17",
+            "student_education_18_29", "student_education_30plus"} <= names
 
 
 def test_off_controls_csv_has_no_escort_fields():

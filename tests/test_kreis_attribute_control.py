@@ -245,8 +245,12 @@ def test_registry_has_the_expected_entries_with_expected_tiers():
         "employment_status", "pt_ticket_group", "pt_ticket_group4", "work_participation",
         "leisure_participation", "education_participation", "escort_participation",
         "work_by_employment", "education_0_5", "education_6_17", "education_18plus",
+        # The four student entries (design A3, ADR-0211); their fields are pinned by
+        # test_student_entries_are_registered_by_count_and_keep_their_importance_group.
+        "student_education_18_29", "student_education_30plus", "student_work_leg",
+        "student_season_ticket",
     }
-    assert len(by_name) == 16
+    assert len(by_name) == 20
     for name in ("leisure_participation", "education_participation"):
         assert by_name[name].tier == "hard"
         assert by_name[name].level == "person"
@@ -323,3 +327,35 @@ def test_trip_class_count_table_partitions_a_person_total():
     cols = list(control_columns(trip_class))
     row = tbl[tbl.ARS_kreis == "03101"][cols].to_numpy().ravel()
     assert row.sum() == 20000 and (row == np.floor(row)).all()
+
+
+# --- Student entries (design A3 of the student layer, ADR-0211) ---
+
+
+def test_student_entries_are_registered_by_count_and_keep_their_importance_group(tmp_path):
+    """The four student entries: person level, their own seed column, the age universe of
+    STUDENT_AGE_BOUNDS, hard education / soft work and ticket, and the level table as the one
+    input (their counts are built by braunschweig.popsim.student_targets, never loaded as a
+    share table). The importance group of a rendered column is found by the beginning of its
+    name, so no entry name may begin with the name of an entry of another tier (spec section 12)."""
+    from braunschweig.popsim import control_spec as cs
+    from braunschweig.popsim import kreis_attribute_control as kac
+    from braunschweig.popsim.student_level import STUDENT_LEVEL_TABLE_RELPATH
+
+    by_name = {c.name: c for c in REGISTRY}
+    tiers = {kac.STUDENT_EDUCATION_18_29: "hard", kac.STUDENT_EDUCATION_30PLUS: "hard",
+             kac.STUDENT_WORK_LEG: "soft", kac.STUDENT_SEASON_TICKET: "soft"}
+    for name, tier in tiers.items():
+        entry = by_name[name]
+        assert (entry.level, entry.seed_column, entry.tier, (entry.min_age, entry.max_age),
+                entry.target_csv_relpath) == (
+            "person", name, tier, kac.STUDENT_AGE_BOUNDS[name], STUDENT_LEVEL_TABLE_RELPATH)
+        assert entry.target_columns == tuple(label for label, _ in entry.categories)
+        for column in control_columns(entry):
+            assert cs.importance_group_for_field(f"{column}_KREIS") == f"kreis_{tier}", column
+    assert not [(a.name, b.name) for a in REGISTRY for b in REGISTRY
+                if a.name != b.name and a.tier != b.tier and b.name.startswith(a.name + "_")]
+    # A student entry has no share table: loading it as one must fail by name, not on a
+    # confusing column mismatch of the level table.
+    with pytest.raises(ValueError, match="student_work_leg"):
+        kac.load_kreis_target(REPO / "eqasim-data" / "data", by_name[kac.STUDENT_WORK_LEG])

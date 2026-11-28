@@ -1,0 +1,77 @@
+2026-11-27 20:30:10,992 INFO [popsim_batch_diagnostics] 1 batch folder(s) in <run server home>/popsim100_20261120/popsim_work
+2026-11-27 20:30:10,992 INFO [popsim_batch_diagnostics] no 1 km census squares given: census columns of household_composition skipped
+2026-11-27 20:30:10,992 INFO [popsim_batch_diagnostics] batch 1/1: batch_030
+2026-11-27 20:30:12,910 INFO [popsim_batch_diagnostics] loaded batch_030: 218097 households, 485709 persons, 108 controls, 25649 expanded rows, store=False
+2026-11-27 20:30:13,155 INFO [popsim_batch_diagnostics] reuse: 25649 synthetic households, 16914 of 218097 seed households used, max copies 69
+2026-11-27 20:30:18,161 INFO [popsim_batch_diagnostics] control_fit batch batch_030 geography ZENSUS100m: 723 zones, 0 without targets, 49 without synthetic households
+2026-11-27 20:30:18,199 INFO [popsim_batch_diagnostics] control_fit batch batch_030 geography ZENSUS1km: 25 zones, 0 without targets, 2 without synthetic households
+2026-11-27 20:30:18,329 INFO [popsim_batch_diagnostics] control_fit batch batch_030 geography KREIS: 4 zones, 0 without targets, 0 without synthetic households
+2026-11-27 20:30:18,343 INFO [popsim_batch_diagnostics] universe: group household_size has no control in geography WELT of batch_030
+2026-11-27 20:30:18,343 INFO [popsim_batch_diagnostics] universe: group household_size has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,343 INFO [popsim_batch_diagnostics] universe: group household_size has no control in geography KREIS of batch_030
+2026-11-27 20:30:18,343 INFO [popsim_batch_diagnostics] universe: group household_size has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,353 INFO [popsim_batch_diagnostics] universe: group tenure has no control in geography WELT of batch_030
+2026-11-27 20:30:18,353 INFO [popsim_batch_diagnostics] universe: group tenure has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,353 INFO [popsim_batch_diagnostics] universe: group tenure has no control in geography KREIS of batch_030
+2026-11-27 20:30:18,353 INFO [popsim_batch_diagnostics] universe: group tenure has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,363 INFO [popsim_batch_diagnostics] universe: group building_type has no control in geography WELT of batch_030
+2026-11-27 20:30:18,364 INFO [popsim_batch_diagnostics] universe: group building_type has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,364 INFO [popsim_batch_diagnostics] universe: group building_type has no control in geography KREIS of batch_030
+2026-11-27 20:30:18,364 INFO [popsim_batch_diagnostics] universe: group building_type has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,374 INFO [popsim_batch_diagnostics] universe: group own_cars has no control in geography WELT of batch_030
+2026-11-27 20:30:18,374 INFO [popsim_batch_diagnostics] universe: group own_cars has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,374 INFO [popsim_batch_diagnostics] universe: group own_cars has no control in geography KREIS of batch_030
+2026-11-27 20:30:18,379 INFO [popsim_batch_diagnostics] universe: group own_cars has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,381 INFO [popsim_batch_diagnostics] universe: group own_bikes has no control in geography WELT of batch_030
+2026-11-27 20:30:18,381 INFO [popsim_batch_diagnostics] universe: group own_bikes has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,381 INFO [popsim_batch_diagnostics] universe: group own_bikes has no control in geography KREIS of batch_030
+2026-11-27 20:30:18,386 INFO [popsim_batch_diagnostics] universe: group own_bikes has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,388 INFO [popsim_batch_diagnostics] universe: group economic_status has no control in geography WELT of batch_030
+2026-11-27 20:30:18,388 INFO [popsim_batch_diagnostics] universe: group economic_status has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,393 INFO [popsim_batch_diagnostics] universe: group economic_status has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,393 INFO [popsim_batch_diagnostics] universe: group economic_status has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,395 INFO [popsim_batch_diagnostics] universe: group number_of_cars has no control in geography WELT of batch_030
+2026-11-27 20:30:18,395 INFO [popsim_batch_diagnostics] universe: group number_of_cars has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,400 INFO [popsim_batch_diagnostics] universe: group number_of_cars has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,400 INFO [popsim_batch_diagnostics] universe: group number_of_cars has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,401 INFO [popsim_batch_diagnostics] universe: group number_of_bicycles has no control in geography WELT of batch_030
+2026-11-27 20:30:18,402 INFO [popsim_batch_diagnostics] universe: group number_of_bicycles has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,407 INFO [popsim_batch_diagnostics] universe: group number_of_bicycles has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,407 INFO [popsim_batch_diagnostics] universe: group number_of_bicycles has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,408 INFO [popsim_batch_diagnostics] universe: group has_ebike has no control in geography WELT of batch_030
+2026-11-27 20:30:18,408 INFO [popsim_batch_diagnostics] universe: group has_ebike has no control in geography STAAT of batch_030
+2026-11-27 20:30:18,414 INFO [popsim_batch_diagnostics] universe: group has_ebike has no control in geography ZENSUS1km of batch_030
+2026-11-27 20:30:18,414 INFO [popsim_batch_diagnostics] universe: group has_ebike has no control in geography ZENSUS100m of batch_030
+2026-11-27 20:30:18,414 INFO [popsim_batch_diagnostics] universe: 0 of 9 checkable groups have no control in batch_030
+2026-11-27 20:30:18,592 INFO [popsim_batch_diagnostics] composition batch_030: 25649 households, 3632 with a minor (14.2%), 0 minor household(s) without an adult
+2026-11-27 20:30:18,721 INFO [popsim_batch_diagnostics] reuse: 25649 synthetic households, 16914 of 218097 seed households used, max copies 69
+2026-11-27 20:30:21,303 INFO [popsim_batch_diagnostics] coverage: 6 of 28 groups have no control in batch_030: pt_ticket_group, work_participation, education_participation, student_work_leg, student_season_ticket, household_type
+2026-11-27 20:30:21,420 INFO [popsim_batch_diagnostics] resolved_record_shares: 0 of 3 raw columns absent in batch_030
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group age_sex is undefined (NaN)
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group employed_grid is undefined (NaN)
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group trip_class is undefined (NaN)
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group employment_status is undefined (NaN)
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group pt_ticket_group4 is undefined (NaN)
+2026-11-27 20:30:21,423 INFO [popsim_batch_diagnostics] coverage ratio of group leisure_participation is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group escort_participation is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group work_by_employment is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group education_band is undefined (NaN)
+2026-11-27 20:30:21,424 WARNING [popsim_batch_diagnostics] WARNING coverage_ratio: schulabschluss value 2.054, threshold 2
+2026-11-27 20:30:21,424 WARNING [popsim_batch_diagnostics] WARNING coverage_ratio: beruflabschluss value 0.3473, threshold 0.5
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group household_size is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group tenure is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group building_type is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group own_cars is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group own_bikes is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group economic_status is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group number_of_cars is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group number_of_bicycles is undefined (NaN)
+2026-11-27 20:30:21,424 INFO [popsim_batch_diagnostics] coverage ratio of group has_ebike is undefined (NaN)
+2026-11-27 20:30:21,474 INFO [popsim_batch_diagnostics] control_fit region_geography: 1 of 108 controls excluded (target_sum 0)
+2026-11-27 20:30:21,480 INFO [popsim_batch_diagnostics] 1 batch folder(s) in <run server home>/popsim100_20261120/popsim_work
+2026-11-27 20:30:21,492 INFO [popsim_batch_diagnostics] solver paths batch_030 KREIS: non-simultaneous 0/1 (0.0%), sequential fallback 0, smart-rounded subzones 0
+2026-11-27 20:30:21,492 INFO [popsim_batch_diagnostics] solver paths batch_030 ZENSUS1km: non-simultaneous 0/4 (0.0%), sequential fallback 0, smart-rounded subzones 0
+2026-11-27 20:30:21,492 INFO [popsim_batch_diagnostics] solver paths batch_030 ZENSUS100m: non-simultaneous 0/23 (0.0%), sequential fallback 0, smart-rounded subzones 0
+2026-11-27 20:30:21,492 INFO [popsim_batch_diagnostics] solver paths: parsed 1 of 1 batches (a first attempt found)
+2026-11-27 20:30:21,495 INFO [popsim_batch_diagnostics] solver paths: parsed 1 of 1 batches
+2026-11-27 20:30:21,569 INFO [popsim_batch_diagnostics] wrote 10 tables and 2 warning(s) to RUN_DIR/diag_prod

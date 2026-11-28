@@ -1,0 +1,47 @@
+1:copied unchanged: config da0786e43a3b495e50ea2b82f47bca142f55b9465616371857c42d045c2580bd, population b0dbd34f066700aa9d3b033ce0523da892a9d11636fcbad67c6de07f2bdcad50
+2:start 2026-11-25T16:34:49+01:00; threads 32, Xmx 56G;  16:34:49 up 23 days,  2:29,  0 users,  load average: 4,44, 3,92, 4,12
+5:2026-11-25 16:35:27,479 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] the eqasim jar ~/i678_replay/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar contains the border tour vehicle constraint
+6:2026-11-25 16:36:03,591 INFO i678_reach_replay [replay] step jar_check done in 37 s; persons in the population file: 1261590
+7:2026-11-25 16:36:03,598 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] maximumLength: 6 -> 11 in ~/i678_replay/stage/braunschweig_100pct_prod20261031_config.xml
+8:2026-11-25 16:36:38,165 INFO i678_reach_replay [replay] step mode_choice_reach_apply done in 35 s; persons in the population file: 1261590
+9:2026-11-25 16:37:13,369 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] tourFinder: ActivityBased -> IsolatedOutsideTrips in ~/i678_replay/stage/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+10:2026-11-25 16:37:13,369 INFO braunschweig.matsim.simulation.mode_choice_reach [mode_choice_reach] tourConstraints: FromTripBased, VehicleContinuity -> FromTripBased, BorderTourVehicleContinuity in ~/i678_replay/stage/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+11:2026-11-25 16:37:13,369 INFO braunschweig.matsim.initial_mode_choice [initial mode choice] the runner uses the config file braunschweig_100pct_prod20261031_config_initial_mode_choice.xml; reach settings: isolate_outside_trips=True, max_tour_length=11
+12:2026-11-25 16:37:13,406 INFO braunschweig.java_heap [resources] java_memory 56G -> 56G (memory budget 86.28 GB (psutil) - driver RSS 0.11 GB = 86.17 GB for the JVM; configured 56G fits)
+234:2026-11-25T16:48:38,378  INFO StandaloneModeChoicePerformer:129 Splitting 1261590 plans into 1262 chunks (1,000 each) over 32 threads
+1264:2026-11-25T16:48:57,233  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 2 of 12 (16.67 %)
+1267:2026-11-25T16:49:00,531  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 4 of 190 (2.11 %)
+1271:2026-11-25T16:49:03,436  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 9 of 453 (1.99 %)
+1276:2026-11-25T16:49:08,692  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 16 of 988 (1.62 %)
+1280:2026-11-25T16:49:23,518  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 32 of 2000 (1.60 %)
+1322:2026-11-25T16:50:01,817  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 69 of 6637 (1.04 %)
+1371:2026-11-25T16:50:55,813  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 129 of 11991 (1.08 %)
+1425:2026-11-25T16:51:39,756  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 256 of 27391 (0.93 %)
+1682:2026-11-25T16:54:10,415  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 513 of 167477 (0.31 %)
+1839:2026-11-25T16:56:39,463  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 1024 of 188569 (0.54 %)
+2416:2026-11-25T17:07:07,725  WARN BorderTourVehicleConstraint$Factory:230 border-tour vehicle legs relaxed for missing availability: 2049 of 264776 (0.77 %)
+2644:2026-11-25T17:10:48,577  INFO ParallelProgress:86 [Standalone mode choice, 1136278/1261590, (90.07%), RT:21:50, 867.39it/s, ~02:24]
+2657:2026-11-25T17:10:58,578  INFO ParallelProgress:86 [Standalone mode choice, 1146170/1261590, (90.85%), RT:22:00, 868.31it/s, ~02:12]
+2665:2026-11-25T17:11:08,579  INFO ParallelProgress:86 [Standalone mode choice, 1154555/1261590, (91.52%), RT:22:10, 868.09it/s, ~02:03]
+2674:2026-11-25T17:11:18,580  INFO ParallelProgress:86 [Standalone mode choice, 1164531/1261590, (92.31%), RT:22:20, 869.05it/s, ~01:51]
+2683:2026-11-25T17:11:28,580  INFO ParallelProgress:86 [Standalone mode choice, 1174438/1261590, (93.09%), RT:22:30, 869.95it/s, ~01:40]
+2696:2026-11-25T17:11:38,581  INFO ParallelProgress:86 [Standalone mode choice, 1183350/1261590, (93.80%), RT:22:40, 870.11it/s, ~01:29]
+2703:2026-11-25T17:11:48,582  INFO ParallelProgress:86 [Standalone mode choice, 1191060/1261590, (94.41%), RT:22:50, 869.39it/s, ~01:21]
+2704:2026-11-25T17:11:58,583  INFO ParallelProgress:86 [Standalone mode choice, 1197713/1261590, (94.94%), RT:23:00, 867.91it/s, ~01:13]
+2705:2026-11-25T17:12:08,584  INFO ParallelProgress:86 [Standalone mode choice, 1200737/1261590, (95.18%), RT:23:10, 863.84it/s, ~01:10]
+2706:2026-11-25T17:12:18,586  INFO ParallelProgress:86 [Standalone mode choice, 1202578/1261590, (95.32%), RT:23:20, 858.98it/s, ~01:08]
+2707:2026-11-25T17:12:28,587  INFO ParallelProgress:86 [Standalone mode choice, 1203957/1261590, (95.43%), RT:23:30, 853.87it/s, ~01:07]
+2708:2026-11-25T17:12:38,587  INFO ParallelProgress:86 [Standalone mode choice, 1204430/1261590, (95.47%), RT:23:40, 848.19it/s, ~01:07]
+2709:2026-11-25T17:12:48,588  INFO ParallelProgress:86 [Standalone mode choice, 1204865/1261590, (95.50%), RT:23:50, 842.56it/s, ~01:07]
+2710:Exception in thread "main" java.util.concurrent.ExecutionException: java.lang.NullPointerException
+2711:	at java.base/java.util.concurrent.FutureTask.report(FutureTask.java:124)
+2712:	at java.base/java.util.concurrent.FutureTask.get(FutureTask.java:193)
+2713:	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer.run(StandaloneModeChoicePerformer.java:168)
+2714:	at org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice.main(RunStandaloneModeChoice.java:269)
+2715:Caused by: java.lang.NullPointerException
+2716:2026-11-25T17:12:58,589  INFO ParallelProgress:86 [Standalone mode choice, 1205226/1261590, (95.53%), RT:24:00, 836.96it/s, ~01:07]
+2718:Executing java: ~/tools/jdk-25.0.3+9/bin/java -cp ~/i678_replay/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar -Xmx56G -Djava.io.tmpdir=~/i678_replay/stage/__java_temp -Dmatsim.useLocalDtds=true org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice --config-path braunschweig_100pct_prod20261031_config_initial_mode_choice.xml --config:plans.inputPlansFile braunschweig_100pct_prod20261031_population.xml.gz --config:standaloneModeChoice.outputDirectory mode_choice --config:standaloneModeChoice.removePersonsWithNoValidAlternatives true --config:global.numberOfThreads 32 --write-input-csv-trips true --write-output-csv-trips true --compression gzip --skip-scenario-check true --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator
+2737:	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:13:19
+2742:	Maximum resident set size (kbytes): 48625136
+2755:	Exit status: 1
+2756:end 2026-11-25T17:48:08+01:00; exit 1;  17:48:08 up 23 days,  3:42,  0 users,  load average: 1,38, 1,23, 4,02

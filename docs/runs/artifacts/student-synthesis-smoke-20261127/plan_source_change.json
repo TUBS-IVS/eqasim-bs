@@ -1,0 +1,16 @@
+{
+  "n_changed": 82609,
+  "n_other_persons": 470102,
+  "n_other_persons_changed": 76924,
+  "n_persons_after": 485709,
+  "n_persons_before": 485709,
+  "n_persons_compared": 485709,
+  "n_students": 15607,
+  "n_students_changed": 5685,
+  "share_other_persons_changed": 0.16363257335642054,
+  "share_students_changed": 0.36425962709040816,
+  "source_columns": [
+    "source_H_ID",
+    "source_P_ID"
+  ]
+}
