@@ -1,5 +1,6 @@
 # ADR-0108 · 2026-09-06 · Plans start and end at home, with an observed closure dwell counted in the seed
 - **Status:** active
+- **Amended by [ADR-0214](ADR-0214-overnight-travellers-keep-their-day-open.md) (2026-11-28, issue #694):** with `braunschweig.population.popsim.keep_overnight_open_ends` the day of a donor with an overnight trip stays open, so "model the genuinely open ~2 % of days" in the rejected alternatives below is no longer rejected for those donors; the closure dwell and the other decisions are unchanged.
 - **Numbering:** ADR-0108 is the next free id after ADR-0107, allocated in the same 2026-09-06
   sweep (main checkout, every local worktree, the remote default branch, and the file lists of
   all open pull requests; highest id found anywhere ADR-0105). Ids are append-only.

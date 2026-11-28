@@ -31,7 +31,7 @@ Switch `braunschweig.population.popsim.keep_overnight_open_ends` (default **true
 ## Consequences
 
 - **Results change by decision** (default ON): the trip stage, its consumers and the PopulationSim seed change; the stage caches recompute once.
-- **Evidence is a 1 % smoke, not a validation** ([manifest](../runs/i694-overnight-open-end-smoke-1pct-2026-11-27.yml)): the registered metric fell inside the bound, but there is no switch-off arm, no 100 % replay, one seed, and the universe differs from the SrV Kreise (the manifest lists each caveat). The effect against today's closure share is not measured; the next production run measures it.
+- **Evidence is a 1 % smoke, not a validation** ([manifest](../runs/i694-overnight-open-end-smoke-1pct-2026-11-27.yml)): the registered metric fell inside the pre-registered band (an ASSUMPTION, SrV +/- 1 pp), but there is no switch-off arm, no 100 % replay, one seed, and the universe differs from the SrV Kreise (the manifest lists each caveat). The effect against today's closure share is not measured; the next production run measures it.
 - **Not covered:** night shifts and local overnight stays without a travel answer stay closed (SrV open ends contain many work ends); persons whose day starts away.
 - **Stuck agents and plan-check findings** in the smoke belong to #678 and are reported in the manifest, not judged here.
 - Analysis: `plan_structure_vs_srv` stays on the pre-portal view; its accepted-deviation note no longer says that all days are closed.

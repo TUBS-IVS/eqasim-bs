@@ -72,7 +72,7 @@ validation:
     before any run in issue #694 and in the design, section 7)
   result: >-
     2.20 % (214 of 9,706 persons end away from home: 152 end outside, 62 at a non-home in-area activity), delta to SrV
-    -0.04 pp: INSIDE the bound. This says the model day is of the same size as the SrV open-end share. It is not a
+    -0.04 pp: inside the pre-registered band (the band is an ASSUMPTION, see reference). This says the model day is of the same size as the SrV open-end share. It is not a
     validation of who stays away: SrV shares are not matched per person or by arrival band here. Caveats: (a) the
     model figure is over all 9,706 persons with trips, all model Kreise, while SrV covers seven Kreise; a restriction
     by commune_id prefix to the seven SrV Kreise gives 189 of 6,952 (2.72 %, also inside) but 1,904 persons have no
@@ -122,3 +122,9 @@ notes: >-
   decision), the second-order effect of the trip_class seed change on the PopulationSim weights is included in this
   run (the recompute ran with the feature) but not isolated, and the Kreis universe differs from SrV (caveat a). The
   next production run (full 100 %) is where the effect on the closure share and the chain solvers can be measured.
+  Code state: the server runs used eqasim-bs dac81184, i.e. WITHOUT the later-merged #678 (mode-choice reach) and
+  #679 (stroll loops) changes. The interaction of open days with stroll-loop collapsing
+  (braunschweig/synthesis/locations/secondary_chainsolvers/loops.py::collapse_loops) and with the border vehicle
+  rule on open in-area tours is therefore not proven by a run. Wording of the bound: the registered share lies
+  inside the pre-registered band; the band (SrV +/- 1 pp) is an ASSUMPTION, not a committed reference, and this is
+  not a validation.
