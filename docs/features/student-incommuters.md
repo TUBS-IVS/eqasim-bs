@@ -8,7 +8,59 @@ commuters (`braunschweig.synthesis.incommuters`) but with a Home -> Education ->
 Home day instead of Home -> Work -> Home. Implementation:
 `braunschweig/synthesis/student_incommuters.py`.
 
-## Count anchor (data-derived, not invented)
+Two paths, chosen by `braunschweig.students.flows_enabled` (default on). The ON path (issue #140,
+Phase 4, ADR-0213) takes count, origin, commute length and mode from the origin-destination table T of
+ADR-0210 and is described in "Student flows (ON path)" below. The sections "OFF path: count anchor" and "OFF path: reverse-decay
+origin model" describe the OFF path (the behaviour before the flows); the tri-state activation table applies to both.
+The decisions and the rejected options are in ADR-0213; this file holds the method only, and no figure
+that a manifest or a table owns.
+
+## Student flows (ON path)
+
+All quantities rest on ONE table of head counts, T(k, j): the students of site j who live in Kreis k
+(`student_od_table.csv`, ADR-0210). The stage takes its in-commuters from the rows of T whose origin lies
+outside the region.
+
+- **Count.** Per origin Kreis and site: the heads of T times the effective day factor times the sampling
+  rate, rounded with an unbiased controlled rounding that keeps the total of every site and of every origin
+  Kreis within one person (`student_incommuter_counts.balance_incommuter_counts`). T counts students who
+  live there; the effective day factor turns them into persons of one day. It is the mean of the residents'
+  factors `f(k) = e x (1 - a(area(k)))`, weighted by the students of each Kreis in the level table, with `e`
+  (the share of students with an education leg) and `a` (the away share by home area) read from the
+  committed SrV tables, never typed into the configuration. The factor uses the away share the run applies
+  to the residents: by home area with the day-absence cells on (ADR-0212), zero with the day absence off;
+  the flows are refused with the day absence on and its cells off. The in-commuters are not drawn by the
+  day-absence step; their count already carries the factor.
+- **Site and building.** Each agent carries the destination of T it belongs to and a building of that site
+  drawn in proportion to capacity (the facilities per destination are built by
+  `braunschweig.data.schools.university_facilities`, ADR-0213 Decision 2).
+- **Home.** The existing rule: a population-weighted point of a commune of the origin Kreis inside the ring
+  around the region, else the nearest cordon gate. The branch of each agent is recorded in `home_branch`,
+  and the stage logs both branches per origin Kreis.
+- **Commute length.** The length T implies, not the one of the home point (a gate lies at the edge of the
+  region and understates a far origin): the agent draws a commune of its origin Kreis by population times
+  the weight curve T was built with (`student_geometry.curve_basis`); the straight line from that commune to
+  the site point of `student_destination_points.csv`, times `braunschweig.constants.ROUTED_DETOUR_FACTOR`,
+  is the commute length for the donor window and the mode band. Where the commune layer is missing or no commune of the
+  Kreis has a positive weight, the distance of the cell of T is used and counted as the fallback
+  (`student_incommuter_counts.commute_length_km`).
+- **Plan and times.** Unchanged: the draw among adult student donors within a window around the agent's
+  commute length (`donor_min_effective_pool`), the timing and the timetable check below.
+- **Mode.** Car or public transport from the students' mode table by distance band of the routed length
+  (`mid2023_student_education_distance_mode.csv`, loader and band function in
+  `braunschweig/data/education/student_mode_reference.py`) through the same `mode_reference_from_table` and
+  `assign_fixed_mode` path as before. The table has its own band edges. A band with fewer students than
+  `braunschweig.student_incommuters.mode_band_min_persons` (ASSUMPTION) is pooled with its lower neighbour
+  (the lowest band with its upper one), and the pooled bands are logged.
+
+The residents' side of the same balance (routing by status, the fitted flow matrix on the persons present,
+the allotment inside a home Kreis) lives in `braunschweig/synthesis/locations/` and is described in ADR-0213
+and the module docstrings of `education_routing.py` and `university_assignment.py`. The acceptance table of
+the balance and the diagnostics are written by the analysis stage
+`braunschweig.analysis.synthesis.student_flows`; the out-commuting students are measured by
+`braunschweig.analysis.synthesis.student_out_commuters`.
+
+## OFF path: count anchor (data-derived, not invented)
 
 Per ZGB university commune, the injected in-commuter count is the real
 enrollment not already filled by resident placement:
@@ -29,7 +81,10 @@ not an invented reference value. A negative raw count (residents exceed scaled
 enrollment) is floored to 0 and logged as a warning (implementation:
 `braunschweig/data/education/student_incommuter_counts.py::compute_incommuter_counts`).
 
-## Reverse-decay origin model (documented ASSUMPTION)
+## OFF path: reverse-decay origin model (documented ASSUMPTION)
+
+The text of this section is the method of the OFF path of `braunschweig.students.flows_enabled`. The ON
+path does not use the reverse decay: its origins are the origins of T (ADR-0213).
 
 No committed current-residence student origin-destination dataset exists for
 the ZGB region, so the residence of each non-resident student is drawn with a
@@ -47,7 +102,7 @@ documented assumption rather than a reference (`braunschweig/data/education/stud
   dissolved centroid each) are drawn `~ kreis_pop_18_29 * exp(slope * d_km)` via
   the shared `assign_by_decay` helper, with a nearest-Kreis fallback beyond the
   radius (logged).
-- **A3 (workers' mode-split reused):** the car/PT mode split is drawn from the
+- **A3 (workers' mode-split reused, OFF path; the ON path uses the students' table):** the car/PT mode split is drawn from the
   same Mikrozensus distance-band commute-mode reference used for the SvB
   (employed) in-commuters (`braunschweig.data.mikrozensus.reference.load_commute_mode_by_distance`,
   restricted to `car`/`pt`) -- there is no separate student mode-share
@@ -85,7 +140,11 @@ disables itself when explicitly forced on against a contradictory parent
 
 ## Config keys
 
-Set in `braunschweig/synthesis/student_incommuters.py::configure`:
+The keys of the student flows (the switch, the table paths, the minimum of the mode bands, the warn shares,
+the acceptance thresholds) are one block in `configs/base_bs.yml`; defaults and ASSUMPTION comments are
+there and are not repeated here.
+
+Set in `braunschweig/synthesis/student_incommuters.py::configure` (OFF path and shared):
 
 - `cordon_student_incommuters_enabled` (default `None`, tri-state; see table above)
 - `education_gravity_enabled` (default `False`, the hard dependency; owned by the education-gravity feature)
@@ -94,9 +153,9 @@ Set in `braunschweig/synthesis/student_incommuters.py::configure`:
 - `education_university_max_radius_km` (default `150.0`, reused from `education_gravity`)
 - plus the shared `sampling_rate`, `random_seed`, `cordon_network_source_buffer_m`, `data_path`
 
-No new config keys are introduced beyond `cordon_student_incommuters_enabled`
-and `student_incommuter_age_band` -- everything else reuses the
-`education_gravity` / cordon config already present.
+The OFF path introduces no config keys beyond `cordon_student_incommuters_enabled` and
+`student_incommuter_age_band` -- everything else reuses the `education_gravity` / cordon config already
+present.
 
 ## Config wiring
 
@@ -196,6 +255,10 @@ Consequences to watch in the next run (neither is measured yet):
 
 ## OD / distance analysis outputs
 
+On the ON path the acceptance table, the realised flows and the distance bands are written by the analysis
+stage `student_flows`; the three files below are the simulation-independent OD view of the injected agents
+and are written on both paths.
+
 `braunschweig/analysis/simwrapper/student_commuters.py` (mirrors the SvB
 `commuters.py` analysis) aggregates the injected agents -- pure aggregation of
 model output, not compared against any external reference:
@@ -213,6 +276,9 @@ injected (`write_outputs` no-ops on an empty frame).
 
 ## Data provenance
 
+ON path: the committed tables of the registry records `student_od_balance`, `student_destination_points`,
+`student_level_table`, `srv2023_student_reference` and `mid2023_student_reference`. OFF path:
+
 - `eqasim-data/data/braunschweig/schools/nds_hochschulen.csv` (local-only, not
   committed): real LSN (Landesamt fuer Statistik Niedersachsen) SS2025
   enrollment per Hochschule, seeded by `scripts/seed_nds_hochschulen.py`.
@@ -227,20 +293,17 @@ injected (`write_outputs` no-ops on an empty frame).
 
 `tests/test_student_incommuter_counts.py`, `tests/test_student_origins.py`,
 `tests/test_student_incommuters_stage.py`, `tests/test_student_incommuter_merge.py`,
-`tests/test_student_commuter_analysis.py`, plus the shared purpose-agnostic
+`tests/test_student_commuter_analysis.py`, and for the ON path
+`tests/test_student_incommuters_balance.py`, `tests/test_student_mode_reference.py`,
+`tests/test_student_flows_inputs.py`, `tests/test_student_flows_switches.py`, plus the shared purpose-agnostic
 helper tests `tests/test_incommuter_plans_purpose.py` and the existing SvB
 in-commuter suite (`tests/test_incommuters.py`, `tests/test_incommuter_merge.py`)
 to confirm no regression.
 
 ## Status
 
-Built and unit/integration-tested locally (feature-flagged, default-ON once its
-`education_gravity` dependency is on; see the tri-state table above). **Not**
-yet run end-to-end on a data-complete environment (the LSN/OSM/DESTATIS inputs
-above require the server data tree) -- a 1% cordon dry-run with
-`education_gravity_enabled=True` confirming the per-commune count log, injected
-`education` activities, the in-ring/gate fallback rate, and the written
-`student_commuter_od.csv` is the remaining verification step (open work is
-tracked in the GitHub issues). No validation against a real observed student-commute
-dataset has been performed or claimed -- see "Reverse-decay origin model"
-above.
+Run evidence and validation state are not kept here: the feature records
+(`docs/registry/features/student_incommuters.yml`, `docs/registry/features/student_flows.yml`), the run
+manifests under `docs/runs/` and the open work in the GitHub issues own them. No validation against an
+observed student-commute dataset is claimed for either path; T rests on the CHE origins and the owner's
+commuter weights (ADR-0210).

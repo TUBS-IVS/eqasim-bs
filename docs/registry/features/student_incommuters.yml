@@ -56,3 +56,8 @@ assessment:
   pending_reason: |
     No ADR exists for #140, and the STATUS matrix itself marks the validation run as pending. A merged default-ON feature without an ADR and without a validation run is exactly the combination this register is meant to make visible.
   source: null
+notes: |-
+  The description above is the OFF path of braunschweig.students.flows_enabled (the count of enrollment minus
+  the residents placed, the reverse decay). With the switch on (default) the count, the origin, the commute
+  length and the mode come from the origin-destination table T; see the feature record student_flows,
+  ADR-0213 and the detail doc.

@@ -16,3 +16,4 @@
   `2026-06-03-{education-gravity,kita-education,university-education,bbs-oberstufe-split,education-slope-calibration}.md`;
   `docs/features/education-gravity.md`; PROJECT_STATUS.md §2.4.
 
+- **Amended by [ADR-0213](ADR-0213-students-are-placed-by-the-enrollment-balance.md) (2026-11-28, issue #140):** with `braunschweig.students.flows_enabled` the university step is a balanced assignment of the persons present instead of a singly-constrained decay.

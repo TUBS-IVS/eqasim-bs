@@ -11,7 +11,13 @@ description: "Adds university student in-commuters from LSN enrollment with DEST
   runtime and the supply stages. The household car_availability of a student follows its mode, and the student
   carries the household of its MiD donor, drawn weighted, by commute length and by the income level of the
   origin Kreis (braunschweig.student_incommuters.donor_min_effective_pool, ASSUMPTION; report key donor_draw),
-  ADR-0191 decisions 6 and 7."
+  ADR-0191 decisions 6 and 7. With braunschweig.students.flows_enabled (default on, issue #140 Phase 4,
+  ADR-0213) the count and the origin come from the outside rows of the origin-destination table T times
+  the effective day factor and the sampling rate, per origin Kreis and site, rounded with the margins kept;
+  each agent carries its site (destination_id), a building of the site drawn by capacity, the commute length
+  T implies (home_branch records the home rule per agent), and a car or public-transport mode from the
+  students' mode table by distance band with thin bands pooled. The residual count and the reverse decay are
+  the OFF path."
 lineage:
   type: braunschweig_new
   upstream: null
@@ -19,6 +25,9 @@ lineage:
 code:
 - braunschweig/synthesis/student_incommuters.py
 - braunschweig/synthesis/incommuter_pt_connections.py
+- braunschweig/data/education/student_incommuter_counts.py
+- braunschweig/data/education/student_mode_reference.py
+- braunschweig/data/education/student_flows_inputs.py
 - braunschweig/data/transit/router_cache.py
 pipelines:
   popsim_mid: active
@@ -29,8 +38,14 @@ inputs:
 - lsn_universities
 - destatis_population_kreis
 - vg250_ew
+- student_od_balance
+- student_destination_points
+- student_level_table
+- srv2023_student_reference
+- mid2023_student_reference
 features:
 - student_incommuters
+- student_flows
 - incommuter_donor_demographics
 - incommuter_time_chronology
 decisions:
@@ -41,3 +56,14 @@ decisions:
 - ADR-0173
 - ADR-0185
 - ADR-0196
+- ADR-0213
+notes: |-
+  ON path of braunschweig.students.flows_enabled: the effective day factor is the level-weighted mean of the
+  residents' factors, read from the level table and the committed SrV tables (never typed into the
+  configuration); the stage refuses the flows with the day absence on and its student cells off
+  (check_flow_settings). Config keys: braunschweig.student_incommuters.mode_band_min_persons and
+  commute_length_fallback_warn_share (both ASSUMPTION) and the table paths of the student flows block of
+  configs/base_bs.yml. Rate logs under the [student_incommuters:flows] tag: the commute length (primary:
+  commune curve; fallback: the distance of the cell of T) and the home rule per origin Kreis. Tests:
+  tests/test_student_incommuters_balance.py, tests/test_student_mode_reference.py,
+  tests/test_student_flows_switches.py.
