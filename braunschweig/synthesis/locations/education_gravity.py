@@ -109,7 +109,10 @@ DEFAULT_DAY_ABSENCE_STUDENT_CELLS = True
 ABSENCE_STAGE = "braunschweig.synthesis.day_absence.absence_stage"
 TRIPS_STAGE = "synthesis.population.trips"
 HOME_ZONES_STAGE = "synthesis.population.spatial.home.zones"
-#: ``day_absence_state`` of a person present on the simulated day (owner ``day_absence.absence.STATE_PRESENT``).
+#: The absence stage's output key, its state column and the state of a person present on the simulated day
+#: (owners: ``absence_stage.execute``, ``day_absence.absence.ABSENCE_COLUMNS`` and ``STATE_PRESENT``; pinned).
+ABSENCE_OUTPUT_KEY = "absence"
+DAY_ABSENCE_STATE_COLUMN = "day_absence_state"
 STATE_PRESENT = "present"
 #: The provenance report of the ON path in ``context.path()``; no other stage reads it (Ruling 2).
 UNIVERSITY_REPORT_FILE = "education_university_report.json"
@@ -260,6 +263,24 @@ def _largest_remainder(n_persons: int, shares: pd.Series, rng: np.random.Generat
     return pd.Series(totals, index=shares.index)
 
 
+def _plan_rule_rate(paths: pd.Series, fallback_path: str, who: str, inputs: UniversityFlowInputs) -> dict:
+    """Log the primary and fallback rate of the allotment of the ``who`` persons; WARNING above the bound.
+
+    The fallback is the plan rule's (no observed education leg, placed by the university decay); under the
+    home-distance rule every person is primary. The present and the absent persons are rated separately.
+    """
+    n_persons = len(paths)
+    n_fallback = int((paths == fallback_path).sum())
+    share = n_fallback / n_persons if n_persons else 0.0
+    (logger.warning if share > inputs.fallback_warn_share else logger.info)(
+        "%s allotment (%s rule) of the %s persons: primary %d/%d (%.1f%%), fallback %d (%.1f%%) placed by the "
+        "university decay (no observed education leg); warn above %s=%g", _UNIVERSITY_TAG, inputs.rule, who,
+        n_persons - n_fallback, n_persons, _percent(n_persons - n_fallback, n_persons), n_fallback, 100.0 * share,
+        KEY_MATCHING_FALLBACK_WARN_SHARE, inputs.fallback_warn_share)
+    return {"n_persons": n_persons, "n_primary": n_persons - n_fallback, "n_fallback": n_fallback,
+            "fallback_share": share, "warn_share": inputs.fallback_warn_share}
+
+
 def _empty_university_report(inputs: UniversityFlowInputs) -> dict:
     return {"rule": inputs.rule, "n_persons": 0, "n_present": 0,
             "n_absent": 0, "n_by_path": {}, "counts_by_kreis": {},
@@ -270,6 +291,8 @@ def _empty_university_report(inputs: UniversityFlowInputs) -> dict:
                     "column_targets": {}, "column_rounded": {}},
             "plan_rule": {"n_persons": 0, "n_primary": 0, "n_fallback": 0, "fallback_share": 0.0,
                           "warn_share": inputs.fallback_warn_share},
+            "plan_rule_absent": {"n_persons": 0, "n_primary": 0, "n_fallback": 0, "fallback_share": 0.0,
+                                 "warn_share": inputs.fallback_warn_share},
             "allotment_diagnostics": None, "realised_distance_km_by_home_kreis": {}}
 
 
@@ -287,7 +310,8 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
        ``allot_within_kreis`` on the Kreis's row by ``inputs.rule``. The share of the plan rule's fallback is
        logged as a rate, a WARNING above ``inputs.fallback_warn_share``.
     3. The absent persons per home Kreis (sorted): the fitted row shares of their Kreis times their number,
-       whole by largest remainder, then the same allotment; paths prefixed ``absent_``. A Kreis with absent persons
+       whole by largest remainder, then the same allotment; paths prefixed ``absent_``, the fallback rate logged and
+       warned apart from the present persons'. A Kreis with absent persons
        but none present has no fitted row: its absent persons take the shares of its row of T (counted, a WARNING
        above 0).
     4. ``draw_buildings`` for every allotted person (indexed by ``person_id``).
@@ -330,7 +354,7 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
         state = frame["person_id"].map(inputs.day_state)
         if state.isna().any():
             raise ValueError(f"{_UNIVERSITY_TAG} {int(state.isna().sum())} university person(s) without a "
-                             f"day_absence_state in {ABSENCE_STAGE}")
+                             f"{DAY_ABSENCE_STATE_COLUMN} in {ABSENCE_STAGE}")
         frame["present"] = (state == STATE_PRESENT).to_numpy()
     frame = frame.sort_values("person_id", kind="mergesort").reset_index(drop=True)
     frame["destination_id"] = pd.Series([None] * len(frame), dtype=object)
@@ -382,16 +406,8 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
                                           inputs.rule, decay_slope, rng, label=f"home Kreis {kreis}")
             frame.loc[members.index, "destination_id"] = allotted["destination_id"].to_numpy()
             frame.loc[members.index, "assignment_path"] = allotted["path"].to_numpy()
-    n_plan = len(fitted_rows)
-    n_fallback = int((frame.loc[fitted_rows.index, "assignment_path"] == PATH_FALLBACK_DECAY).sum())
-    fallback_share = n_fallback / n_plan if n_plan else 0.0
-    (logger.warning if fallback_share > inputs.fallback_warn_share else logger.info)(
-        "%s allotment (%s rule) of the present persons: primary %d/%d (%.1f%%), fallback %d (%.1f%%) placed by the "
-        "university decay (no observed education leg); warn above %s=%g", _UNIVERSITY_TAG, inputs.rule,
-        n_plan - n_fallback, n_plan, _percent(n_plan - n_fallback, n_plan), n_fallback, 100.0 * fallback_share,
-        KEY_MATCHING_FALLBACK_WARN_SHARE, inputs.fallback_warn_share)
-    report["plan_rule"] = {"n_persons": n_plan, "n_primary": n_plan - n_fallback, "n_fallback": n_fallback,
-                           "fallback_share": fallback_share, "warn_share": inputs.fallback_warn_share}
+    report["plan_rule"] = _plan_rule_rate(frame.loc[fitted_rows.index, "assignment_path"], PATH_FALLBACK_DECAY,
+                                          "present", inputs)
 
     # 3. The absent persons: the fitted row shares of their Kreis, whole by largest remainder, the same allotment.
     absent_rows = frame[~no_row & ~present]
@@ -409,6 +425,8 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
                                       decay_slope, rng, label=f"home Kreis {kreis}, absent")
         frame.loc[members.index, "destination_id"] = allotted["destination_id"].to_numpy()
         frame.loc[members.index, "assignment_path"] = (ABSENT_PATH_PREFIX + allotted["path"]).to_numpy()
+    report["plan_rule_absent"] = _plan_rule_rate(frame.loc[absent_rows.index, "assignment_path"],
+                                                 ABSENT_PATH_PREFIX + PATH_FALLBACK_DECAY, "absent", inputs)
     n_without_fitted = int(absent_rows["home_ars5"].isin(without_fitted_row).sum())
     (logger.warning if n_without_fitted else logger.info)(
         "%s absent persons: %d allotted on their own totals, of them %d (Kreise %s) on the shares of their row of T "
@@ -917,10 +935,10 @@ def _university_flow_inputs(context, df_persons):
                          f"{df_persons.loc[kreis.isna(), 'household_id'].unique()[:5].tolist()}")
     day_state = None
     if context.config(KEY_DAY_ABSENCE_ENABLED):
-        absence = context.stage(ABSENCE_STAGE)["absence"]
+        absence = context.stage(ABSENCE_STAGE)[ABSENCE_OUTPUT_KEY]
         if absence["person_id"].duplicated().any():
             raise ValueError(f"{_UNIVERSITY_TAG} {ABSENCE_STAGE} holds a person more than once")
-        day_state = absence.set_index("person_id")["day_absence_state"]
+        day_state = absence.set_index("person_id")[DAY_ABSENCE_STATE_COLUMN]
     else:
         logger.info("%s %s is false: every person counts as present", _UNIVERSITY_TAG, KEY_DAY_ABSENCE_ENABLED)
     random_seed = int(context.config("random_seed"))

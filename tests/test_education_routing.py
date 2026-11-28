@@ -246,6 +246,19 @@ def test_on_path_bbs_adult_is_drawn_by_decay_with_the_capacity_as_weight():
     assert abs(counts["b1"] / 400 - expected_b1) < 0.08
 
 
+def test_on_path_draws_of_the_other_levels_do_not_depend_on_the_university_step():
+    # The university step draws from its own generator: 30 more students must leave every draw of the apprentices
+    # (bbs_adult) and of the adult education, both drawn after it from the stage's RandomState, unchanged.
+    n = 20
+    base = _persons([25] * n + [43] * n + [23] * n, p_taet=[8] * n + [4] * n + [10] * n)
+    more = _persons([25] * n + [43] * n + [23] * (n + 30), p_taet=[8] * n + [4] * n + [10] * (n + 30))
+    out, out_more = _on(base), _on(more)
+    others = out[out["routed_level"].isin([BBS_ADULT, ADULT_EDUCATION])].set_index("person_id")["location_id"]
+    others_more = out_more.set_index("person_id")["location_id"].loc[others.index]
+    assert len(others) == 2 * n
+    pd.testing.assert_series_equal(others, others_more)
+
+
 def test_on_path_keeps_pupils_under_20_on_the_age_bands_and_adds_routed_level():
     persons = _persons([4, 7, 12, 17, 19], p_taet=[17, 9, 9, 9, 8])
     out = _on(persons)
@@ -322,9 +335,18 @@ def test_off_path_equals_the_output_of_the_stage_before_the_switch(min_age, orde
     (seed 7, the same fixture); with the switch OFF every draw and the row order are unchanged."""
     out = assign_education_locations(_golden_persons(), _nds(), _universities(), _kita(), _cfg(min_age=min_age),
                                      np.random.RandomState(7))
-    assert list(out.columns) == ["person_id", "commune_id", "location_id", "geometry"]
-    assert out["person_id"].tolist() == globals()[order]
-    assert out["location_id"].tolist() == globals()[locations]
+    # The whole frame, dtypes included: commune_id and geometry belong to the facility named by location_id (an NDS
+    # school carries its commune, a Kita and a university none).
+    facilities = pd.concat([_nds()[["school_id", "commune_id", "geometry"]].rename(columns={"school_id": "location_id"}),
+                            _kita()[["location_id", "geometry"]].assign(commune_id=""),
+                            _universities()[["location_id", "geometry"]].assign(commune_id="")]).set_index("location_id")
+    location_ids = globals()[locations]
+    expected = pd.DataFrame({"person_id": pd.Series(globals()[order], dtype="int64"),
+                             "commune_id": facilities.loc[location_ids, "commune_id"].to_numpy(),
+                             "location_id": location_ids,
+                             "geometry": gpd.GeoSeries(facilities.loc[location_ids, "geometry"].to_numpy(),
+                                                       crs="EPSG:25832")})
+    pd.testing.assert_frame_equal(out, expected)
 
 
 # ------------------------------------------------------------------------------------------------ golden values

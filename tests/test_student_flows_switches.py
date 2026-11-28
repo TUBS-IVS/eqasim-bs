@@ -111,6 +111,12 @@ def test_repeated_literals_equal_their_owners():
     assert (stage.ABSENCE_STAGE, stage.TRIPS_STAGE, stage.HOME_ZONES_STAGE) == (
         absence_stage.STAGE_NAME, absence_stage.TRIPS_STAGE, absence_stage.HOME_ZONES_STAGE)
     assert stage.STATE_PRESENT == absence.STATE_PRESENT
+    assert stage.DAY_ABSENCE_STATE_COLUMN in absence.ABSENCE_COLUMNS
+    # The output key has no constant in its owner: read it off the stage's own output (OFF path, no file read).
+    enriched = pd.DataFrame({"person_id": [1, 2], "household_id": [1, 1], "age": [22, 50]})
+    output = absence_stage.execute(_ExecuteContext({absence_stage.KEY_ENABLED: False}, ["synthesis.population.enriched"],
+                                                   {"synthesis.population.enriched": enriched}, None))
+    assert stage.DAY_ABSENCE_STATE_COLUMN in output[stage.ABSENCE_OUTPUT_KEY].columns
     assert (stage.KEY_OD_TABLE_PATH, stage.DEFAULT_OD_TABLE_PATH) == (
         university_facilities.KEY_OD_TABLE_PATH, university_facilities.DEFAULT_OD_TABLE_PATH)
 
@@ -270,6 +276,20 @@ def test_on_path_gives_every_destination_its_share_of_the_present_persons_and_co
     assert report["allotment_diagnostics"]["n_persons"] == n_fitted
     assert report["fit"]["iterations"] >= 1
     assert set(report["realised_distance_km_by_home_kreis"]) == {"03101", "03102", "03103"}
+
+
+@pytest.mark.parametrize("warn_share,plan_rule_warned", [(0.25, False), (0.1, True)])
+def test_the_counted_routes_warn(tmp_path, caplog, warn_share, plan_rule_warned):
+    """Wolfsburg's students (no row of T) always warn; the plan rule's fallback (every fifth person has no leg:
+    20 % of the present, 25 % of the absent persons) warns above the configured share only, present and absent
+    rated apart."""
+    with caplog.at_level("INFO", logger=stage.__name__):
+        _, report = _run(tmp_path, _people(), **{stage.KEY_MATCHING_FALLBACK_WARN_SHARE: warn_share})
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert sum("no row of T" in message for message in warnings) == 1
+    plan_warnings = [message for message in warnings if stage.KEY_MATCHING_FALLBACK_WARN_SHARE in message]
+    assert len(plan_warnings) == (2 if plan_rule_warned else 0)
+    assert report["plan_rule_absent"]["n_fallback"] == 4 and report["plan_rule_absent"]["n_persons"] == 16
 
 
 def test_on_path_does_not_depend_on_the_row_order_and_runs_without_day_absence(tmp_path, monkeypatch):
