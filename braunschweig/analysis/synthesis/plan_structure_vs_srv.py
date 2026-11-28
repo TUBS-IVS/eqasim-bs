@@ -404,11 +404,9 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
     lines += _metric_table(ordered)
 
     lines += ["", "## Accepted deviations (closed plans and open day ends)", "",
-              "Most synthetic days are closed home-based chains (issue #367). Overnight "
-              "travellers keep their day open (issue #694), and far stays that end outside "
-              "the study area (ADR-0183) are not visible in this pre-portal view, so the "
-              "model cannot reproduce the SrV shares below. They are accepted deviations, "
-              "not defects.", "",
+              "Most synthetic days are closed home-based chains, so the model cannot reproduce "
+              "the SrV shares below; the reason is in the note column. They are accepted "
+              "deviations, not defects.", "",
               "| deviation | model | srv | delta_pp | note |",
               "| --- | ---: | ---: | ---: | --- |"]
     for _, row in deviations.iterrows():
@@ -582,7 +580,8 @@ def execute(context):
 
     closure = P.closure_metrics(df_trips)
     closure_table = P.closure_frame(closure)
-    deviations = P.accepted_deviations(comparison)
+    deviations = P.accepted_deviations(
+        comparison, open_ends_kept=closure["n_persons_open_end"] > 0)
 
     provenance = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),

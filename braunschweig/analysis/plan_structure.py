@@ -94,9 +94,21 @@ ACCEPTED_DEVIATION_COLUMNS = ["deviation", "metric", "model", "srv", "delta_pp",
 #: it is allocated with the ADRs themselves and lives in ONE place, the ``decisions:`` list of
 #: the stage record ``docs/registry/stages/
 #: braunschweig.analysis.synthesis.plan_structure_vs_srv.yml`` (one fact, one file).
-ACCEPTED_DEVIATION_NOTE = ("open day ends are kept for overnight travellers (issue #694); "
-                           "far stays that end outside the study area (ADR-0183) are not "
-                           "visible in this pre-portal view")
+ACCEPTED_DEVIATION_NOTE_CLOSED = ("closed plans by decision (issue #367; ADR in the stage "
+                                  "record's decisions)")
+#: Same note for a model trip table that contains open day ends (issue #694); it names the issues
+#: and, like the closed-plan note, points at the stage record instead of inlining an ADR id.
+ACCEPTED_DEVIATION_NOTE_OPEN = ("closed plans by decision (issue #367) except that open day ends "
+                                "are kept for overnight travellers (issue #694); far stays that "
+                                "end outside the study area are not visible in this pre-portal "
+                                "view; ADR in the stage record's decisions")
+
+
+def accepted_deviation_note(open_ends_kept: bool) -> str:
+    """The note of the accepted-deviation rows: open day ends are claimed only when present."""
+    return ACCEPTED_DEVIATION_NOTE_OPEN if open_ends_kept else ACCEPTED_DEVIATION_NOTE_CLOSED
+
+
 #: The three consequences of the "every plan starts and ends at home" decision, each derived
 #: from one comparison metric. ``complement`` says whether the reported value is
 #: ``1 - metric`` (an OPEN day is the complement of a closed one).
@@ -372,14 +384,17 @@ def compare(model_long: pd.DataFrame, reference_long: pd.DataFrame) -> pd.DataFr
     return merged[COMPARISON_COLUMNS]
 
 
-def accepted_deviations(comparison: pd.DataFrame,
-                        segment: str = "all") -> pd.DataFrame:
+def accepted_deviations(comparison: pd.DataFrame, segment: str = "all", *,
+                        open_ends_kept: bool) -> pd.DataFrame:
     """The three deviations that follow from the "plans start and end at home" decision.
 
-    Most synthetic days are closed home-based chains (issue #367). Overnight travellers keep
-    their day open (issue #694), and far stays that end outside the study area (ADR-0183) are
-    not visible in this pre-portal view, so the model cannot reproduce the SrV shares of days
-    that end away from home, start away from home, or consist of a single trip. These are
+    Most synthetic days are closed home-based chains (issue #367). Where the model trip table
+    contains open day ends (``open_ends_kept``, the observed ``n_persons_open_end`` > 0 of
+    :func:`closure_metrics`; overnight travellers keep their day open, issue #694), the note
+    says so; otherwise it claims only closed plans. Either way the model cannot reproduce the
+    SrV shares of days that end away from home, start away from home, or consist of a single
+    trip. The flag is taken from the data, not from the config key, so a model view built by
+    a source or with the switch off can never be described as keeping days open. These are
     ACCEPTED deviations, not defects, and this table states them explicitly with both
     sides' values so a reader of the comparison does
     not read them as a model failure.
@@ -402,7 +417,7 @@ def accepted_deviations(comparison: pd.DataFrame,
             model, srv = 1.0 - model, 1.0 - srv
         rows.append({"deviation": name, "metric": metric, "model": model, "srv": srv,
                      "delta_pp": (model - srv) * 100.0, "n_srv": row["n_srv"],
-                     "note": ACCEPTED_DEVIATION_NOTE})
+                     "note": accepted_deviation_note(open_ends_kept)})
     return pd.DataFrame(rows, columns=ACCEPTED_DEVIATION_COLUMNS)
 
 

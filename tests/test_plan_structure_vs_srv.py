@@ -311,13 +311,6 @@ def test_closure_metrics_open_end_raises_on_a_missing_last_following_purpose():
 # --------------------------------------------------------------------------- accepted deviations
 
 
-def test_accepted_deviation_note_names_overnight_open_ends():
-    note = P.ACCEPTED_DEVIATION_NOTE
-    assert "issue #694" in note
-    assert "ADR-0183" in note
-    assert "open" in note.lower()
-
-
 def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     comparison = pd.DataFrame({
         "segment": ["all"] * 3,
@@ -328,7 +321,7 @@ def test_accepted_deviations_reports_the_three_closed_plan_consequences():
         "delta_pp": [2.24, 2.19, -0.58],
         "n_srv": [18223] * 3,
     })
-    deviations = P.accepted_deviations(comparison)
+    deviations = P.accepted_deviations(comparison, open_ends_kept=False)
 
     assert list(deviations.columns) == P.ACCEPTED_DEVIATION_COLUMNS
     assert set(deviations["deviation"]) == {"open_end_days", "open_start_days",
@@ -336,16 +329,19 @@ def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     open_end = deviations[deviations["deviation"] == "open_end_days"].iloc[0]
     assert open_end["model"] == pytest.approx(0.0)
     assert open_end["srv"] == pytest.approx(1.0 - 0.9776)
-    assert open_end["note"] == P.ACCEPTED_DEVIATION_NOTE
+    assert open_end["note"] == P.ACCEPTED_DEVIATION_NOTE_CLOSED
 
 
-def test_accepted_deviation_note_names_the_issue_not_a_placeholder_adr_id():
-    """The ADR id lives ONLY in the stage record's ``decisions:`` list (one fact, one file).
-
-    An inlined placeholder such as "ADR E" would be a second, always-wrong home for it.
-    """
-    assert "ADR E" not in P.ACCEPTED_DEVIATION_NOTE
-    assert "ADR-0" in P.ACCEPTED_DEVIATION_NOTE
+@pytest.mark.parametrize("open_ends_kept", [False, True])
+def test_accepted_deviation_note_names_the_issue_not_an_adr_id_and_follows_the_open_ends(open_ends_kept):
+    """The ADR id lives ONLY in the stage record's ``decisions:`` list (one fact, one file); an
+    inlined id (or a placeholder such as "ADR E") would be a second, always-wrong home for it.
+    The note claims open day ends only when the model view has them."""
+    note = P.accepted_deviation_note(open_ends_kept)
+    assert "ADR E" not in note and "ADR-0" not in note
+    assert "issue #367" in note
+    assert ("issue #694" in note) is open_ends_kept
+    assert ("overnight" in note) is open_ends_kept
 
 
 # --------------------------------------------------------------------------- stage
