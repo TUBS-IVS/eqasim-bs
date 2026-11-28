@@ -46,8 +46,9 @@ students with an unreadable start or arrival hour of their education leg), so th
 differences of the two cells are nearly, not exactly, equal; :func:`arrival_status_overlap`
 reports both cells' unweighted counts and through which cells arrival passes rule 2.
 
-The MiD bases of the four diary-dependent controls are reduced (persons without a diary of the
-day are absent, see :mod:`braunschweig.calibration.mid_student_reference`), so the table carries
+The MiD bases of the four diary-dependent controls are reduced (persons with an unknown
+day, i.e. no diary or a diary the popsim seed replaces, are absent; the rule is in
+:mod:`braunschweig.calibration.mid_student_reference`), so the table carries
 the MiD unweighted count of each cell next to the SrV one.
 
 Level gate: the student estimates the owner decides the level on. ``mid_to_census_ratio_germany``

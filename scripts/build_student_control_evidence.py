@@ -146,8 +146,9 @@ def _build_rule_header(source_commit: str, inputs, rule: pd.DataFrame) -> list:
         "# Rule 3: the one-batch smoke of Phase 2 (rule3_smoke = %s)." % E.RULE3_PENDING,
         "# verdict per control: %s when every label passes rule 1 and one passes rule 2, else %s."
         % (E.VERDICT_BUILD, E.VERDICT_COMPARISON),
-        "# MiD bases: persons without a diary of the day are absent from the four diary-dependent",
-        "#   controls (see the header of mid2023_student_behaviour_seed.csv), so",
+        "# MiD bases: persons with an unknown day (no diary, or a diary the popsim seed replaces) are",
+        "#   absent from the four diary-dependent controls (the rule is in the header of",
+        "#   mid2023_student_behaviour_seed.csv), so",
         "#   mid_n_unweighted_adults is the reduced MiD count of the cell.",
         *_overlap_lines(E.arrival_status_overlap(rule)),
         "# Exclusions: %s (n_cells_rule2_not_evaluable = difference_in_se NaN, because the MiD"
