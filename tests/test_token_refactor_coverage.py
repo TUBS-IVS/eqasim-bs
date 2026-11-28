@@ -36,7 +36,10 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-26 on branch feature/i688-emissions: +4 post-run emissions stages = braunschweig.data.hbefa,
 #: braunschweig.emissions.inputs, braunschweig.emissions.events, braunschweig.emissions.summary, ADR-0209;
 #: 74 after merging both into claude/i140-student-synthesis-2ddca2.
-EXPECTED_SOURCE_HASHING_STAGES = 74
+#: 2026-11-28 on branch claude/i140-student-flows-fde844: 71 (+1 braunschweig.analysis.synthesis.student_flows, #140).
+#: 2026-11-28 on branch claude/i140-student-flows-fde844: 72 (+1 braunschweig.analysis.synthesis.student_out_commuters, #140).
+#: 76 after merging claude/i140-student-synthesis-2ddca2 (74) into claude/i140-student-flows-fde844 (+2 student analysis stages).
+EXPECTED_SOURCE_HASHING_STAGES = 76
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -72,6 +75,9 @@ _COMPOSITE_STAGES = {
     # Holds the VG250 / RegioStaR digests and the digests of the committed SrV student tables and
     # the Zensus employed-by-age file next to the module digests (#140).
     "braunschweig.analysis.synthesis.students_vs_srv",
+    # Holds the digests of every SrV table the draw reads (the student cells' tables too while
+    # day_absence_student_cells_enabled is ON) next to the module digests while the stage is ON (#140, ADR-0212).
+    "braunschweig.synthesis.day_absence.absence_stage",
 }
 
 

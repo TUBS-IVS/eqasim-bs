@@ -1,0 +1,49 @@
+stage: braunschweig.analysis.synthesis.student_flows
+title: Student flows - acceptance table and diagnostics
+layer: analysis
+description: |-
+  Counts the synthesis of the student flows (issue #140, Phase 4, ADR-0213): the acceptance table of the
+  student balance (residents of the day and in-commuter agents per local site, in-commuters per origin Kreis,
+  out-commuters per institution, the students per home Kreis in the population and of the day, against the
+  quantities of the balance at the run's sampling rate), its PASS, FAIL or REPORT_ONLY verdict, and the
+  diagnostics of the flows (realised flows, distance bands against SrV and MiD, destination shares by home
+  group against SrV, the allotment inside each Kreis, the routed level by student status, the non-students
+  moved off the university buildings, the in-commuters' commute length, every fallback rate). A measurement
+  of the synthesis, not validation: it counts persons of the cached population, never arrivals in a simulation,
+  and needs no final-view trips. The definitions of every row, the rule of the verdict and the diagnostics are
+  in the module docstring of braunschweig/analysis/synthesis/student_flows.py; the stage recomputes
+  everything from the frames of the changed stages with the pure functions of their owning modules and reads
+  no other stage's file. configure() refuses braunschweig.students.flows_enabled false and the flows with the
+  day absence on and its student cells off; execute() raises when the absence and the location stage disagree
+  on who is present and when the acceptance minimum is not above 0. The report counts the university
+  residents the routing placed by the unknown-status fallback apart.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/* (a comparison stage writing a report next to the population);
+    the acceptance table is Braunschweig-specific (issue #140).
+code:
+- braunschweig/analysis/synthesis/student_flows.py
+- braunschweig/data/education/student_flows_inputs.py
+- braunschweig/synthesis/locations/university_assignment.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- student_od_balance
+- student_level_table
+- srv2023_student_reference
+- mid2023_student_reference
+features:
+- student_flows
+decisions:
+- ADR-0210
+- ADR-0213
+notes: |-
+  Listed in the run lists of configs/overlays/test_100pct.yml and test_25pct.yml next to students_vs_srv.
+  Writes under <output_path>/<OUTPUT_SUBDIR of the module> (student_flows/) the files named in OUTPUT_FILES
+  (the CSV tables and student_flows_summary.md) and REPORT_FILE student_flows_report.json (verdict, counts,
+  fallback rates, parameters, input digests); the report is also written to the stage's cache directory.
+  Config keys: the student flows block of configs/base_bs.yml.

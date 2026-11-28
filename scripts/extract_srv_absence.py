@@ -46,6 +46,13 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from braunschweig.calibration import srv_absence as A  # noqa: E402
+# The student definition of the SrV student tables, passed INTO the (hashed) absence helper so
+# that srv_absence.py carries no second copy of the code and no import of the student module.
+from braunschweig.calibration.srv_student_reference import (  # noqa: E402
+    APPRENTICE_V_ERW,
+    PUPIL_V_ERW,
+    STUDENT_V_ERW,
+)
 
 RAW_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv" / "srv2023_raw"
 OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "srv"
@@ -128,7 +135,8 @@ def _common_header(table_name: str, diagnostics: dict, source_commit: str,
     return lines
 
 
-def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> list:
+def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str,
+                n_unreadable_employment_code: int) -> list:
     """Provenance header for the absence-by-age-band table."""
     lines = _common_header(A.ABSENCE_BY_AGE_TABLE, diagnostics, source_commit)
     all_row = table[table["band"] == A.ALL_BAND].iloc[0]
@@ -138,8 +146,32 @@ def _age_header(table: pd.DataFrame, diagnostics: dict, source_commit: str) -> l
         "#   0-200), n_unweighted, n_absent_unweighted, p_absent (weighted share of the band away",
         "#   the whole reporting day). Every band is emitted even if empty (n_unweighted=0,",
         "#   p_absent=NaN), so a consumer never has to guess whether a band is missing or empty.",
-        "# 'all' row (n_unweighted=%d): n_absent_unweighted=%d, p_absent=%.4f."
-        % (int(all_row["n_unweighted"]), int(all_row["n_absent_unweighted"]), all_row["p_absent"]),
+        "# Additional columns (issue #140, the NON-STUDENT persons, for the student layer's adult absence cells;",
+        "#   the six columns above are UNCHANGED): n_unweighted_non_student,",
+        "#   n_absent_unweighted_non_student, p_absent_non_student -- the same counts and the",
+        "#   GEWICHT_P_ZENSUS-weighted away-all-day share, over the persons of the band whose V_ERW is",
+        "#   readable and NOT %d (Student/in, braunschweig.calibration.srv_student_reference.STUDENT_V_ERW,"
+        % STUDENT_V_ERW,
+        "#   the definition of the SrV student tables). Pupils (V_ERW %d) and apprentices (V_ERW %d) are"
+        % (PUPIL_V_ERW, APPRENTICE_V_ERW),
+        "#   therefore non-students here. Persons whose V_ERW is missing or negative (the non-answer",
+        "#   codes as defined in srv_student_reference) are in NO non-student column and never classed",
+        "#   non-student: %d of %d persons"
+        % (n_unreadable_employment_code, int(all_row["n_unweighted"])),
+        "#   (excluded_unreadable_employment_code=%d). Weights are the RAW SrV weights GEWICHT_P_ZENSUS, with"
+        % n_unreadable_employment_code,
+        "#   no post-stratification to the school degree (design A24); a non-student share inherits that",
+        "#   limit. Universe: every delivered person with a valid positive GEWICHT_P_ZENSUS, the same as",
+        "#   the first six columns and WITHOUT a Kreis filter. The adult non-student persons (bands",
+        "#   18-29 to 75+) are the base 'other_adults_all' of srv2023_student_parameters.csv: on this",
+        "#   delivery the same persons, so that table's household-Kreis rule removes none of them. The",
+        "#   'all' row also holds children and is not that base. A band whose non-student base is",
+        "#   empty has n=0 and a NaN share.",
+        "# 'all' row (n_unweighted=%d): n_absent_unweighted=%d, p_absent=%.4f, n_unweighted_non_student=%d,"
+        % (int(all_row["n_unweighted"]), int(all_row["n_absent_unweighted"]), all_row["p_absent"],
+           int(all_row["n_unweighted_non_student"])),
+        "#   n_absent_unweighted_non_student=%d, p_absent_non_student=%.4f."
+        % (int(all_row["n_absent_unweighted_non_student"]), all_row["p_absent_non_student"]),
         "# Rows: %d bands + 1 'all' row = %d total." % (len(A.AGE_BAND_LABELS), len(table)),
         "# Invariants (checked before writing, the extraction raises on a violation): exactly the",
         "#   bands %s + 'all' are present, in that order; the band person counts sum to at most"
@@ -320,7 +352,8 @@ def main(argv=None) -> int:
     households = pd.read_csv(households_path, usecols=A.HOUSEHOLD_COLUMNS, **CSV_READ_KWARGS)
     logger.info("read %d persons, %d households", len(persons), len(households))
     prepared, diagnostics = A.prepare_absence_persons(persons)
-    by_age = A.build_absence_by_age_band(prepared)
+    by_age = A.build_absence_by_age_band(prepared, STUDENT_V_ERW)
+    n_unreadable_employment_code = A.count_unreadable_employment_code(prepared)
     # The by-size builder runs FIRST: it attaches the household weights (a household missing from
     # the household file raises "no row / weight" there) and then runs the roster guard itself;
     # the explicit call below only yields the guard's own count for the provenance header.
@@ -332,7 +365,8 @@ def main(argv=None) -> int:
     A.check_invariants(by_age, by_size, composition, partial_subset)
     logger.info("invariants passed; diagnostics: %s; clustering: %s", diagnostics, clustering)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE, _age_header(by_age, diagnostics, args.source_commit))
+    _write(by_age, args.out_dir / A.ABSENCE_BY_AGE_TABLE,
+           _age_header(by_age, diagnostics, args.source_commit, n_unreadable_employment_code))
     _write(by_size, args.out_dir / A.ABSENCE_HOUSEHOLD_TABLE,
            _size_header(by_size, diagnostics, args.source_commit, clustering, n_roster_checked))
     _write(composition, args.out_dir / A.ABSENCE_COMPOSITION_TABLE,

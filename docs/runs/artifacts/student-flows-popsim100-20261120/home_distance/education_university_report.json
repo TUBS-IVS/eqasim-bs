@@ -1,0 +1,196 @@
+{
+  "absent_without_fitted_row": {
+    "kreise": [],
+    "n_persons": 0
+  },
+  "allotment_diagnostics": {
+    "mean_abs_leg_gap_km": 13.835496394988448,
+    "mean_distance_km": 14.902990000357564,
+    "n_by_path": {
+      "home_distance": 8989
+    },
+    "n_near_local_site": 1881,
+    "n_near_local_site_sent_elsewhere": 62,
+    "n_near_local_site_with_place": 1881,
+    "n_near_local_site_with_place_sent_elsewhere": 62,
+    "n_persons": 8989,
+    "n_with_observed_leg": 8748,
+    "radius_km": 2.0
+  },
+  "counts_by_kreis": {
+    "03101": {
+      "absent_home_distance": 392,
+      "home_distance": 3855
+    },
+    "03102": {
+      "absent_home_distance": 188,
+      "home_distance": 806
+    },
+    "03103": {
+      "absent_home_distance": 124,
+      "home_distance": 1014
+    },
+    "03151": {
+      "absent_home_distance": 214,
+      "home_distance": 1007
+    },
+    "03153": {
+      "absent_home_distance": 129,
+      "home_distance": 661
+    },
+    "03154": {
+      "absent_home_distance": 43,
+      "home_distance": 260
+    },
+    "03157": {
+      "absent_home_distance": 185,
+      "home_distance": 726
+    },
+    "03158": {
+      "absent_home_distance": 168,
+      "home_distance": 660
+    }
+  },
+  "dropped_zero_share_destinations": [
+    "TiHo Hannover | 03241001",
+    "Uni L\u00fcneburg | 03355022"
+  ],
+  "fit": {
+    "column_rounded": {
+      "HS Braunschweig/Wolfenb\u00fcttel | 03102000": 482,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03103000": 685,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03158037": 1461,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03360023": 40,
+      "HS Hannover | 03241001": 65,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03159016": 9,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03254021": 71,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03255023": 3,
+      "Hochsch. f. Bildende K\u00fcnste Braunschweig | 03101000": 248,
+      "Hochsch. f. Musik, Theater und Medien Hannover | 03241001": 9,
+      "Hochschule Harz | curated": 91,
+      "Hochschule Magdeburg-Stendal | curated": 15,
+      "MHH Hannover | 03241001": 34,
+      "OVGU Magdeburg | curated": 78,
+      "TU Braunschweig | 03101000": 4267,
+      "TU Clausthal | 03153018": 813,
+      "Uni G\u00f6ttingen | 03159016": 119,
+      "Uni Hannover | 03241001": 299,
+      "Uni Hildesheim | 03254021": 200
+    },
+    "column_targets": {
+      "HS Braunschweig/Wolfenb\u00fcttel | 03102000": 482.30465163606823,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03103000": 684.149348060263,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03158037": 1461.771784114146,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03360023": 40.28587128798729,
+      "HS Hannover | 03241001": 64.46398820175396,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03159016": 9.13771613082879,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03254021": 71.73776601253272,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03255023": 2.674091581701089,
+      "Hochsch. f. Bildende K\u00fcnste Braunschweig | 03101000": 247.52845065139445,
+      "Hochsch. f. Musik, Theater und Medien Hannover | 03241001": 8.689462777116228,
+      "Hochschule Harz | curated": 90.5902973769718,
+      "Hochschule Magdeburg-Stendal | curated": 14.953967163516666,
+      "MHH Hannover | 03241001": 33.97157761750749,
+      "OVGU Magdeburg | curated": 77.57908358235412,
+      "TU Braunschweig | 03101000": 4267.526588113734,
+      "TU Clausthal | 03153018": 813.2408269759476,
+      "Uni G\u00f6ttingen | 03159016": 119.12638489082396,
+      "Uni Hannover | 03241001": 299.2170120750544,
+      "Uni Hildesheim | 03254021": 200.05113175029882
+    },
+    "iterations": 82,
+    "max_deviation_persons": 7.9562335031369e-07,
+    "row_totals": {
+      "03101": 3855,
+      "03102": 806,
+      "03103": 1014,
+      "03151": 1007,
+      "03153": 661,
+      "03154": 260,
+      "03157": 726,
+      "03158": 660
+    },
+    "rows_left_out": []
+  },
+  "legacy_without_row": {
+    "kreise": [],
+    "n_persons": 0
+  },
+  "n_absent": 1443,
+  "n_by_path": {
+    "absent_home_distance": 1443,
+    "home_distance": 8989
+  },
+  "n_persons": 10432,
+  "n_present": 8989,
+  "plan_rule": {
+    "fallback_share": 0.0,
+    "n_fallback": 0,
+    "n_persons": 8989,
+    "n_primary": 8989,
+    "warn_share": 0.25
+  },
+  "plan_rule_absent": {
+    "fallback_share": 0.0,
+    "n_fallback": 0,
+    "n_persons": 1443,
+    "n_primary": 1443,
+    "warn_share": 0.25
+  },
+  "random_stream": {
+    "generator": "numpy.random.default_rng([random_seed, stream_id])",
+    "random_seed": 1234,
+    "stream_id": 140
+  },
+  "realised_distance_km_by_home_kreis": {
+    "03101": {
+      "mean": 7.989514116337564,
+      "median": 2.9529622717819217,
+      "n_present": 3855,
+      "p90": 19.24695273209758
+    },
+    "03102": {
+      "mean": 17.105071709364985,
+      "median": 15.992810891661918,
+      "n_present": 806,
+      "p90": 35.674729773636585
+    },
+    "03103": {
+      "mean": 19.831277902854957,
+      "median": 19.812467614361196,
+      "n_present": 1014,
+      "p90": 44.602398268438705
+    },
+    "03151": {
+      "mean": 29.560088229517525,
+      "median": 25.079392066442168,
+      "n_present": 1007,
+      "p90": 55.518591027771926
+    },
+    "03153": {
+      "mean": 13.426763247243036,
+      "median": 14.882528997345895,
+      "n_present": 661,
+      "p90": 21.956717293974968
+    },
+    "03154": {
+      "mean": 27.787559552175882,
+      "median": 28.78696824019257,
+      "n_present": 260,
+      "p90": 43.19579284468164
+    },
+    "03157": {
+      "mean": 23.815523476250462,
+      "median": 20.96031655423431,
+      "n_present": 726,
+      "p90": 31.884503638407867
+    },
+    "03158": {
+      "mean": 10.898310809120995,
+      "median": 4.540381197034909,
+      "n_present": 660,
+      "p90": 24.546843431987572
+    }
+  },
+  "rule": "home_distance"
+}

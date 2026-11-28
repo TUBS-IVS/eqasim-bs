@@ -72,4 +72,4 @@ limitations: |
 notes: |
   Phase 2 of the student layer (issue #140). The fifth committed table of the same run is the
   student level table (record student_level_table).
-  Run manifest docs/runs/student-balance-2026-11-27.yml (every figure of this build; the weights decision is in docs/runs/student-balance-2026-11-26.yml) and ADR-0210 (table rules, weight curve, owner assumption of the weights, level decision).
+  Run manifest docs/runs/student-balance-2026-11-27-art-academy-proxy.yml (the current tables, with the art academy on the origin pattern of TU Braunschweig; supersedes docs/runs/student-balance-2026-11-27.yml, which holds every figure of the earlier build; the weights decision is in docs/runs/student-balance-2026-11-26.yml) and ADR-0210 (table rules, weight curve, owner assumption of the weights, level decision).

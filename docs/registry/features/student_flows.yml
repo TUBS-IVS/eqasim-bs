@@ -1,0 +1,100 @@
+feature: student_flows
+title: Student flows - students placed by the enrollment balance (#140, Phase 4)
+area: education
+description: |-
+  One balance of head counts (the origin-destination table T of ADR-0210) decides where the students of the
+  region and the in-commuters are: students are routed to the university level by their survey status at every
+  adult age, apprentices and pupils aged 20 or older to the vocational schools, other adults to the
+  adult-education rule without university buildings; the residents of the university level get a balanced
+  assignment fitted on the persons present on the simulated day, with the persons of a home Kreis allotted
+  to the destinations by the straight-line distance from home (the default home-distance rule, owner
+  decision of 2026-11-28; the rule by the length of the plan's education leg is selectable); the
+  in-commuters are the outside rows of T times the effective day factor, with the commute length T implies
+  and the students' mode table. Method and rejected options: ADR-0213; method text: the detail doc. One
+  switch, braunschweig.students.flows_enabled, default on; off keeps the behaviour before the flows. The
+  acceptance table and the diagnostics are written by the analysis stage student_flows; the out-commuting
+  students are measured, not changed, by student_out_commuters.
+stages:
+- braunschweig.data.schools.university_facilities
+- braunschweig.synthesis.locations.education_gravity
+- braunschweig.synthesis.student_incommuters
+- braunschweig.analysis.synthesis.student_flows
+- braunschweig.analysis.synthesis.student_out_commuters
+pipelines:
+  popsim_mid: active
+  popsim_open: active
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.students.flows_enabled
+introduced:
+  issue: '#140'
+  pr: null
+  adr: ADR-0213
+detail_doc: docs/features/student-incommuters.md
+code_paths:
+- braunschweig/data/education/student_flows_inputs.py
+- braunschweig/data/schools/university_facilities.py
+- braunschweig/synthesis/locations/education_routing.py
+- braunschweig/synthesis/locations/university_assignment.py
+- braunschweig/synthesis/locations/education_gravity.py
+- braunschweig/synthesis/student_incommuters.py
+- braunschweig/data/education/student_incommuter_counts.py
+- braunschweig/data/education/student_mode_reference.py
+- braunschweig/analysis/synthesis/student_flows.py
+- braunschweig/analysis/synthesis/student_out_commuters.py
+evidence:
+  tests:
+  - tests/test_student_flows_inputs.py
+  - tests/test_student_flows_switches.py
+  - tests/test_student_flows_phase3_pins.py
+  - tests/test_university_facilities.py
+  - tests/test_education_routing.py
+  - tests/test_university_assignment_fit.py
+  - tests/test_university_assignment_allotment.py
+  - tests/test_student_incommuters_balance.py
+  - tests/test_student_mode_reference.py
+  - tests/test_student_flows_analysis.py
+  - tests/test_student_out_commuters.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_student_flows_switches.py
+    note: |
+      One frame-equal test per changed stage against the output of the code before the switch:
+      tests/test_university_facilities.py, tests/test_education_routing.py and
+      tests/test_student_incommuters_balance.py (the test_off_path_* tests). The switches file pins that the
+      OFF path declares no new input and no new key. The cache hash of the changed stages changes once for
+      every run, OFF runs included (new modules and keys); the OFF output is the same.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'rows of T: primary'
+    note: |
+      Every fallback is logged as primary n/N and fallback m with a configurable warn share: the student
+      status (tag [education routing]), the home Kreis without a row of T (raises above a configured share,
+      default 0) and the allotment by the plan's
+      length versus the university decay ([education:university]), the commute length
+      ([student_incommuters:flows]) and the home rule per origin Kreis. The analysis stage student_flows
+      lists every rate in its report.
+  reference:
+    kind: assumption
+    note: |
+      ASSUMPTION: T rests on the CHE origins and the owner's commuter weights (ADR-0210); in-commuting is
+      observed nowhere and the residence split of the students is not validated. The committed SrV tables
+      (distance by Kreis, destination, education leg by status) are the only observed comparison and rest on
+      small samples; the analysis stage reports the comparison with the rows that have enough respondents
+      marked. No official table of the students' residence by university is committed.
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: A measurement of the synthesis is not validation. The run on the cached full population and its
+    measurement are recorded in docs/runs/student-flows-popsim100-20261120-2026-11-28.yml.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    The flows are built and unit-tested; no run is recorded as validation. The default of the matching rule is `home_distance` (owner decision of 2026-11-28, ADR-0213); the rule comparison against the SrV tables is in the run manifest docs/runs/student-flows-popsim100-20261120-2026-11-28.yml and is to be repeated after the next full population run.
+  source: ADR-0213

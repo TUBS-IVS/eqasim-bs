@@ -1,0 +1,17 @@
+braunschweig/calibration/srv_absence.py
+braunschweig/data/csv_header.py
+braunschweig/data/education/student_flows_inputs.py
+braunschweig/data/schools/university_facilities.py
+braunschweig/synthesis/day_absence/__init__.py
+braunschweig/synthesis/day_absence/absence.py
+braunschweig/synthesis/day_absence/absence_stage.py
+braunschweig/synthesis/day_absence/cells.py
+braunschweig/synthesis/locations/education_gravity.py
+braunschweig/synthesis/locations/education_routing.py
+eqasim-data/data/braunschweig/popsim/student_level_table.csv
+eqasim-data/data/braunschweig/schools/student_balance_by_site.csv
+eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv
+eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv
+eqasim-data/data/braunschweig/schools/student_destination_points.csv
+eqasim-data/data/braunschweig/schools/student_od_table.csv
+eqasim-data/data/braunschweig/srv/srv2023_absence_by_age_band.csv

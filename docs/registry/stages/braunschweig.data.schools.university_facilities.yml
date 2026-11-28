@@ -1,13 +1,23 @@
 stage: braunschweig.data.schools.university_facilities
 title: University facilities (LSN)
 layer: education
-description: Builds the university register from the LSN Hochschulstatistik enrollment (ADR-0024).
+description: |-
+  Builds the university register from the LSN Hochschulstatistik enrollment (ADR-0024). With
+  braunschweig.students.flows_enabled (default on, issue #140 Phase 4, ADR-0213) one facility set per
+  DESTINATION of the student origin-destination table T replaces the per-Kreis pooling: the destinations,
+  their enrollment and their points come from the committed tables of T, not from the local-only
+  institution file. A local site spreads its enrollment over the university buildings of its commune; a
+  surrounding institution is one facility at its point. Two sites in one commune share the commune's
+  buildings with capacities by enrollment (ASSUMPTION, ADR-0213). Buildings of a commune without a site
+  and zero-share destinations are left out, counted and logged as a rate. The facility rows gain
+  destination_id, scope and site_ags8. With the switch off the stage builds what it built before.
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/data/schools/university_facilities.py
+- braunschweig/data/education/student_flows_inputs.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -15,5 +25,13 @@ pipelines:
 production: true
 inputs:
 - lsn_universities
+- student_od_balance
+- student_destination_points
 features:
 - building_potentials_education
+- student_flows
+decisions:
+- ADR-0213
+notes: |-
+  Config keys: the student flows block of configs/base_bs.yml. Output report:
+  university_facilities_report.json in the stage's cache directory (the counts of what was left out).

@@ -119,6 +119,12 @@ IN_COMMUTERS_FILE = "student_balance_in_commuters_by_origin.csv"
 LEVEL_FILE = "student_level_table.csv"
 GATE_FILE = "student_level_gate.csv"
 PRECHECK_FILE = "student_employed_target_precheck.csv"
+POINTS_FILE = "student_destination_points.csv"
+ORIGIN_PATTERN_PROXY_OFF = "none"
+ORIGIN_PATTERN_PROXY_DEFAULT = ";".join("%s=%s" % pair for pair in T.ORIGIN_PATTERN_PROXY_DEFAULT.items())
+POINT_COLUMNS = ["destination_id", "institution", "scope", "site_ags8", "x", "y", "point_source"]
+POINT_SOURCE_CURATED = "curated"
+POINT_SOURCE_COMMUNE_CENTRE = "commune_centre"
 CONTEXT_COLUMNS = ["source", "code", "band", "share", "n_unweighted"]
 
 # OWNER DECISION (ADR-0210): movers (students who live in Braunschweig and study at a site elsewhere) are
@@ -465,9 +471,13 @@ def prepare(args) -> dict:
     totals = T.che_totals(che)
     cells, cell_diagnostics = T.origin_cells(che, institutions, origin_kreise, region_kreise, distance_learning)
     pairs = G.pair_coefficients(gemeinden, points, args.weight_rule, args.max_commute_km)
+    # The proxy cells scale with the institution's enrollment: one set of cells per site table.
+    proxy = parse_origin_pattern_proxy(args.origin_pattern_proxy)
+    cells_model, proxy_diagnostics = T.apply_origin_pattern_proxy(cells, totals, sites, pairs, proxy)
 
     def build(weights):
-        return T.build_od_table(cells, totals, sites_builder, pairs, region_kreise, T.CommuterWeights(*weights))
+        return T.build_od_table(cells_model, totals, sites_builder, pairs, region_kreise,
+                                T.CommuterWeights(*weights))
 
     build_census_year = None
     if census_path:
@@ -477,18 +487,24 @@ def prepare(args) -> dict:
         outside_mask = sites["scope"] == T.SCOPE_SURROUNDING
         outside_mask &= sites["destination_id"].isin(curated["destination_id"])
         census_students[outside_mask] = sites.loc[outside_mask, "institution"].map(outside_census)
-        sites_census_builder = sites.assign(students_persons=census_students.astype(float))[T.SITE_COLUMNS]
+        sites_census = sites.assign(students_persons=census_students.astype(float))
+        sites_census_builder = sites_census[T.SITE_COLUMNS]
         if sites_census_builder["students_persons"].isna().any():
             raise ValueError("census-year site table: no enrollment for site(s) %s"
                              % sites_census_builder.loc[sites_census_builder["students_persons"].isna(),
                                                         "destination_id"].tolist()[:5])
+        cells_census, proxy_diagnostics_census = T.apply_origin_pattern_proxy(cells, totals, sites_census, pairs,
+                                                                              proxy)
 
         def build_census_year(weights):
-            return T.build_od_table(cells, totals, sites_census_builder, pairs, region_kreise,
+            return T.build_od_table(cells_census, totals, sites_census_builder, pairs, region_kreise,
                                     T.CommuterWeights(*weights))
 
+    # With the proxy on, the cell counts of the header follow the cells the builder reads (the proxy cells under
+    # their own source, no longer as censored); the census-year cells differ only in the proxy cells' values.
     diagnostics = {
-        "origin_cells": cell_diagnostics,
+        "origin_cells": T.recount_cell_sources(cells_model, cell_diagnostics) if proxy else cell_diagnostics,
+        "origin_pattern_proxy": {"setting": proxy, "model_semester": _proxy_summary(proxy_diagnostics)},
         "sites": {"n_sites": n_sites, "site_kreis_from_lsn_table": "primary %d/%d" % (len(lsn_rows), n_sites),
                   "site_kreis_from_polygon_lookup": "fallback %d/%d" % (len(curated_rows), n_sites),
                   "local_site_kreise": site_kreise, "distance_learning": list(distance_learning),
@@ -499,6 +515,7 @@ def prepare(args) -> dict:
     if census_path:
         diagnostics["sites"]["census_year_semester"] = census_semester
         diagnostics["sites"]["outside_lsn_enrollment_census_year"] = outside_census_summary
+        diagnostics["origin_pattern_proxy"]["census_year_semester"] = _proxy_summary(proxy_diagnostics_census)
     enrollment_lines = [
         "# Enrollment: enrollment_semester=%s (column semester of the --sites table, LSN-Online K3100101); "
         "the three institutions outside the LSN statistics carry the figures of OUTSIDE_LSN_STUDENTS in "
@@ -507,7 +524,8 @@ def prepare(args) -> dict:
             semester.replace(" ", "_"), outside_summary["primary"], outside_summary["fallback"])]
     return {"sites": sites_builder, "lsn_sites": lsn, "semester": semester,
             "census_year_semester": census_semester, "build_census_year": build_census_year,
-            "enrollment_lines": enrollment_lines, "points": points, "gemeinden": gemeinden, "cells": cells,
+            "enrollment_lines": enrollment_lines, "proxy_diagnostics": proxy_diagnostics, "points": points,
+            "curated_destination_ids": set(curated["destination_id"]), "gemeinden": gemeinden, "cells": cells,
             "che_totals": totals, "pairs": pairs, "region_kreise": region_kreise, "site_kreise": site_kreise,
             "origin_kreise": origin_kreise, "diagnostics": diagnostics, "build": build,
             "inputs": [("che_origins", Path(args.che), False), ("lsn_site_table", sites_path, True),
@@ -515,6 +533,39 @@ def prepare(args) -> dict:
                        ("vg250_archive", Path(args.vg250), True),
                        ("curated_sites_script", REPO / "scripts" / "seed_nds_hochschulen.py", False),
                        ("enrollment_outside_lsn_script", REPO / "scripts" / "seed_lsn_university_sites.py", False)]}
+
+
+def parse_origin_pattern_proxy(text: str) -> dict:
+    """``--origin-pattern-proxy``: ``"<institution>=<proxy institution>"`` pairs separated by ';' (LSN names);
+    ``none`` or an empty text switches the proxy off."""
+    if text is None or text.strip().lower() in ("", ORIGIN_PATTERN_PROXY_OFF):
+        return {}
+    pairs = {}
+    for item in _csv_list(text, ";"):
+        institution, separator, proxy = (part.strip() for part in item.partition("="))
+        if not separator or not institution or not proxy or institution in pairs:
+            raise ValueError("--origin-pattern-proxy needs '<institution>=<proxy institution>' pairs separated by "
+                             "';', each institution once, or 'none'; got %r" % text)
+        pairs[institution] = proxy
+    return pairs
+
+
+def _proxy_summary(entries: list) -> list:
+    """The proxy diagnostics for the header: counts and persons, the Kreis lists as counts only."""
+    return [{key: (len(value) if isinstance(value, list) and key != "proxy_cells_above_own_censoring_bound" else value)
+             for key, value in entry.items()} for entry in entries]
+
+
+def _proxy_students(od: pd.DataFrame, entries: list) -> dict:
+    """Students (heads, after the commuter weight) on the proxy-pattern rows of T, per destination."""
+    result = {}
+    for entry in entries:
+        rows = (od["destination_id"] == entry["destination_id"]) & od["home_ars5"].isin(entry["proxy_pattern_kreise"])
+        rows &= od["cell_kind"] == T.KIND_COMMUTER
+        result[entry["destination_id"]] = {
+            "proxy_pattern_students_persons": float(od.loc[rows, "students_persons"].sum()),
+            "of_which_home_in_region_persons": float(od.loc[rows & od["home_in_region"], "students_persons"].sum())}
+    return result
 
 
 # ---------------------------------------------------------------------------------------- headers
@@ -861,6 +912,8 @@ def _run_balance(args) -> int:
     diagnostics["build_od_table"] = t_diagnostics
     diagnostics["build_od_table_census_year"] = t_diagnostics_census_year
     diagnostics["balance"] = _balance_summary(tables, od)
+    diagnostics["origin_pattern_proxy"] = {**diagnostics["origin_pattern_proxy"],
+                                           "students_on_proxy_rows": _proxy_students(od, prepared["proxy_diagnostics"])}
     day_factor = education_leg_share * (1.0 - away_share)
     weights_lines = _weights_lines(weights, mover_share, args.weights_source, mover_kreise)
     t_inputs = prepared["inputs"]
@@ -931,6 +984,62 @@ def _run_balance(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------------------- points
+def destination_points(prepared: dict) -> pd.DataFrame:
+    """One row per destination of T: the point its distances are measured to (EPSG:25832, metres).
+
+    Reuses the points of :func:`prepare` (``student_geometry.site_points``) unchanged. A local site or an
+    LSN-listed surrounding site sits at the population-weighted centre of its commune (``commune_centre``);
+    an institution outside the LSN statistics sits at its curated coordinate (``curated``, no commune).
+    """
+    sites = prepared["sites"][["destination_id", "institution", "scope"]]
+    commune_by_destination = dict(zip(prepared["lsn_sites"]["institution"] + " | " + prepared["lsn_sites"]["site_ags8"],
+                                      prepared["lsn_sites"]["site_ags8"]))
+    frame = sites.merge(prepared["points"][["destination_id", "x", "y"]], on="destination_id", how="left", validate="1:1")
+    if frame[["x", "y"]].isna().any().any():
+        raise ValueError("destination(s) without a point: %s" % frame.loc[frame[["x", "y"]].isna().any(axis=1),
+                                                                         "destination_id"].tolist()[:5])
+    frame["site_ags8"] = frame["destination_id"].map(commune_by_destination)
+    # The curated list, not the commune lookup, says which destinations are curated: a commune lookup that
+    # misses must not silently relabel an LSN site as curated (and a curated one must not have a commune).
+    curated_ids = prepared["curated_destination_ids"]
+    is_curated = frame["destination_id"].isin(curated_ids)
+    lookup_missed = frame.loc[~is_curated & frame["site_ags8"].isna(), "destination_id"].tolist()
+    curated_with_commune = frame.loc[is_curated & frame["site_ags8"].notna(), "destination_id"].tolist()
+    if lookup_missed or curated_with_commune:
+        raise ValueError("destination points: LSN site(s) without a commune %s, curated destination(s) with a "
+                         "commune %s" % (lookup_missed[:5], curated_with_commune[:5]))
+    frame["point_source"] = np.where(is_curated, POINT_SOURCE_CURATED, POINT_SOURCE_COMMUNE_CENTRE)
+    n = len(frame)
+    primary = int((frame["point_source"] == POINT_SOURCE_COMMUNE_CENTRE).sum())
+    logger.info("[build_student_balance] destination points: commune centre (primary) %d/%d (%.1f%%), curated "
+                "coordinate (institutions outside the LSN table) %d (%.1f%%)", primary, n, 100.0 * primary / n,
+                n - primary, 100.0 * (n - primary) / n)
+    return frame[POINT_COLUMNS]
+
+
+def _run_points(args) -> int:
+    """Write ONLY ``student_destination_points.csv`` (the other tables stay untouched)."""
+    if not args.final or not args.out_dir:
+        raise ValueError("points needs --final and --out-dir (the eqasim-data root)")
+    prepared = prepare(args)
+    points = destination_points(prepared)
+    extra = ["# Points: x, y in EPSG:25832 (metres), one row per destination_id of student_od_table.csv, the points "
+             "the distances of T are measured to (commune_centre = population-weighted commune centroid of "
+             "site_ags8, curated = WGS84 coordinate of scripts/seed_nds_hochschulen.py projected to EPSG:25832)."]
+    header = [
+        "# Table: %s (issue #140, Phase 4). The point of every destination of student_od_table.csv; a "
+        "construction from the inputs below, not a validation." % POINTS_FILE,
+        "# Generated by scripts/build_student_balance.py points on %s; code state eqasim-bs %s."
+        % (dt.date.today().isoformat(), args.source_commit),
+        "# Inputs:", *_input_lines(prepared["inputs"]),
+        *extra,
+        _diagnostics_line(prepared["diagnostics"]),
+    ]
+    _write(points, Path(args.out_dir) / SCHOOLS_SUBDIR / POINTS_FILE, header)
+    return 0
+
+
 # -------------------------------------------------------------------------------------------- CLI
 def _common_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
@@ -947,6 +1056,10 @@ def _common_parser() -> argparse.ArgumentParser:
                              % SEPARATOR_DISTANCE_LEARNING)
     parser.add_argument("--mover-site-kreise", default=MOVER_SITE_KREISE_DEFAULT,
                         help="site Kreise whose movers may live in Braunschweig (design B3 step 7; ASSUMPTION)")
+    parser.add_argument("--origin-pattern-proxy", default=ORIGIN_PATTERN_PROXY_DEFAULT,
+                        help="'<institution>=<proxy institution>' pairs separated by ';' (LSN names, same commune): an "
+                             "institution without an own CHE list takes the proxy's origin pattern (ASSUMPTION, owner "
+                             "decision of 2026-11-27, ADR-0210); 'none' switches it off. Default: %(default)s")
     parser.add_argument("--che", default=str(CHE_DEFAULT), help="CHE origin table (committed)")
     parser.add_argument("--destination", default=str(SRV_DEFAULTS["destination"]), help="SrV destination reference (committed)")
     parser.add_argument("--srv-share", default=str(SRV_DEFAULTS["srv_share"]), help="SrV student share by Kreis (committed)")
@@ -994,6 +1107,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="write the five committed tables under --out-dir, gate and pre-check to --artifact-dir")
     balance.add_argument("--out-dir", default=None, help="eqasim-data root (with --final)")
     balance.set_defaults(run=_run_balance)
+    points = commands.add_parser("points", parents=[common],
+                                 help="write the destination points of T (student_destination_points.csv only)")
+    points.add_argument("--final", action="store_true", help="write the committed table under --out-dir")
+    points.add_argument("--out-dir", default=None, help="eqasim-data root (with --final)")
+    points.set_defaults(run=_run_points)
     return parser
 
 

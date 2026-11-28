@@ -1,0 +1,433 @@
+{
+  "status": "measurement of the synthesis, not validation (the acceptance rule is the one exception, A17)",
+  "generated_at": "2026-11-28T01:52:51.595022+00:00",
+  "pipeline_commit": "9921a2a0",
+  "parameters": {
+    "sampling_rate": 1.0,
+    "detour_factors": [
+      1.3,
+      1.2,
+      1.4
+    ],
+    "day_absence_enabled": true,
+    "baseline_stream_id": 140012,
+    "random_seed": 1234,
+    "braunschweig.students.flows_report_fallback_warn_share": 0.25
+  },
+  "inputs": {
+    "srv2023_student_parameters.csv": {
+      "path_relative_to_data_path": "braunschweig/srv/srv2023_student_parameters.csv",
+      "sha256": "865f5d697a98e89951608b18203f7c3e57fd9d190a513765458343249919e459"
+    },
+    "srv2023_student_parameters_by_area.csv": {
+      "path_relative_to_data_path": "braunschweig/srv/srv2023_student_parameters_by_area.csv",
+      "sha256": "064a22e6aa2609f3c6d38ad0ce930caeb2a184122dcbb13a941a155606d66cd8"
+    },
+    "srv2023_student_education_distance_by_kreis.csv": {
+      "path_relative_to_data_path": "braunschweig/srv/srv2023_student_education_distance_by_kreis.csv",
+      "sha256": "ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23"
+    },
+    "srv2023_student_education_destination.csv": {
+      "path_relative_to_data_path": "braunschweig/srv/srv2023_student_education_destination.csv",
+      "sha256": "5602294f4b5c4f5907a59a5cdf3e1ec546e57f244bced8efcbcbaa9cc756af56"
+    },
+    "srv2023_education_leg_by_student_status.csv": {
+      "path_relative_to_data_path": "braunschweig/srv/srv2023_education_leg_by_student_status.csv",
+      "sha256": "4c2deec204afd738994f829a61b12793702383df3ac8df88658d4cd6261f66b3"
+    },
+    "braunschweig.students.od_table_path": {
+      "path_relative_to_data_path": "braunschweig/schools/student_od_table.csv",
+      "sha256": "6681f35cda3c7b8678a751484c812f0ace54baca33e2627fc6b43c6fc88267f8"
+    },
+    "braunschweig.students.level_table_path": {
+      "path_relative_to_data_path": "braunschweig/popsim/student_level_table.csv",
+      "sha256": "8ba668f327684334f729b4a0be715b3f8af7ca46b4ba1e50341fe96330a595a6"
+    },
+    "student_balance_by_site.csv": {
+      "path_relative_to_data_path": "braunschweig/schools/student_balance_by_site.csv",
+      "sha256": "99d570dd9fd74205b384d0f91d2c3c7099837d6fe835f22a1f82b357744609b2"
+    },
+    "student_balance_out_commuters.csv": {
+      "path_relative_to_data_path": "braunschweig/schools/student_balance_out_commuters.csv",
+      "sha256": "5e5d8cb997f4928104dc7eb88d30376624def4a848395746e753c3ccb66501a0"
+    },
+    "mid_student_education_distance_mode": {
+      "path_relative_to_data_path": "braunschweig/mid/mid2023_student_education_distance_mode.csv",
+      "sha256": "73e8a2efc0d9b8725f10a789f500394e0ef5bb4b2b4cffb29c08150dfc6b958d"
+    }
+  },
+  "day_factor": {
+    "absence_mode": "cells",
+    "e": 0.37056642240837,
+    "f_eff": 0.3217991017054365,
+    "f_by_kreis": {
+      "03101": 0.338337185193643,
+      "03102": 0.3064789932472553,
+      "03103": 0.32464345390052857,
+      "03151": 0.3064789932472553,
+      "03153": 0.3064789932472553,
+      "03154": 0.3064789932472553,
+      "03157": 0.3064789932472553,
+      "03158": 0.3064789932472553
+    }
+  },
+  "acceptance": {
+    "verdict": "FAIL",
+    "min_persons": 200.0,
+    "max_deviation_share": 0.05,
+    "n_rows": 106,
+    "n_rows_judged": 39,
+    "failing_rows": [
+      {
+        "section": "students_population",
+        "key": "03101",
+        "model": 10180.0,
+        "balance": 12331.269592399998,
+        "deviation_share": -0.17445645610780156
+      },
+      {
+        "section": "students_population",
+        "key": "03102",
+        "model": 2605.0,
+        "balance": 2073.12661552,
+        "deviation_share": 0.25655615074267457
+      },
+      {
+        "section": "students_population",
+        "key": "03103",
+        "model": 2940.0,
+        "balance": 2560.25481651,
+        "deviation_share": 0.14832319855085666
+      },
+      {
+        "section": "students_population",
+        "key": "03151",
+        "model": 2904.0,
+        "balance": 2060.76859628,
+        "deviation_share": 0.40918296466772663
+      },
+      {
+        "section": "students_population",
+        "key": "03153",
+        "model": 2821.0,
+        "balance": 3328.634541,
+        "deviation_share": -0.15250533957611778
+      },
+      {
+        "section": "students_population",
+        "key": "03154",
+        "model": 1492.0,
+        "balance": 1585.9167649,
+        "deviation_share": -0.05921922699765521
+      },
+      {
+        "section": "students_population",
+        "key": "03158",
+        "model": 2067.0,
+        "balance": 2483.53575423,
+        "deviation_share": -0.16771884742168464
+      },
+      {
+        "section": "students_population",
+        "key": "total",
+        "model": 27213.0,
+        "balance": 28678.49158467,
+        "deviation_share": -0.05110072056416568
+      },
+      {
+        "section": "students_of_day",
+        "key": "03101",
+        "model": 3855.0,
+        "balance": 4172.127043756576,
+        "deviation_share": -0.07601087896667587
+      },
+      {
+        "section": "students_of_day",
+        "key": "03102",
+        "model": 806.0,
+        "balance": 635.3697579986593,
+        "deviation_share": 0.2685526653626166
+      },
+      {
+        "section": "students_of_day",
+        "key": "03103",
+        "model": 1014.0,
+        "balance": 831.1699664972705,
+        "deviation_share": 0.21996708359568706
+      },
+      {
+        "section": "students_of_day",
+        "key": "03151",
+        "model": 1007.0,
+        "balance": 631.582284703454,
+        "deviation_share": 0.5944082416320708
+      },
+      {
+        "section": "students_of_day",
+        "key": "03153",
+        "model": 661.0,
+        "balance": 1020.1565630137197,
+        "deviation_share": -0.35206023862916574
+      },
+      {
+        "section": "students_of_day",
+        "key": "03154",
+        "model": 260.0,
+        "balance": 486.0501734804961,
+        "deviation_share": -0.4650758004298231
+      },
+      {
+        "section": "students_of_day",
+        "key": "03157",
+        "model": 726.0,
+        "balance": 691.1055031135772,
+        "deviation_share": 0.050490839284618096
+      },
+      {
+        "section": "students_of_day",
+        "key": "03158",
+        "model": 660.0,
+        "balance": 761.1515376499732,
+        "deviation_share": -0.13289277186810233
+      }
+    ],
+    "population_rows_failing": [
+      {
+        "section": "students_population",
+        "key": "03101",
+        "deviation_share": -0.17445645610780156
+      },
+      {
+        "section": "students_population",
+        "key": "03102",
+        "deviation_share": 0.25655615074267457
+      },
+      {
+        "section": "students_population",
+        "key": "03103",
+        "deviation_share": 0.14832319855085666
+      },
+      {
+        "section": "students_population",
+        "key": "03151",
+        "deviation_share": 0.40918296466772663
+      },
+      {
+        "section": "students_population",
+        "key": "03153",
+        "deviation_share": -0.15250533957611778
+      },
+      {
+        "section": "students_population",
+        "key": "03154",
+        "deviation_share": -0.05921922699765521
+      },
+      {
+        "section": "students_population",
+        "key": "03158",
+        "deviation_share": -0.16771884742168464
+      },
+      {
+        "section": "students_population",
+        "key": "total",
+        "deviation_share": -0.05110072056416568
+      },
+      {
+        "section": "students_of_day",
+        "key": "03101",
+        "deviation_share": -0.07601087896667587
+      },
+      {
+        "section": "students_of_day",
+        "key": "03102",
+        "deviation_share": 0.2685526653626166
+      },
+      {
+        "section": "students_of_day",
+        "key": "03103",
+        "deviation_share": 0.21996708359568706
+      },
+      {
+        "section": "students_of_day",
+        "key": "03151",
+        "deviation_share": 0.5944082416320708
+      },
+      {
+        "section": "students_of_day",
+        "key": "03153",
+        "deviation_share": -0.35206023862916574
+      },
+      {
+        "section": "students_of_day",
+        "key": "03154",
+        "deviation_share": -0.4650758004298231
+      },
+      {
+        "section": "students_of_day",
+        "key": "03157",
+        "deviation_share": 0.050490839284618096
+      },
+      {
+        "section": "students_of_day",
+        "key": "03158",
+        "deviation_share": -0.13289277186810233
+      }
+    ]
+  },
+  "counts": {
+    "n_persons": 1129395,
+    "n_with_education_activity": 199645,
+    "n_residents_of_day_at_a_destination": 8989,
+    "n_incommuter_agents": 827,
+    "n_persons_unreadable_p_taet": 0,
+    "n_adult_students_outside_level_kreise": 0,
+    "n_state_path_mismatch": 0,
+    "n_non_students_at_a_university_building": 0,
+    "dropped_zero_share_destinations": [
+      "TiHo Hannover | 03241001",
+      "Uni L\u00fcneburg | 03355022"
+    ]
+  },
+  "srv_distance_rows": {
+    "min_respondents": 30,
+    "usable": [
+      "03101",
+      "all"
+    ],
+    "reported_only": [
+      "03102",
+      "03103",
+      "03151",
+      "03153",
+      "03154",
+      "03157",
+      "03158"
+    ],
+    "total_row_code": "03ZGB"
+  },
+  "fallback_rates": [
+    {
+      "tag": "student status (Task 5)",
+      "n": 199645,
+      "primary": 199645,
+      "fallback": 0,
+      "fallback_share": 0.0,
+      "warn_share": 0.0,
+      "meaning": "persons with an education activity whose P_TAET is unreadable (design B1 fallback rule)"
+    },
+    {
+      "tag": "absence cells P_TAET (Task 6)",
+      "n": 942846,
+      "primary": 941359,
+      "fallback": 1487,
+      "fallback_share": 0.0015771398510467244,
+      "warn_share": 0.0,
+      "meaning": "adults without a readable P_TAET, drawn at the age-band rate"
+    },
+    {
+      "tag": "university plan rule, present (Task 9)",
+      "n": 8989,
+      "primary": 8748,
+      "fallback": 241,
+      "fallback_share": 0.026810546223161643,
+      "warn_share": 0.25,
+      "meaning": "present students without an observed education leg, placed by the university decay"
+    },
+    {
+      "tag": "university plan rule, absent (Task 9)",
+      "n": 0,
+      "primary": 0,
+      "fallback": 0,
+      "fallback_share": 0.0,
+      "warn_share": 0.25,
+      "meaning": "absent students, same fallback"
+    },
+    {
+      "tag": "legacy decay, Kreis without a row of T (Task 10)",
+      "n": 8989,
+      "primary": 8989,
+      "fallback": 0,
+      "fallback_share": 0.0,
+      "warn_share": 0.0,
+      "meaning": "students of a home Kreis without a row of T (must be 0)"
+    },
+    {
+      "tag": "in-commuter commute length (Task 11)",
+      "n": 827,
+      "primary": 827,
+      "fallback": 0,
+      "fallback_share": 0.0,
+      "warn_share": 0.25,
+      "meaning": "commute length on the distance of T's cell instead of a drawn commune"
+    },
+    {
+      "tag": "in-commuter home rule (Task 11)",
+      "n": 827,
+      "primary": 826,
+      "fallback": 1,
+      "fallback_share": 0.0012091898428053204,
+      "warn_share": 0.25,
+      "meaning": "agents placed at the nearest cordon gate instead of a point in the ring"
+    }
+  ],
+  "home_kreis_vs_vg250": {
+    "n_households": 558179,
+    "n_without_vg250_kreis": 2,
+    "n_different": 61,
+    "top_pairs": [
+      {
+        "home_zone_kreis": "03101",
+        "vg250_kreis": "03158",
+        "n": 15
+      },
+      {
+        "home_zone_kreis": "03154",
+        "vg250_kreis": "03103",
+        "n": 12
+      },
+      {
+        "home_zone_kreis": "03158",
+        "vg250_kreis": "03101",
+        "n": 9
+      },
+      {
+        "home_zone_kreis": "03151",
+        "vg250_kreis": "03101",
+        "n": 6
+      },
+      {
+        "home_zone_kreis": "03157",
+        "vg250_kreis": "03151",
+        "n": 5
+      },
+      {
+        "home_zone_kreis": "03151",
+        "vg250_kreis": "03157",
+        "n": 4
+      },
+      {
+        "home_zone_kreis": "03158",
+        "vg250_kreis": "03153",
+        "n": 4
+      },
+      {
+        "home_zone_kreis": "03102",
+        "vg250_kreis": "03153",
+        "n": 3
+      },
+      {
+        "home_zone_kreis": "03102",
+        "vg250_kreis": "03158",
+        "n": 3
+      }
+    ]
+  },
+  "committed_balance_vs_t": {
+    "n_checked": 27,
+    "n_mismatch": 0,
+    "mismatches": []
+  },
+  "skipped": {
+    "mikrozensus_distance_bands": "no committed Mikrozensus table of the students' education distance: braunschweig/mikrozensus holds the commute distance and mode of the employed only"
+  }
+}

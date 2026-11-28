@@ -7,7 +7,7 @@
 Extracted from the ACTUAL synpp dependency graph (`docs/registry/dag/production.json`,
 `synpp.run(dryrun=True)` over `configs/base_bs.yml` + `configs/overlays/test_100pct.yml`).
 
-Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.students_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 105 stages, 311 dependencies.
+Run targets: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.cordon_validation`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.commute_distance_by_kreis`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.analysis.synthesis.student_flows`, `braunschweig.analysis.synthesis.student_out_commuters`, `braunschweig.analysis.synthesis.students_vs_srv`, `braunschweig.analysis.synthesis.work_participation_by_kreis`, `braunschweig.analysis.verbindungen_validation`, `matsim.output`, `synthesis.output`; 107 stages, 329 dependencies.
 
 ## Model-area flow (condensed)
 
@@ -42,6 +42,7 @@ flowchart LR
     attributes --> work
     behavior --> analysis
     behavior --> cordon
+    behavior --> education
     behavior --> infrastructure
     behavior --> matsim
     behavior --> secondary
@@ -54,6 +55,7 @@ flowchart LR
     cordon --> secondary
     cordon --> validation
     cordon --> work
+    education --> analysis
     education --> behavior
     education --> cordon
     education --> infrastructure
@@ -119,6 +121,8 @@ flowchart LR
 | `braunschweig.analysis.synthesis.commute_distance_by_kreis` | validation | x | -- | -- |
 | `braunschweig.analysis.synthesis.departure_time_vs_srv` | analysis | x | -- | -- |
 | `braunschweig.analysis.synthesis.plan_structure_vs_srv` | analysis | x | -- | -- |
+| `braunschweig.analysis.synthesis.student_flows` | analysis | x | -- | -- |
+| `braunschweig.analysis.synthesis.student_out_commuters` | analysis | x | -- | -- |
 | `braunschweig.analysis.synthesis.students_vs_srv` | analysis | x | -- | -- |
 | `braunschweig.analysis.synthesis.work_participation_by_kreis` | validation | x | -- | -- |
 | `braunschweig.analysis.verbindungen_validation` | validation | x | -- | -- |

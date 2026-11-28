@@ -1069,6 +1069,69 @@ config:
   # Smallest effective donor pool (Kish size) of the commute-distance window a student in-commuter draws its
   # MiD donor from. ASSUMPTION, not calibrated (ADR-0191).
   braunschweig.student_incommuters.donor_min_effective_pool: 300.0
+  # --- Student flows (#140, Phase 4; ADR-0212 day-absence cells, ADR-0213 the flows) ----------------
+  # One block for every key of the student flows. The defaults repeat the code defaults, so a run without
+  # this block behaves the same. Switch off (false) = the behaviour before the flows (byte-identical).
+  # The students' routing, the residents' balanced assignment, the in-commuters from the origin-destination
+  # table T and the two analysis stages (student_flows, student_out_commuters); an OFF run must also remove
+  # those two analysis stages from its run list (they refuse to run with the flows off).
+  braunschweig.students.flows_enabled: true
+  # Rule of the allotment of the residents inside a home Kreis: plan_length or home_distance (ADR-0213);
+  # the default is home_distance (owner decision 2026-11-28, ADR-0213).
+  braunschweig.students.kreis_matching_rule: home_distance
+  # Numerical tolerance of the fit in persons, far below one person (the controlled rounding keeps every
+  # column within one person of its fitted sum); not a modelling parameter.
+  braunschweig.students.fit_tolerance: 0.000001
+  # ASSUMPTION: ample for the matrix of the home Kreise and the destinations; a fit that needs more is
+  # near infeasible and stops the run.
+  braunschweig.students.fit_max_iterations: 1000
+  # ASSUMPTION, not from a table: share of the present persons on the decay fallback of the plan rule
+  # (no observed education leg) above which a WARNING is logged.
+  braunschweig.students.matching_fallback_warn_share: 0.25
+  # ASSUMPTION (design B5): on the real table every home Kreis has a row of T, so any university person of a
+  # Kreis without one means a broken T; the education stage raises above this share (0.0 = on the first one).
+  braunschweig.students.no_row_fallback_max_share: 0.0
+  # ASSUMPTION, not from a table: the reporting radius (km) of the "lives next to a local site" counts of the
+  # allotment diagnostics (education stage report and student_flows analysis); it enters no allotment.
+  braunschweig.students.near_site_radius_km: 2.0
+  # ASSUMPTION: any use of the student-status fallback (no P_TAET) is a defect in the popsim_mid pipeline,
+  # so every share above 0.0 logs a WARNING.
+  braunschweig.students.status_fallback_warn_share: 0.0
+  # ASSUMPTION, not from a table: share of the OSM university buildings left out because their commune
+  # holds no site, above which the rate line is followed by a WARNING.
+  braunschweig.students.university_left_out_warn_share: 0.05
+  # Committed tables the flows read (relative to data_path); the owners are the registry records.
+  braunschweig.students.od_table_path: braunschweig/schools/student_od_table.csv
+  braunschweig.students.site_balance_path: braunschweig/schools/student_balance_by_site.csv
+  braunschweig.students.out_commuter_balance_path: braunschweig/schools/student_balance_out_commuters.csv
+  braunschweig.students.destination_points_path: braunschweig/schools/student_destination_points.csv
+  braunschweig.students.level_table_path: braunschweig/popsim/student_level_table.csv
+  # Acceptance rule of the student_flows analysis stage. ASSUMPTION (design 5a, not from a table): a row
+  # with at least acceptance_min_persons persons must lie within acceptance_max_deviation_share of its balance.
+  braunschweig.students.acceptance_min_persons: 200
+  braunschweig.students.acceptance_max_deviation_share: 0.05
+  # ASSUMPTION: detour factors of the sensitivity runs next to the SrV yardstick of ADR-0210.
+  braunschweig.students.analysis_detour_sensitivity: [1.2, 1.4]
+  # ASSUMPTION (design A14): an SrV distance row with fewer respondents is reported only.
+  braunschweig.students.analysis_min_srv_respondents: 30
+  # ASSUMPTION: warn level of the rate fallbacks reported by the student_flows analysis stage.
+  braunschweig.students.flows_report_fallback_warn_share: 0.25
+  # ASSUMPTION: a higher share of out-commuting students without an education leg in the trips means a
+  # failed id join (student_out_commuters analysis stage).
+  braunschweig.students.out_commuter_no_leg_warn_share: 0.25
+  # Output folder of the student_out_commuters analysis stage, under output_path.
+  student_out_commuters_output_subdir: analysis/student_out_commuters
+  # ASSUMPTION: a distance band of the students' mode table with fewer persons is pooled with a neighbour.
+  braunschweig.student_incommuters.mode_band_min_persons: 30
+  # ASSUMPTION: the table T names only Kreise with a commune in reach, so almost no in-commuter should
+  # fall back to the cell distance of T; above this share a WARNING is logged.
+  braunschweig.student_incommuters.commute_length_fallback_warn_share: 0.05
+  # ADR-0212: day-absence cells (students by home area, other adults by age band). false = the age-band
+  # rates of ADR-0110 for everyone; the flows refuse this setting while the day absence is on.
+  day_absence_student_cells_enabled: true
+  # ASSUMPTION (a guard, not a target): an adult share above this without a readable activity code (P_TAET)
+  # signals a broken column; such adults are drawn at the band's rate of all persons.
+  day_absence_cells_max_unreadable_p_taet_share: 0.05
   # Plan feasibility check on the written population (ADR-0146, #443): the last step of the prepare
   # stage counts plans with an activity end time after the simulated day (MAX_PLAN_TIME_SECONDS = qsim.endTime = 30 h),
   # non-monotonic plans and implausible walk/bicycle/long legs per subpopulation, split into frozen

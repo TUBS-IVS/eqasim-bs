@@ -55,3 +55,8 @@ assessment:
   pending_reason: |
     ADR-0024 documents the design (real schools/Kita/university) but predates the building potentials and the T43 reference; no current judgement on the realised fit exists.
   source: ADR-0024
+notes: |-
+  The ON path of braunschweig.students.flows_enabled (issue #140, Phase 4) changes the routing of the persons
+  with an education activity (by student status, education_adult_min_age no longer decides) and the
+  assignment of the university level; see the feature record student_flows and ADR-0213. This record
+  describes the model as ADR-0024 and ADR-0157 left it, which is what runs with the switch off.

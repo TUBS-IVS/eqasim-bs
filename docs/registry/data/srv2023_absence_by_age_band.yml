@@ -18,7 +18,7 @@ acquisition:
     Regenerate with: python scripts/extract_srv_absence.py --raw <srv2023_raw dir>
     --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha>, which writes this table
     and its sibling srv2023_absence_household_by_size.csv in one run. Reads
-    SrV2023_Personen.csv (HHNR, PNR, V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG) and
+    SrV2023_Personen.csv (HHNR, PNR, V_ALTER, E_ANZ_WEGE, GEWICHT_P_ZENSUS, MITTL_WERKTAG, V_ERW) and
     SrV2023_Haushalte.csv (HHNR, GEWICHT_HH_ZENSUS). The raw microdata is local-only and never
     committed.
   script: scripts/extract_srv_absence.py
@@ -73,6 +73,15 @@ limitations: |
   but are NOT committed to this table and NOT used by the draw (ADR-0110 rejects per-Kreis rates:
   assumption-grade cells under SrV's stratified PSU design, same caveat as every other per-Kreis
   SrV table in this codebase, e.g. srv2023_work_by_employment).
+
+  Non-student columns (issue #140): n_unweighted_non_student, n_absent_unweighted_non_student and
+  p_absent_non_student repeat the three count/share columns for the persons whose V_ERW is readable
+  and not the student code (srv_student_reference.STUDENT_V_ERW, passed into the builder), weighted
+  with the raw GEWICHT_P_ZENSUS (design A24, no post-stratification to the school degree). A person
+  with a missing or negative V_ERW is in no non-student column. The six columns above are
+  unchanged; the values, the count of unreadable codes and the relation of the adult bands to the
+  'other_adults_all' base of srv2023_student_parameters.csv are in the committed header. Read by
+  name by load_absence_reference, which ignores them; the student layer's absence cells use them.
 
   Wolfsburg (03103) is not surveyed by SrV; since this table carries no per-Kreis breakdown at
   all, that only means the 'all' row implicitly excludes Wolfsburg residents, the same caveat

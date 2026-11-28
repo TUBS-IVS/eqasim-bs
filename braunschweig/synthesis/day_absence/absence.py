@@ -25,6 +25,12 @@ Every person gets ``day_absence_state`` in {present, absent_household, absent_in
    equal the SrV rates while the household clustering (56 % of absent persons in fully absent
    households) is reproduced by construction. Pure pandas/numpy; no file I/O apart from the
    reference loader.
+
+With ``cell_rates`` and ``cells`` (issue #140, ADR-0212 amending ADR-0110) the individual stage runs
+per CELL instead of per age band -- adult students by home area, the other adults by age band at the
+non-student rate, the adults of unknown status and the persons under 18 by their band
+(:mod:`braunschweig.synthesis.day_absence.cells`);
+the household stage, the random stream and the gates are unchanged (see :func:`draw_absence`).
 """
 from __future__ import annotations
 
@@ -54,6 +60,11 @@ REASON_PRESENT = "present"
 REASON_DISABLED = "disabled"
 ABSENCE_COLUMNS = ("person_id", "household_id", "day_absence_state", "age_band",
                    "household_size_class", "p_household", "p_individual", "reason")
+#: Issue #140 (ADR-0212): the cell a person is drawn in on the cells path (see
+#: :mod:`braunschweig.synthesis.day_absence.cells`); the frame of that path carries it after
+#: ``ABSENCE_COLUMNS``, which keep their meaning (``age_band`` stays the person's age band).
+CELL_COLUMN = "absence_cell"
+CELL_ABSENCE_COLUMNS = ABSENCE_COLUMNS + (CELL_COLUMN,)
 
 
 def _check_reference_coverage(name: str, values: dict, expected_keys: set, *, allow_nan: bool = False) -> None:
@@ -120,15 +131,37 @@ class AbsenceReference:
                                   set(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1)), allow_nan=True)
 
 
+def read_band_rates(srv_dir: str, columns=("p_absent",)) -> dict[str, dict[str, float]]:
+    """``{column: {band: rate}}`` of ``srv2023_absence_by_age_band.csv``, read BY COLUMN NAME.
+
+    The one reader of that table for the draw: :func:`load_absence_reference` takes ``p_absent`` and
+    the cells path (:func:`braunschweig.synthesis.day_absence.cells.load_cell_reference`) also
+    ``p_absent_non_student``. Raises ``ValueError`` on a missing column, a missing or repeated band
+    of ``AGE_BAND_LABELS`` or a NaN rate; the ``all`` row is ignored.
+    """
+    by_age = pd.read_csv(os.path.join(srv_dir, ABSENCE_BY_AGE_TABLE), comment="#", encoding="utf-8")
+    absent_columns = [column for column in ("band", *columns) if column not in by_age.columns]
+    if absent_columns:
+        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks the column(s) {absent_columns}")
+    bands = by_age[by_age["band"] != ALL_BAND].set_index("band")
+    repeated = sorted(set(bands.index[bands.index.duplicated()]))
+    if repeated:
+        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} repeats band(s) {repeated}")
+    rates = {}
+    for column in columns:
+        values = bands[column]
+        missing = sorted(set(AGE_BAND_LABELS) - set(values.index))
+        if missing or values.isna().any():
+            raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks a rate for band(s) "
+                             f"{missing or values[values.isna()].index.tolist()} in column {column}")
+        rates[column] = {band: float(values[band]) for band in AGE_BAND_LABELS}
+    return rates
+
+
 def load_absence_reference(srv_dir: str) -> AbsenceReference:
     """Read the two committed tables BY COLUMN NAME; raise on a missing band / size class."""
-    by_age = pd.read_csv(os.path.join(srv_dir, ABSENCE_BY_AGE_TABLE), comment="#")
+    p_absent_by_band = read_band_rates(srv_dir, ("p_absent",))["p_absent"]
     by_size = pd.read_csv(os.path.join(srv_dir, ABSENCE_HOUSEHOLD_TABLE), comment="#")
-    bands = by_age[by_age["band"] != ALL_BAND].set_index("band")["p_absent"]
-    missing = sorted(set(AGE_BAND_LABELS) - set(bands.index))
-    if missing or bands.isna().any():
-        raise ValueError(f"{_LOG_TAG} {ABSENCE_BY_AGE_TABLE} lacks a rate for band(s) "
-                         f"{missing or bands[bands.isna()].index.tolist()}")
     sizes = by_size.set_index("size_class")["p_all_absent"]
     expected = list(range(1, HOUSEHOLD_SIZE_CLASS_TOP + 1))
     if sorted(sizes.index.tolist()) != expected or sizes.isna().any():
@@ -146,7 +179,7 @@ def load_absence_reference(srv_dir: str) -> AbsenceReference:
     if sorted(persons_by_size.index.tolist()) != expected:
         raise ValueError(f"{_LOG_TAG} {ABSENCE_HOUSEHOLD_TABLE} must carry a p_absent_person entry "
                          f"for size classes {expected}")
-    return AbsenceReference(p_absent_by_band={b: float(bands[b]) for b in AGE_BAND_LABELS},
+    return AbsenceReference(p_absent_by_band=p_absent_by_band,
                             p_all_absent_by_size={int(k): float(v) for k, v in sizes.items()},
                             p_absent_person_by_size={int(k): float(v) for k, v in persons_by_size.items()})
 
@@ -188,9 +221,35 @@ def _residual_probability_eligible(target_n: float, absent_hh_n: float, n_eligib
     return float(min(max((target_n - absent_hh_n) / n_eligible, 0.0), 1.0))
 
 
+def _person_cells(person_ids: pd.Series, cells: pd.Series, cell_rates: dict) -> np.ndarray:
+    """The cell of every person of ``person_ids`` from ``cells`` (indexed by ``person_id``); raises.
+
+    No fallback: a person without a cell, a cell for a person outside the frame, a duplicated person
+    in ``cells`` or a cell without a rate in ``cell_rates`` raises, as does a rate that is NaN or
+    outside [0, 1] (a missing rate must not become a silent NaN in the residual).
+    """
+    if cells.index.duplicated().any():
+        raise ValueError(f"{_LOG_TAG} cells: {int(cells.index.duplicated().sum())} person_id(s) carry more "
+                         "than one absence cell")
+    mapped = person_ids.map(cells)
+    if mapped.isna().any():
+        raise ValueError(f"{_LOG_TAG} {int(mapped.isna().sum())}/{len(mapped)} persons have no absence cell; "
+                         f"first person_ids {person_ids[mapped.isna()].head(5).tolist()}")
+    extra = ~cells.index.isin(person_ids)
+    if extra.any():
+        raise ValueError(f"{_LOG_TAG} cells: {int(extra.sum())} person_id(s) are not in the persons frame; "
+                         f"first {cells.index[extra][:5].tolist()}")
+    without_rate = sorted(set(mapped) - set(cell_rates))
+    if without_rate:
+        raise ValueError(f"{_LOG_TAG} cell_rates has no rate for the cell(s) {without_rate}")
+    _check_reference_coverage("cell_rates", cell_rates, set(cell_rates))
+    return mapped.astype(object).to_numpy()
+
+
 def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.random.RandomState, *,
                  household_stage: bool = True, individual_stage_min_household_size: int = 1,
-                 escort_protected_person_ids=None) -> tuple[pd.DataFrame, dict]:
+                 escort_protected_person_ids=None, cell_rates: dict | None = None,
+                 cells: pd.Series | None = None) -> tuple[pd.DataFrame, dict]:
     """Two-stage seeded draw over ``persons`` (``person_id``, ``household_id``, ``age``).
 
     Row order of ``persons`` does not matter (sorted internally); the draw sequence is
@@ -228,7 +287,24 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     when a person is both a single and an escorter. The same definition applies per band, in
     ``by_band[a]["n_escort_protected"]``. A non-empty protection set that matches NO person in the
     frame WARNS (an empty join is a defect signal, not a result -- CLAUDE.md "no silent fallbacks").
+
+    ``cell_rates`` and ``cells`` (issue #140, ADR-0212 amending ADR-0110; both ``None`` by default =
+    the draw above, byte-identical) replace the age bands of the individual stage by CELLS:
+    ``cells`` gives every person a cell (``Series`` indexed by ``person_id``, built by
+    :func:`braunschweig.synthesis.day_absence.cells.assign_cells`) and ``cell_rates`` the person-level
+    rate of each cell. Everything else is unchanged: the household stage, the two uniform draw
+    vectors in the same order for all persons, the eligibility gates, the formula selection (the
+    legacy expression at minimum household size 1 without protection, the eligible-pool expression
+    otherwise) and the overshoot and unreachable warnings, now per cell. A cell drawn at the rate of
+    a band over the same persons therefore gives the band draw bit for bit. The frame gains the
+    column :data:`CELL_COLUMN`; the diagnostics gain ``by_cell`` (the keys of a ``by_band`` entry)
+    and count ``n_cells_overshoot`` / ``n_cells_unreachable`` in place of the band counts.
+    ``by_band`` stays as a REPORT: its ``reference_rate`` is the band's SrV rate of all persons, which
+    the cells path does not target, and its ``residual_p`` is the residual of the cell named like the
+    band when it holds the whole band (the bands under 18), NaN for a band drawn in several cells.
     """
+    if (cell_rates is None) != (cells is None):
+        raise ValueError(f"{_LOG_TAG} cell_rates and cells must be given together (both or neither)")
     missing = [c for c in ("person_id", "household_id", "age") if c not in persons.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} persons frame is missing {missing}")
@@ -276,16 +352,26 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     # Present persons the escort gate ALONE removes (the size gate had not already removed them).
     is_escort_removed = is_present & size_ok & is_escort_protected
 
-    residual_by_band, by_band, n_overshoot, n_unreachable = {}, {}, 0, 0
-    for label in AGE_BAND_LABELS:
-        in_band = (p["age_band"] == label).to_numpy()
-        n_band = int(in_band.sum())
-        target = reference.p_absent_by_band[label]
-        absent_hh_n = int(is_hh_absent[in_band].sum())
-        realised_hh = float(absent_hh_n / n_band) if n_band else 0.0
-        n_eligible = int(is_eligible[in_band].sum())
-        n_escort_removed = int(is_escort_removed[in_band].sum())
-        target_n = target * n_band
+    # The units the individual residual is computed for: the age bands, or the cells (issue #140).
+    # The loop body is the same for both, so a cell holding exactly the persons of a band at the
+    # band's rate yields the band's residual bit for bit.
+    if cells is None:
+        unit_noun, unit_column = "band", "age_band"
+        unit_targets = {label: reference.p_absent_by_band[label] for label in AGE_BAND_LABELS}
+    else:
+        p[CELL_COLUMN] = _person_cells(p["person_id"], cells, cell_rates)
+        unit_noun, unit_column = "cell", CELL_COLUMN
+        unit_targets = {label: float(rate) for label, rate in cell_rates.items()}
+
+    residual_by_unit, by_unit, n_overshoot, n_unreachable = {}, {}, 0, 0
+    for label, target in unit_targets.items():
+        in_unit = (p[unit_column] == label).to_numpy()
+        n_unit = int(in_unit.sum())
+        absent_hh_n = int(is_hh_absent[in_unit].sum())
+        realised_hh = float(absent_hh_n / n_unit) if n_unit else 0.0
+        n_eligible = int(is_eligible[in_unit].sum())
+        n_escort_removed = int(is_escort_removed[in_unit].sum())
+        target_n = target * n_unit
         # An overshoot is realised_hh > target, checked directly rather than only via a negative
         # residual: at realised_hh == 1.0 (a band fully absorbed by the household stage) the
         # residual formula below is bypassed by the division-by-zero guard, so a residual-only
@@ -302,8 +388,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
             residual = _residual_probability_eligible(target_n, absent_hh_n, n_eligible)
         if overshoot:
             n_overshoot += 1
-            logger.warning("%s band %s: household stage realised %.2f%% > reference %.2f%% (overshoot); "
-                           "residual set to 0", _LOG_TAG, label, 100 * realised_hh, 100 * target)
+            logger.warning("%s %s %s: household stage realised %.2f%% > reference %.2f%% (overshoot); "
+                           "residual set to 0", _LOG_TAG, unit_noun, label, 100 * realised_hh, 100 * target)
         # Generalised unreachable-target check (final-review fix wave, Important finding 1): the
         # original condition only fired at n_eligible == 0, but a PARTIALLY filled eligible pool
         # under-shoots exactly the same way -- e.g. 1,000 singles + 10 couples at a 10% band rate
@@ -320,14 +406,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         shortfall = target_n - absent_hh_n - n_eligible
         if shortfall > 0:
             n_unreachable += 1
-            logger.warning("%s band %s cannot reach its target: target_n=%.2f, absent_hh_n=%d, "
-                           "n_eligible=%d (shortfall %.2f persons)", _LOG_TAG, label, target_n,
+            logger.warning("%s %s %s cannot reach its target: target_n=%.2f, absent_hh_n=%d, "
+                           "n_eligible=%d (shortfall %.2f persons)", _LOG_TAG, unit_noun, label, target_n,
                            absent_hh_n, n_eligible, shortfall)
-        residual_by_band[label] = residual
-        by_band[label] = {"n": n_band, "reference_rate": target, "realised_household_rate": realised_hh,
+        residual_by_unit[label] = residual
+        by_unit[label] = {"n": n_unit, "reference_rate": target, "realised_household_rate": realised_hh,
                           "residual_p": residual, "n_eligible_present": n_eligible,
                           "n_escort_protected": n_escort_removed}
-    p["p_individual"] = p["age_band"].map(residual_by_band).astype(float)
+    p["p_individual"] = p[unit_column].map(residual_by_unit).astype(float)
     u_ind = rng.random_sample(len(p))  # drawn for ALL persons, exactly as before; eligibility is a mask
     is_ind_absent = is_eligible & (u_ind < p["p_individual"].to_numpy())
 
@@ -339,12 +425,14 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
     reason[is_ind_absent] = REASON_INDIVIDUAL
     p["day_absence_state"] = state
     p["reason"] = reason
-    out = p[list(ABSENCE_COLUMNS)]
+    out = p[list(ABSENCE_COLUMNS) if cells is None else list(CELL_ABSENCE_COLUMNS)]
 
     absent = out["day_absence_state"] != STATE_PRESENT
-    for label in AGE_BAND_LABELS:
-        in_band = out["age_band"] == label
-        by_band[label]["realised_rate"] = float(absent[in_band].mean()) if in_band.any() else float("nan")
+    for label in by_unit:
+        in_unit = out[unit_column] == label
+        by_unit[label]["realised_rate"] = float(absent[in_unit].mean()) if in_unit.any() else float("nan")
+    by_band = by_unit if cells is None else _band_report(out, reference, absent, is_hh_absent, is_eligible,
+                                                         is_escort_removed, residual_by_unit)
     n_abs = int(absent.sum())
     # Vectorised over households (a per-household Python-level lambda does not scale to a full
     # population): a household is fully absent iff every member's `absent` flag is True.
@@ -383,7 +471,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                    "n_absent_household": int(is_hh_absent.sum()), "n_absent_individual": int(is_ind_absent.sum()),
                    "n_absent_total": n_abs, "share_absent_total": float(n_abs / max(len(out), 1)),
                    "share_absent_in_fully_absent_households": share_clustered,
-                   "n_bands_overshoot": n_overshoot, "n_bands_unreachable": n_unreachable,
+                   **({"n_bands_overshoot": n_overshoot, "n_bands_unreachable": n_unreachable} if cells is None
+                      else {"n_cells_overshoot": n_overshoot, "n_cells_unreachable": n_unreachable}),
                    "household_stage": bool(household_stage),
                    "individual_stage_min_household_size": int(individual_stage_min_household_size),
                    "n_persons_ineligible_individual_stage": n_persons_ineligible_individual_stage,
@@ -398,4 +487,35 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
                 {b: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}% "
                     f"(n_eligible={v['n_eligible_present']})" for b, v in by_band.items()},
                 {sc: f"{100 * v['realised_rate']:.2f}% (n={v['n']})" for sc, v in by_size_class.items()})
+    if cells is not None:
+        diagnostics["by_cell"] = by_unit
+        logger.info("%s cells path: the rates above per band are REPORTED, not targeted; drawn per cell %s",
+                    _LOG_TAG, {c: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}% "
+                                  f"(n={v['n']}, n_eligible={v['n_eligible_present']}, "
+                                  f"residual_p={v['residual_p']:.6f})" for c, v in by_unit.items()})
     return out, diagnostics
+
+
+def _band_report(out: pd.DataFrame, reference: AbsenceReference, absent: pd.Series, is_hh_absent: np.ndarray,
+                 is_eligible: np.ndarray, is_escort_removed: np.ndarray, residual_by_cell: dict) -> dict:
+    """``by_band`` of the cells path: the entries of the band path, as a report (issue #140).
+
+    ``reference_rate`` is the band's SrV rate of all persons (``reference.p_absent_by_band``), which
+    the cells path does not target; ``residual_p`` is the residual of the cell named like the band when
+    that cell holds every person of the band (the bands under 18 are their own cells), NaN for a band
+    whose persons were drawn in several cells (an adult band: students, non-students and adults of
+    unknown status).
+    """
+    by_band = {}
+    for label in AGE_BAND_LABELS:
+        in_band = (out["age_band"] == label).to_numpy()
+        n_band = int(in_band.sum())
+        absent_hh_n = int(is_hh_absent[in_band].sum())
+        one_cell = label in residual_by_cell and bool((out[CELL_COLUMN].to_numpy()[in_band] == label).all())
+        by_band[label] = {"n": n_band, "reference_rate": reference.p_absent_by_band[label],
+                          "realised_household_rate": float(absent_hh_n / n_band) if n_band else 0.0,
+                          "residual_p": float(residual_by_cell[label]) if one_cell else float("nan"),
+                          "n_eligible_present": int(is_eligible[in_band].sum()),
+                          "n_escort_protected": int(is_escort_removed[in_band].sum()),
+                          "realised_rate": float(absent[in_band].mean()) if n_band else float("nan")}
+    return by_band

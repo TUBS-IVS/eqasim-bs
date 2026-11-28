@@ -178,6 +178,14 @@
   ],
   [
    "braunschweig.data.schools.university_facilities",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "braunschweig.data.schools.university_facilities",
+   "braunschweig.analysis.synthesis.student_out_commuters"
+  ],
+  [
+   "braunschweig.data.schools.university_facilities",
    "braunschweig.synthesis.locations.education_gravity"
   ],
   [
@@ -354,6 +362,10 @@
   ],
   [
    "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
    "braunschweig.analysis.synthesis.students_vs_srv"
   ],
   [
@@ -363,6 +375,10 @@
   [
    "braunschweig.synthesis.day_absence.absence_stage",
    "braunschweig.synthesis.commute_day.trips_day_stage"
+  ],
+  [
+   "braunschweig.synthesis.day_absence.absence_stage",
+   "braunschweig.synthesis.locations.education_gravity"
   ],
   [
    "braunschweig.synthesis.day_absence.absence_stage",
@@ -394,6 +410,14 @@
   ],
   [
    "braunschweig.synthesis.locations.education_gravity",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "braunschweig.synthesis.locations.education_gravity",
+   "braunschweig.analysis.synthesis.student_out_commuters"
+  ],
+  [
+   "braunschweig.synthesis.locations.education_gravity",
    "synthesis.population.spatial.primary.locations"
   ],
   [
@@ -419,6 +443,10 @@
   [
    "braunschweig.synthesis.student_incommuters",
    "braunschweig.analysis.simwrapper_export"
+  ],
+  [
+   "braunschweig.synthesis.student_incommuters",
+   "braunschweig.analysis.synthesis.student_flows"
   ],
   [
    "braunschweig.synthesis.student_incommuters",
@@ -511,6 +539,10 @@
   [
    "data.spatial.municipalities",
    "braunschweig.data.building_potentials"
+  ],
+  [
+   "data.spatial.municipalities",
+   "braunschweig.data.schools.university_facilities"
   ],
   [
    "data.spatial.municipalities",
@@ -934,6 +966,14 @@
   ],
   [
    "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "synthesis.population.enriched",
+   "braunschweig.analysis.synthesis.student_out_commuters"
+  ],
+  [
+   "synthesis.population.enriched",
    "braunschweig.analysis.synthesis.students_vs_srv"
   ],
   [
@@ -1046,6 +1086,14 @@
   ],
   [
    "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
+   "braunschweig.analysis.synthesis.student_out_commuters"
+  ],
+  [
+   "synthesis.population.spatial.home.locations",
    "braunschweig.analysis.synthesis.students_vs_srv"
   ],
   [
@@ -1091,6 +1139,22 @@
   [
    "synthesis.population.spatial.home.locations",
    "synthesis.population.spatial.secondary.locations"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
+   "braunschweig.analysis.synthesis.student_out_commuters"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
+   "braunschweig.synthesis.day_absence.absence_stage"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
+   "braunschweig.synthesis.locations.education_gravity"
   ],
   [
    "synthesis.population.spatial.home.zones",
@@ -1150,10 +1214,6 @@
   ],
   [
    "synthesis.population.spatial.primary.locations",
-   "braunschweig.synthesis.student_incommuters"
-  ],
-  [
-   "synthesis.population.spatial.primary.locations",
    "matsim.scenario.facilities"
   ],
   [
@@ -1182,6 +1242,10 @@
   ],
   [
    "synthesis.population.trips",
+   "braunschweig.analysis.synthesis.student_flows"
+  ],
+  [
+   "synthesis.population.trips",
    "braunschweig.synthesis.commute_day.state_stage"
   ],
   [
@@ -1191,6 +1255,10 @@
   [
    "synthesis.population.trips",
    "braunschweig.synthesis.day_absence.absence_stage"
+  ],
+  [
+   "synthesis.population.trips",
+   "braunschweig.synthesis.locations.education_gravity"
   ],
   [
    "synthesis.population.trips",
@@ -1219,6 +1287,10 @@
   [
    "synthesis.population.trips.final",
    "synthesis.population.trips.simulated"
+  ],
+  [
+   "synthesis.population.trips.simulated",
+   "braunschweig.analysis.synthesis.student_out_commuters"
   ],
   [
    "synthesis.population.trips.simulated",
@@ -1257,6 +1329,8 @@
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
+  "braunschweig.analysis.synthesis.student_flows",
+  "braunschweig.analysis.synthesis.student_out_commuters",
   "braunschweig.analysis.synthesis.students_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",
@@ -1363,6 +1437,8 @@
   "braunschweig.analysis.synthesis.commute_distance_by_kreis",
   "braunschweig.analysis.synthesis.departure_time_vs_srv",
   "braunschweig.analysis.synthesis.plan_structure_vs_srv",
+  "braunschweig.analysis.synthesis.student_flows",
+  "braunschweig.analysis.synthesis.student_out_commuters",
   "braunschweig.analysis.synthesis.students_vs_srv",
   "braunschweig.analysis.synthesis.work_participation_by_kreis",
   "braunschweig.analysis.verbindungen_validation",

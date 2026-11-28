@@ -50,6 +50,11 @@ and is wired into the reporting-day view by
 :mod:`braunschweig.synthesis.commute_day.trips_day_stage`. Flags in ``configs/base_bs.yml``:
 ``day_absence_enabled``, ``day_absence_household_stage_enabled``,
 ``day_absence_individual_stage_min_household_size``, ``day_absence_escort_protection_enabled``.
+Student cells (issue #140, ADR-0212 amending ADR-0110; ``day_absence_student_cells_enabled``, default
+ON): the individual stage runs per cell of :mod:`cells` instead of per age band -- adult students by
+home area, the other adults by age band at the non-student rate, the adults of unknown status and the
+persons under 18 by band; the
+stage then also reads ``synthesis.population.spatial.home.zones``.
 With the feature disabled every person stays ``present`` (``reason = "disabled"``), no reference
 file is read, no trips are read, and the reporting-day view is byte-identical to a pipeline
 without this package.

@@ -13,6 +13,15 @@ persons carrying an escort leg (:func:`braunschweig.synthesis.escort_duty.escort
 the draw as ineligible for the individual stage. The input is declared ONLY when the flag is on
 (the conditional-declaration pattern of :mod:`braunschweig.matsim.scenario.population`), so the
 OFF path has exactly the inputs it had before and no new DAG edge.
+
+Student cells (issue #140, ADR-0212 amending ADR-0110): with ``day_absence_student_cells_enabled``
+(default ON) the individual stage runs per cell of :mod:`braunschweig.synthesis.day_absence.cells`
+-- adult students by home area, the other adults by age band at the non-student rate, the adults of
+unknown status (no readable P_TAET) and the persons under 18 by band. The stage then ALSO declares
+``synthesis.population.spatial.home.zones`` (the home Kreis of each household) and the home-area key
+of Phase 3, and requires ``P_TAET`` in the enriched
+persons. The deviation guard and the log line run per cell. OFF: the band draw, byte-identical to
+the code before the switch, with the inputs it had before.
 """
 from __future__ import annotations
 
@@ -25,8 +34,10 @@ import pandas as pd
 
 from braunschweig import synpp_tokens
 from braunschweig.calibration import srv_absence
+from braunschweig.data.education import student_flows_inputs as flows_inputs
 from braunschweig.synthesis import escort_duty
 from braunschweig.synthesis.day_absence import absence as _absence
+from braunschweig.synthesis.day_absence import cells
 from braunschweig.synthesis.day_absence.absence import (ABSENCE_COLUMNS, DAY_ABSENCE_SEED_OFFSET,
                                                           REASON_DISABLED, STATE_PRESENT, draw_absence,
                                                           load_absence_reference)
@@ -42,8 +53,21 @@ STAGE_NAME = "braunschweig.synthesis.day_absence.absence_stage"
 #: :func:`household_size_class`) -- an edit there changes what a person is drawn AGAINST just as
 #: much as an edit to :mod:`absence` changes HOW they are drawn, so both must devalidate the cache.
 #: :mod:`braunschweig.synthesis.escort_duty` (issue #425) decides WHO is escort-protected, so an
-#: edit to the escort-leg definition must devalidate the cache too.
-_HELPER_MODULES = (_absence, srv_absence, escort_duty)
+#: edit to the escort-leg definition must devalidate the cache too. The cells path (issue #140) adds
+#: :mod:`cells` and the leaf :mod:`braunschweig.data.education.student_flows_inputs`; they enter the
+#: token only when the cells are ON (:data:`_CELLS_ONLY_HELPER_MODULES`), so the OFF token holds the
+#: modules of the code before the switch (Ruling 10 of the Phase 4 plan).
+_HELPER_MODULES = (
+    _absence,
+    srv_absence,
+    escort_duty,
+    cells,
+    flows_inputs,
+)
+_CELLS_ONLY_HELPER_MODULES = (
+    cells,
+    flows_inputs,
+)
 
 #: Hashed by dotted NAME: the rest of this stage's import closure, i.e. the modules its helpers
 #: import, whose code this stage runs without importing it itself. The gate in
@@ -52,10 +76,17 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.calibration.srv_distance_targets",
     "braunschweig.calibration.srv_plan_structure",
     "braunschweig.gravity.friction",
+    "braunschweig.data.csv_header",
+)
+#: Imported only through :mod:`braunschweig.data.education.student_flows_inputs` (cells path).
+_CELLS_ONLY_DEFERRED_HELPER_MODULE_NAMES = (
+    "braunschweig.data.csv_header",
 )
 
 #: Pre-assignment trips, declared as an input ONLY when escort protection is on.
 TRIPS_STAGE = "synthesis.population.trips"
+#: One row per household with its home zone; the home Kreis of the student cells (cells path only).
+HOME_ZONES_STAGE = "synthesis.population.spatial.home.zones"
 
 KEY_ENABLED = "day_absence_enabled"
 DEFAULT_ENABLED = True
@@ -75,8 +106,31 @@ DEFAULT_MAX_BAND_DEVIATION_PP = 1.0
 #: behaviour when this stage is bypassed (e.g. a direct absence.draw_absence() call in a test).
 KEY_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = "day_absence_individual_stage_min_household_size"
 DEFAULT_INDIVIDUAL_STAGE_MIN_HOUSEHOLD_SIZE = 2
-#: Bands with fewer persons than this are not judged against the deviation guard (sampling noise).
+#: Issue #140 / ADR-0212: the individual stage per cell (students by home area, other adults by age
+#: band at the non-student rate, adults of unknown status and persons under 18 by band) instead of per
+#: age band. Default ON.
+KEY_STUDENT_CELLS = "day_absence_student_cells_enabled"
+DEFAULT_STUDENT_CELLS = True
+#: Share of the adults without a readable P_TAET above which the cells path WARNS (the fallback of
+#: :func:`braunschweig.synthesis.day_absence.cells.assign_cells`); ASSUMPTION, see
+#: :data:`braunschweig.synthesis.day_absence.cells.DEFAULT_MAX_UNREADABLE_P_TAET_SHARE`.
+KEY_MAX_UNREADABLE_P_TAET_SHARE = "day_absence_cells_max_unreadable_p_taet_share"
+DEFAULT_MAX_UNREADABLE_P_TAET_SHARE = cells.DEFAULT_MAX_UNREADABLE_P_TAET_SHARE
+#: Bands (on the cells path: cells) with fewer persons than this are not judged against the
+#: deviation guard (sampling noise).
 MIN_PERSONS_FOR_BAND_GUARD = 1000
+#: The SrV tables every ON run reads (:func:`~braunschweig.synthesis.day_absence.absence.load_absence_reference`);
+#: their digests enter the ON token on both paths.
+_BAND_TABLES = (
+    srv_absence.ABSENCE_BY_AGE_TABLE,
+    srv_absence.ABSENCE_HOUSEHOLD_TABLE,
+)
+#: The SrV tables the cells path reads in addition; their digests enter the token with the cells ON.
+_CELLS_TABLES = (
+    srv_absence.ABSENCE_BY_AGE_TABLE,
+    flows_inputs.PARAMETERS_TABLE,
+    flows_inputs.PARAMETERS_BY_AREA_TABLE,
+)
 #: Subdirectory of ``data_path`` holding the committed SrV reference tables.
 SRV_SUBDIR = ("braunschweig", "srv")
 
@@ -90,11 +144,35 @@ def validate(context):
     here (same mechanism as ``braunschweig.synthesis.commute_day.state_stage.validate``).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it).
+    digest per helper module (docstrings, comments and formatting do not change it). With the stage
+    ON the token is ``{"helpers": ..., "srv_files": ...}``: the CRLF-neutral digests of every SrV
+    table the draw reads (:data:`_BAND_TABLES` on both paths, plus :data:`_CELLS_TABLES` with the
+    student cells ON), so a rebuilt table devalidates the stage; a missing table stops the run at DAG
+    time. With the cells ON the cells helpers also join the modules; with the cells OFF the modules
+    are those of the code before the switch. With the stage OFF no file is read and the token is the
+    module token alone.
     """
-    return synpp_tokens.source_token(
-        _HELPER_MODULES, _DEFERRED_HELPER_MODULE_NAMES,
-        stage_label=__name__ + ".validate()")
+    cells_on = _cells_on(context)
+    helper_modules = _HELPER_MODULES if cells_on else tuple(
+        module for module in _HELPER_MODULES if module not in _CELLS_ONLY_HELPER_MODULES)
+    deferred_names = _DEFERRED_HELPER_MODULE_NAMES if cells_on else tuple(
+        name for name in _DEFERRED_HELPER_MODULE_NAMES if name not in _CELLS_ONLY_DEFERRED_HELPER_MODULE_NAMES)
+    helpers = synpp_tokens.source_token(helper_modules, deferred_names, stage_label=__name__ + ".validate()")
+    if not context.config(KEY_ENABLED):
+        return helpers
+    srv_dir = os.path.join(str(context.config("data_path")), *SRV_SUBDIR)
+    files = {}
+    for name in dict.fromkeys((*_BAND_TABLES, *(_CELLS_TABLES if cells_on else ()))):
+        path = os.path.join(srv_dir, name)
+        if not os.path.isfile(path):
+            raise RuntimeError(f"{_LOG_TAG} {KEY_ENABLED} is true but the SrV table {name} is missing: {path}")
+        files[name] = synpp_tokens.text_file_sha256(path)
+    return {"helpers": helpers, "srv_files": files}
+
+
+def _cells_on(context) -> bool:
+    """The cells path runs only when the stage itself and the cells switch are both on."""
+    return bool(context.config(KEY_ENABLED)) and bool(context.config(KEY_STUDENT_CELLS))
 
 
 def configure(context):
@@ -112,6 +190,13 @@ def configure(context):
     # false execute returns before ever touching the trips, and the edge would be dead weight.
     if context.config(KEY_ENABLED) and context.config(KEY_ESCORT_PROTECTION):
         context.stage(TRIPS_STAGE)
+    # Issue #140: the home zones, the home areas and the fallback bound only on the cells path, so
+    # the OFF path keeps its inputs (plus the switch itself) and gains no DAG edge.
+    context.config(KEY_STUDENT_CELLS, DEFAULT_STUDENT_CELLS)
+    if _cells_on(context):
+        context.stage(HOME_ZONES_STAGE)
+        context.config(flows_inputs.KEY_HOME_AREA_KREISE, flows_inputs.default_home_area_kreise())
+        context.config(KEY_MAX_UNREADABLE_P_TAET_SHARE, DEFAULT_MAX_UNREADABLE_P_TAET_SHARE)
 
 
 def _disabled_frame(persons):
@@ -184,6 +269,16 @@ def execute(context):
     escort set next to a NON-EMPTY trips table WARNS -- that combination is the "escort purpose is
     off in the synthetic trips" defect class ``commute_day.state_stage`` warns about, not a
     population that escorts nobody.
+
+    Student cells (issue #140, ADR-0212; ``day_absence_student_cells_enabled``): the frame gains
+    ``absence_cell``; the diagnostics carry ``by_cell`` and ``n_cells_overshoot`` /
+    ``n_cells_unreachable`` in place of the two band counts (``by_band`` stays as a report, see
+    :func:`~braunschweig.synthesis.day_absence.absence.draw_absence`), ``n_cell_guard_hits`` in place
+    of ``n_band_guard_hits``, ``student_cells`` (True), ``area_of_kreis`` (the home area of each
+    Kreis) and the fallback count ``n_adults`` / ``n_adults_unreadable_p_taet`` /
+    ``share_adults_unreadable_p_taet`` (adults of unknown status, drawn in ``<band>`` at the band's
+    rate of all persons). A population without ``P_TAET`` is refused naming the key, and a household
+    without a home zone raises (a broken join, no fallback).
     """
     persons = context.stage("synthesis.population.enriched")
     for column in ("person_id", "household_id", "age"):
@@ -192,6 +287,11 @@ def execute(context):
     if not bool(context.config(KEY_ENABLED)):
         logger.info("%s %s is false -- every one of the %d persons is present.", _LOG_TAG, KEY_ENABLED, len(persons))
         return {"absence": _disabled_frame(persons), "diagnostics": {"enabled": False}}
+    student_cells = bool(context.config(KEY_STUDENT_CELLS))
+    if student_cells and "P_TAET" not in persons.columns:
+        raise ValueError(f"{_LOG_TAG} {KEY_STUDENT_CELLS} is true but synthesis.population.enriched has no "
+                         "'P_TAET' column: the student cells need the activity code of the popsim_mid "
+                         f"pipeline. Set {KEY_STUDENT_CELLS}: false to draw by age band.")
     random_seed = int(context.config("random_seed"))
     household_stage = bool(context.config(KEY_HOUSEHOLD_STAGE))
     max_dev_pp = float(context.config(KEY_MAX_BAND_DEVIATION_PP))
@@ -213,26 +313,34 @@ def execute(context):
                            "rows -- this almost always means the escort purpose is OFF in the synthetic "
                            "trips, not that nobody escorts; the gate is inert in this run.", _LOG_TAG,
                            KEY_ESCORT_PROTECTION, escort_duty.ESCORT_PURPOSE, len(trips))
+    cell_rates = person_cells = area_of_kreis = None
+    if student_cells:
+        area_of_kreis, cell_rates, person_cells = _student_cells(context, persons)
     rng = np.random.RandomState(random_seed + DAY_ABSENCE_SEED_OFFSET)
     absence, diagnostics = draw_absence(persons, reference, rng, household_stage=household_stage,
                                         individual_stage_min_household_size=individual_stage_min_household_size,
-                                        escort_protected_person_ids=escort_protected_person_ids)
+                                        escort_protected_person_ids=escort_protected_person_ids,
+                                        cell_rates=cell_rates, cells=person_cells)
     assert len(absence) == len(persons) and not absence["person_id"].duplicated().any(), (
         f"{_LOG_TAG} the absence frame must carry exactly one row per person")
+    # The deviation guard runs over the units the draw targets: the cells, or the age bands.
+    unit_noun, by_unit = ("cell", diagnostics["by_cell"]) if student_cells else ("band", diagnostics["by_band"])
     n_guard_hits = 0
-    for band, cell in diagnostics["by_band"].items():
+    for band, cell in by_unit.items():
         # Compact per-band line (final-review fix wave, MINOR finding 5): includes
         # n_eligible_present so the individual-stage eligibility gate's effect on each band is
         # visible even when the deviation guard below does not fire.
-        logger.info("%s band %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d)", _LOG_TAG,
-                   band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
-                   cell["n_eligible_present"])
+        # The residual probability of the individual stage joins the line (it is NaN for a band drawn
+        # in several cells, whose band entry is a report only).
+        logger.info("%s %s %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d, residual_p=%.6f)", _LOG_TAG,
+                    unit_noun, band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
+                    cell["n_eligible_present"], cell["residual_p"])
         if cell["n"] >= MIN_PERSONS_FOR_BAND_GUARD:
             deviation_pp = 100.0 * (cell["realised_rate"] - cell["reference_rate"])
             if abs(deviation_pp) > max_dev_pp:
                 n_guard_hits += 1
-                logger.warning("%s band %s realised %.2f%% vs reference %.2f%% (%.2f pp, n=%d) exceeds %s=%.2f pp",
-                               _LOG_TAG, band, 100 * cell["realised_rate"], 100 * cell["reference_rate"],
+                logger.warning("%s %s %s realised %.2f%% vs reference %.2f%% (%.2f pp, n=%d) exceeds %s=%.2f pp",
+                               _LOG_TAG, unit_noun, band, 100 * cell["realised_rate"], 100 * cell["reference_rate"],
                                deviation_pp, cell["n"], KEY_MAX_BAND_DEVIATION_PP, max_dev_pp)
     # Fallback-transparency logging for the individual-stage eligibility gate (issue #388, CLAUDE.md
     # "no silent fallbacks"): a per-size-class realised-vs-SrV comparison and the ineligible share.
@@ -269,5 +377,41 @@ def execute(context):
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
     diagnostics["escort_protection"] = escort_protection
-    diagnostics["n_band_guard_hits"] = n_guard_hits
+    if student_cells:
+        n_adults, n_unknown_status = cells.count_adults(person_cells)
+        diagnostics["student_cells"] = True
+        diagnostics["area_of_kreis"] = dict(area_of_kreis)
+        diagnostics["n_cell_guard_hits"] = n_guard_hits
+        # The fallback of assign_cells (adults without a readable P_TAET, drawn at their band's rate).
+        diagnostics["n_adults"] = n_adults
+        diagnostics["n_adults_unreadable_p_taet"] = n_unknown_status
+        diagnostics["share_adults_unreadable_p_taet"] = n_unknown_status / n_adults if n_adults else float("nan")
+    else:
+        diagnostics["n_band_guard_hits"] = n_guard_hits
     return {"absence": absence, "diagnostics": diagnostics}
+
+
+def _student_cells(context, persons):
+    """``(area_of_kreis, cell_rates, cells)`` of the cells path (issue #140, ADR-0212).
+
+    The home Kreis of every person is the Kreis of the household's home zone
+    (:func:`braunschweig.data.education.student_flows_inputs.home_kreis_by_household`, which raises
+    on a household outside the region); a person whose household has no home zone raises -- a broken
+    ``household_id`` join, not a person without a Kreis.
+    """
+    area_of_kreis = flows_inputs.area_by_kreis(context.config(flows_inputs.KEY_HOME_AREA_KREISE),
+                                               flows_inputs.ZGB_KREISE)
+    home_kreis = flows_inputs.home_kreis_by_household(context.stage(HOME_ZONES_STAGE))
+    kreis = persons["household_id"].map(home_kreis)
+    n_without = int(kreis.isna().sum())
+    if n_without:
+        raise ValueError(f"{_LOG_TAG} {n_without}/{len(persons)} persons live in a household without a home zone "
+                         f"in {HOME_ZONES_STAGE}; first household_ids "
+                         f"{persons.loc[kreis.isna(), 'household_id'].unique()[:5].tolist()}")
+    srv_dir = os.path.join(str(context.config("data_path")), *SRV_SUBDIR)
+    cell_rates = cells.load_cell_reference(srv_dir, area_of_kreis)
+    person_cells = cells.assign_cells(persons.assign(kreis=kreis.to_numpy()), area_of_kreis,
+                                      max_unreadable_share=float(context.config(KEY_MAX_UNREADABLE_P_TAET_SHARE)))
+    logger.info("%s student cells: home areas %s; cell rates (SrV) %s", _LOG_TAG, area_of_kreis,
+                {cell: round(rate, 4) for cell, rate in cell_rates.items()})
+    return area_of_kreis, cell_rates, person_cells
