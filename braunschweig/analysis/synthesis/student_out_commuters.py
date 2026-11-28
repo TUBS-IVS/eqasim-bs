@@ -17,21 +17,29 @@ in parallel); this stage only reports what those mechanisms did to the students.
   between two Kreise of the region beyond that distance counts at its site in the acceptance table of
   ``student_flows`` but does not arrive there in the simulation.
 
-Code state: the tables measure the rule BEFORE issue #678 (the code of this branch, ``portal_trips`` and
-``outside_tour_modes`` as they stand on ``main`` before PR 695). They are to be re-run after #678 merges; the
-report states this in ``rule_state``.
+Code state: the tables measure the SYNTHESIS of the code state the stage runs on (the commit is written to the
+report as ``pipeline_commit``). PR 695 is merged; on ``main`` it changes ``portal_trips/stage.py`` and
+``outside_tour_modes/stage.py`` only in their helper lists (the lead's review of this task), so no column used here
+changes. The mode choice that issue #678 adds happens in the simulation (Java side) and is NOT measured by this
+stage; ``rule_state`` in the report says so.
 
 Inputs and the gate marker
 --------------------------
-The trips are the REWRITTEN day, :data:`TRIPS_STAGE` (``synthesis.population.trips.final``), not the pre-portal
-view the SrV comparisons read: the gate is the rewrite itself. A leg is rewritten as a stay at a gate when its row
-has ``portal_leg`` True and ``following_purpose == "outside"`` (outbound leg; the return leg has
-``preceding_purpose == "outside"``): ``portal_trips.rewrite.rewrite_trips`` sets exactly these. Its original
-purpose is overwritten, so the education leg of a student is the first leg that follows ``education`` or the first
-outbound gate leg. The stage relies only on the trip columns :data:`COLUMNS_RELIED_ON` (person id, trip index,
-mode, the two purposes, the gate marker). With ``braunschweig.portal.enabled`` off there is no gate and the stage
-refuses at DAG time. The code of PR 695 was not changed at the time of writing (``git diff`` of its branch against
-the merge base shows no change under ``portal_trips`` or ``outside_tour_modes``), so no column is lost there.
+The trips are the frame the simulation starts from, :data:`TRIPS_STAGE` (``synthesis.population.trips.simulated``,
+the alias of ``braunschweig.synthesis.outside_tour_modes.stage``, which re-judges the modes of the tours that touch
+the outside; ``braunschweig.matsim.scenario.population`` writes that day). The stage copies the frame it reads
+(``out = trips.copy()``), so ``portal_leg`` and ``trip_index`` of the portal rewrite survive and the gate marker
+and the modes are read from the same frame. A leg is rewritten as a stay at a gate when its row has ``portal_leg``
+True and ``following_purpose == "outside"`` (outbound leg; the return leg has ``preceding_purpose == "outside"``):
+``portal_trips.rewrite.rewrite_trips`` sets exactly these. The leg's original purpose is overwritten there, so the
+education leg of a student is chosen by :func:`outbound_education_legs`: the first leg that follows ``education``
+and is no gate leg; if there is none, the first outbound gate leg (an education leg that was itself rewritten). A
+gate stay for another purpose before the education leg therefore does not hide it. Counted and reported, because
+they make the choice uncertain (:func:`leg_diagnostics`): students with a gate stay before their education leg,
+with more than one gate stay, with further education legs after the first, and students with a gate stay and no
+education leg left (the leg may have been swallowed by the legs a stay removes). The stage relies only on the trip
+columns :data:`COLUMNS_RELIED_ON`. With ``braunschweig.portal.enabled`` off there is no gate and the stage refuses at
+DAG time.
 
 Residents of the day are the persons with a destination whose ``assignment_path`` is not ``absent_*`` (the student
 flows' rule); students are ``P_TAET == 10``. Home Kreis: ``departement_id`` of the home zones, as everywhere in
@@ -58,25 +66,31 @@ LOGGER = logging.getLogger("braunschweig.analysis.synthesis.student_out_commuter
 _LOG_TAG = "[student_out_commuters]"
 
 STATUS = "measurement of the synthesis, not validation"
-RULE_STATE = ("measures the rule before issue #678: portal_trips and outside_tour_modes as on main before PR 695; "
-              "re-run after #678 merges")
+RULE_STATE = ("measures the synthesis of the code state it runs on (see pipeline_commit); the mode choice of issue "
+              "#678 happens in the simulation and is not measured here")
 
 KEY_OUTPUT_SUBDIR = "student_out_commuters_output_subdir"
 DEFAULT_OUTPUT_SUBDIR = "analysis/student_out_commuters"
 KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
 KEY_MAX_ROUTABLE_DISTANCE_M = _portal_config_keys.KEY_MAX_ROUTABLE_DISTANCE_M
 DEFAULT_MAX_ROUTABLE_DISTANCE_M = _portal_config_keys.DEFAULT_MAX_ROUTABLE_DISTANCE_M
-#: The key ``student_mode_reference`` names for the pooling of thin bands (its ``DEFAULT_MIN_BAND_PERSONS`` comment);
-#: declared here with that default so this comparison pools the students' table like the in-commuter path will.
+#: Repeated from ``student_incommuters`` (a stage module whose closure this stage should not inherit) and pinned
+#: against it by ``tests/test_student_out_commuters.py``: the pooling of thin bands is the in-commuter path's.
 KEY_MIN_BAND_PERSONS = "braunschweig.student_incommuters.mode_band_min_persons"
 DEFAULT_MIN_BAND_PERSONS = _student_mode_reference.DEFAULT_MIN_BAND_PERSONS
+#: Share of the out-commuters without an education leg in the trips above which a WARNING is logged.
+#: ASSUMPTION: not from a table; a high share means a failed id join, not students without a leg.
+KEY_NO_LEG_WARN_SHARE = "braunschweig.students.out_commuter_no_leg_warn_share"
+DEFAULT_NO_LEG_WARN_SHARE = 0.25
 
 ENRICHED_STAGE = "synthesis.population.enriched"
 HOME_ZONES_STAGE = "synthesis.population.spatial.home.zones"
 HOME_LOCATIONS_STAGE = "synthesis.population.spatial.home.locations"
 GRAVITY_STAGE = "braunschweig.synthesis.locations.education_gravity"
 FACILITIES_STAGE = "braunschweig.data.schools.university_facilities"
-TRIPS_STAGE = _portal_config_keys.FINAL_TRIPS_STAGE
+#: Literal, pinned against ``outside_tour_modes.config_keys.SIMULATED_TRIPS_ALIAS`` (importing that package would
+#: pull its closure into this token).
+TRIPS_STAGE = "synthesis.population.trips.simulated"
 
 #: Repeated from their owners, pinned by ``tests/test_student_out_commuters.py``.
 GATE_LEG_COLUMN = "portal_leg"                     # portal_trips.rewrite.PORTAL_LEG_COLUMN
@@ -91,9 +105,9 @@ REPORT_FILE = "student_out_commuters_report.json"
 OUTPUT_FILES = {"modes": "student_out_commuter_modes.csv", "gated": "student_gated_education_legs.csv",
                 "summary": "student_out_commuters_summary.md"}
 MODE_COLUMNS = ["distance_band", "mode", "n_persons", "n_gated", "model_share_of_band", "model_share_of_car_pt",
-                "reference_share_car_pt"]
+                "reference_share_car_pt", "reference_band_pooled"]
 GATED_COLUMNS = ["home_kreis", "destination_id", "dest_kreis", "dest_in_region", "n_beyond", "n_gated",
-                 "n_not_gated", "n_without_leg", "mean_straight_km"]
+                 "n_not_gated", "n_not_gated_with_leg", "n_not_gated_without_leg", "mean_straight_km"]
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 _HELPER_MODULES = (_flows_inputs, _student_mode_reference, _portal_config_keys, _constants, run_provenance,
@@ -106,31 +120,69 @@ _DEFERRED_HELPER_MODULE_NAMES = (
 
 
 # ======================================================================================= pure functions
-def outbound_education_legs(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
-    """``[person_id, mode, gated]``: the education leg of each person that has one (module docstring).
-
-    The leg is the first one, by ``trip_index``, that follows ``education`` without being a gate leg, or that is an
-    outbound gate leg (``portal_leg`` True, ``following_purpose == "outside"``, ``preceding_purpose`` not
-    ``"outside"``); ``gated`` says which. A person without such a leg has no row (the caller counts it).
-    """
+def _leg_flags(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
     missing = [column for column in COLUMNS_RELIED_ON if column not in trips.columns]
     if missing:
         raise ValueError(f"{_LOG_TAG} the trips lack the column(s) {missing}; found {list(trips.columns)}")
-    legs = trips[trips["person_id"].isin(list(person_ids))]
-    is_gate = (legs[GATE_LEG_COLUMN].astype(bool) & (legs["following_purpose"] == OUTSIDE_PURPOSE)
-               & (legs["preceding_purpose"] != OUTSIDE_PURPOSE))
-    is_education = (legs["following_purpose"] == EDUCATION_PURPOSE) & ~legs[GATE_LEG_COLUMN].astype(bool)
-    chosen = legs[is_gate | is_education].assign(gated=is_gate[is_gate | is_education])
-    chosen = chosen.sort_values(["person_id", "trip_index"], kind="mergesort").drop_duplicates("person_id")
+    legs = trips[trips["person_id"].isin(list(person_ids))].copy()
+    marker = legs[GATE_LEG_COLUMN].astype(bool)
+    legs["is_gate"] = (marker & (legs["following_purpose"] == OUTSIDE_PURPOSE)
+                       & (legs["preceding_purpose"] != OUTSIDE_PURPOSE))
+    legs["is_education"] = (legs["following_purpose"] == EDUCATION_PURPOSE) & ~marker
+    return legs.sort_values(["person_id", "trip_index"], kind="mergesort")
+
+
+def outbound_education_legs(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
+    """``[person_id, mode, gated]``: the education leg of each person that has one (module docstring).
+
+    The leg is the first one, by ``trip_index``, that follows ``education`` without being a gate leg
+    (``gated`` False); a person without one takes the first outbound gate leg (``portal_leg`` True,
+    ``following_purpose == "outside"``, ``preceding_purpose`` not ``"outside"``; ``gated`` True), an education leg
+    that was itself rewritten. A person with neither has no row (the caller counts it).
+    """
+    legs = _leg_flags(trips, person_ids)
+    education = legs[legs["is_education"]].drop_duplicates("person_id").assign(gated=False)
+    gate = legs[legs["is_gate"] & ~legs["person_id"].isin(education["person_id"])].drop_duplicates(
+        "person_id").assign(gated=True)
+    chosen = pd.concat([education, gate]).sort_values("person_id", kind="mergesort")
     return chosen[["person_id", "mode", "gated"]].reset_index(drop=True)
 
 
+def leg_diagnostics(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
+    """Per person of ``person_ids`` (one row each): what makes the choice of the education leg uncertain.
+
+    Columns ``person_id, n_gate_stays`` (outbound gate legs), ``n_education_legs`` (legs following education that
+    are no gate leg), ``gate_before_education`` (a gate stay precedes the first education leg),
+    ``gate_without_education`` (a gate stay and no education leg left). A person without trips has zeros.
+    """
+    legs = _leg_flags(trips, person_ids)
+    grouped = legs.groupby("person_id")
+    result = pd.DataFrame({"n_gate_stays": grouped["is_gate"].sum(), "n_education_legs": grouped["is_education"].sum()})
+    first_gate = legs[legs["is_gate"]].groupby("person_id")["trip_index"].min()
+    first_education = legs[legs["is_education"]].groupby("person_id")["trip_index"].min()
+    result = result.reindex(pd.Index(list(person_ids), name="person_id"), fill_value=0)
+    result["n_gate_stays"] = result["n_gate_stays"].astype(int)
+    result["n_education_legs"] = result["n_education_legs"].astype(int)
+    gate_at = first_gate.reindex(result.index)
+    education_at = first_education.reindex(result.index)
+    result["gate_before_education"] = (gate_at < education_at).to_numpy()
+    result["gate_without_education"] = ((result["n_gate_stays"] > 0) & (result["n_education_legs"] == 0)).to_numpy()
+    return result.reset_index()
+
+
+def pooled_bands(table: pd.DataFrame, min_band_persons: int) -> frozenset:
+    """The bands of the students' mode table that ``pool_thin_bands`` merges with a neighbour."""
+    groups = _student_mode_reference.pool_thin_bands(table, min_band_persons)
+    return frozenset(band for group in groups if len(group) > 1 for band in group)
+
+
 def out_commuter_mode_table(students: pd.DataFrame, legs: pd.DataFrame, detour_factor: float,
-                            reference: dict) -> pd.DataFrame:
+                            reference: dict, pooled: frozenset = frozenset()) -> pd.DataFrame:
     """The modes of the students at a surrounding institution by band of the routed length, against the reference.
 
     ``students``: ``[person_id, scope, straight_km]``; ``legs``: :func:`outbound_education_legs`; ``reference``:
-    ``{band: {mode: probability}}`` over car and pt (``load_student_education_mode_by_distance``). An out-commuter
+    ``{band: {mode: probability}}`` over car and pt (``load_student_education_mode_by_distance``); ``pooled``: the
+    bands whose reference is pooled with a neighbour (:func:`pooled_bands`), marked in ``reference_band_pooled``. An out-commuter
     without a leg is counted in ``attrs["n_without_leg"]`` and not in a band; ``attrs["n_out_commuters"]`` is all.
     """
     out = students[students["scope"] == SCOPE_SURROUNDING]
@@ -151,6 +203,7 @@ def out_commuter_mode_table(students: pd.DataFrame, legs: pd.DataFrame, detour_f
     grouped["reference_share_car_pt"] = [
         float(reference.get(band, {}).get(mode, np.nan)) if mode in _student_mode_reference.ALLOWED_MODES else np.nan
         for band, mode in zip(grouped["distance_band"], grouped["mode"])]
+    grouped["reference_band_pooled"] = grouped["distance_band"].isin(pooled)
     order = {label: i for i, label in enumerate(_student_mode_reference.BAND_LABELS)}
     grouped = grouped.sort_values(["distance_band", "mode"], key=lambda s: s.map(order) if s.name == "distance_band"
                                   else s, kind="mergesort").reset_index(drop=True)
@@ -180,6 +233,9 @@ def gated_leg_table(students: pd.DataFrame, legs: pd.DataFrame, max_routable_dis
     rows["n_gated"] = rows["n_gated"].astype(int)
     rows["n_without_leg"] = rows["n_without_leg"].astype(int)
     rows["n_not_gated"] = rows["n_beyond"] - rows["n_gated"]
+    # a gated student always has a leg, so a student without a leg is never gated
+    rows["n_not_gated_without_leg"] = rows["n_without_leg"]
+    rows["n_not_gated_with_leg"] = rows["n_not_gated"] - rows["n_without_leg"]
     rows["dest_in_region"] = rows["dest_kreis"].isin(_flows_inputs.ZGB_KREISE)
     return rows[GATED_COLUMNS]
 
@@ -261,6 +317,7 @@ def configure(context):
     context.config(KEY_MAX_ROUTABLE_DISTANCE_M, DEFAULT_MAX_ROUTABLE_DISTANCE_M)
     context.config(KEY_MIN_BAND_PERSONS, DEFAULT_MIN_BAND_PERSONS)
     context.config(KEY_OUTPUT_SUBDIR, DEFAULT_OUTPUT_SUBDIR)
+    context.config(KEY_NO_LEG_WARN_SHARE, DEFAULT_NO_LEG_WARN_SHARE)
 
 
 def _write_csv(table: pd.DataFrame, directory: str, name: str) -> None:
@@ -276,7 +333,17 @@ def summary_markdown(report: dict, modes: pd.DataFrame, gated: pd.DataFrame) -> 
              f"({counts['n_out_commuters_without_leg']} without an education leg in the trips)",
              f"- students beyond {report['parameters']['max_routable_distance_m']:g} m straight line: "
              f"{counts['n_beyond']}, rewritten at a gate: {counts['n_gated']}, of those between two Kreise of the "
-             f"region: {counts['n_beyond_within_region']}", "",
+             f"region: {counts['n_beyond_within_region']}; beyond and not at a gate: "
+             f"{counts['n_beyond_not_gated_with_leg']} with an education leg, "
+             f"{counts['n_beyond_not_gated_without_leg']} without", "",
+             "Students whose education leg is uncertain (module docstring):",
+             f"- a gate stay before the education leg: {counts['n_gate_before_education']}",
+             f"- more than one gate stay: {counts['n_multiple_gate_stays']}",
+             f"- further education legs after the first: {counts['n_further_education_legs']}",
+             f"- a gate stay and no education leg left: {counts['n_gate_without_education']} "
+             f"({counts['n_gate_without_education_within_distance']} within the routable distance, where the "
+             f"leg may have been swallowed by a stay)",
+             f"- bands of the reference pooled with a neighbour: {report['pooled_reference_bands'] or 'none'}", "",
              f"Tables: `{OUTPUT_FILES['modes']}` ({len(modes)} rows), `{OUTPUT_FILES['gated']}` ({len(gated)} rows)."]
     return "\n".join(lines) + "\n"
 
@@ -288,13 +355,19 @@ def execute(context):
     min_band_persons = int(context.config(KEY_MIN_BAND_PERSONS))
     if not (np.isfinite(max_m) and max_m > 0):
         raise ValueError(f"{_LOG_TAG} {KEY_MAX_ROUTABLE_DISTANCE_M} must be finite and > 0, got {max_m!r}")
+    warn_share = float(context.config(KEY_NO_LEG_WARN_SHARE))
     reference = _student_mode_reference.load_student_education_mode_by_distance(data_path, min_band_persons)
+    mode_table = pd.read_csv(_mode_table_path(data_path), comment="#", encoding="utf-8",
+                             dtype={"distance_band": str, "mode": str})
+    pooled = pooled_bands(mode_table, min_band_persons)
 
     frame = student_education_frame(
         context.stage(ENRICHED_STAGE), _flows_inputs.home_kreis_by_household(context.stage(HOME_ZONES_STAGE)),
         context.stage(HOME_LOCATIONS_STAGE), context.stage(GRAVITY_STAGE), context.stage(FACILITIES_STAGE))
-    legs = outbound_education_legs(context.stage(TRIPS_STAGE), frame["person_id"])
-    modes = out_commuter_mode_table(frame, legs, DETOUR_FACTOR, reference)
+    trips = context.stage(TRIPS_STAGE)
+    legs = outbound_education_legs(trips, frame["person_id"])
+    diagnostics = leg_diagnostics(trips, frame["person_id"])
+    modes = out_commuter_mode_table(frame, legs, DETOUR_FACTOR, reference, pooled)
     gated = gated_leg_table(frame, legs, max_m)
 
     n_out, n_out_no_leg = modes.attrs["n_out_commuters"], modes.attrs["n_without_leg"]
@@ -306,9 +379,25 @@ def execute(context):
     LOGGER.info("%s out-commuters with an education leg in the trips: primary %d/%d (%.1f%%), without a leg %d "
                 "(%.1f%%)", _LOG_TAG, n_out - n_out_no_leg, n_out, 100.0 * (n_out - n_out_no_leg) / max(n_out, 1),
                 n_out_no_leg, 100.0 * n_out_no_leg / max(n_out, 1))
-    if n_out and n_out_no_leg == n_out:
-        LOGGER.warning("%s no out-commuter has an education leg in the trips: the person ids of the trips and the "
-                       "education locations probably do not match", _LOG_TAG)
+    if n_out and n_out_no_leg / n_out > warn_share:
+        LOGGER.warning("%s %d of %d out-commuters (%.1f%%) have no education leg in the trips, above the warn share "
+                       "%g: the person ids of the trips and the education locations probably do not match",
+                       _LOG_TAG, n_out_no_leg, n_out, 100.0 * n_out_no_leg / n_out, warn_share)
+    beyond_mask = (frame["straight_km"] * 1000.0 > max_m).to_numpy()
+    by_person = diagnostics.set_index("person_id").reindex(frame["person_id"])
+    within = ~beyond_mask
+    leg_counts = {
+        "n_gate_before_education": int(by_person["gate_before_education"].sum()),
+        "n_multiple_gate_stays": int((by_person["n_gate_stays"] > 1).sum()),
+        "n_further_education_legs": int((by_person["n_education_legs"] > 1).sum()),
+        "n_gate_without_education": int(by_person["gate_without_education"].sum()),
+        # within the routable distance the education leg is no gate stay: a gate stay and no education leg there
+        # points at a leg swallowed by the legs another stay removes
+        "n_gate_without_education_within_distance": int(
+            by_person["gate_without_education"].to_numpy()[within].sum()),
+        "n_beyond_not_gated_with_leg": int(gated["n_not_gated_with_leg"].sum()) if len(gated) else 0,
+        "n_beyond_not_gated_without_leg": int(gated["n_not_gated_without_leg"].sum()) if len(gated) else 0}
+    LOGGER.info("%s uncertain education legs: %s", _LOG_TAG, leg_counts)
     LOGGER.info("%s beyond %g m: %d student(s), %d rewritten at a gate, %d between two Kreise of the region",
                 _LOG_TAG, max_m, n_beyond, n_gated, n_region)
 
@@ -316,14 +405,16 @@ def execute(context):
         "status": STATUS, "rule_state": RULE_STATE, "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "pipeline_commit": run_provenance.git_commit(_REPO_ROOT),
         "parameters": {"max_routable_distance_m": max_m, "detour_factor": DETOUR_FACTOR,
-                       "mode_band_min_persons": min_band_persons, "trips_stage": TRIPS_STAGE},
+                       "mode_band_min_persons": min_band_persons, "trips_stage": TRIPS_STAGE,
+                       KEY_NO_LEG_WARN_SHARE: warn_share},
         "columns_relied_on": list(COLUMNS_RELIED_ON),
         "inputs": {"mid_student_education_distance_mode": {
             "path_relative_to_data_path": _student_mode_reference.TABLE_RELATIVE_PATH.replace(os.sep, "/"),
             "sha256": synpp_tokens.text_file_sha256(_mode_table_path(data_path))}},
         "counts": {"n_resident_students": int(len(frame)), "n_out_commuters": n_out,
                    "n_out_commuters_without_leg": n_out_no_leg, "n_beyond": n_beyond, "n_gated": n_gated,
-                   "n_beyond_within_region": n_region},
+                   "n_beyond_within_region": n_region, **leg_counts},
+        "pooled_reference_bands": sorted(pooled),
     }
     os.makedirs(out_dir, exist_ok=True)
     _write_csv(modes, out_dir, OUTPUT_FILES["modes"])

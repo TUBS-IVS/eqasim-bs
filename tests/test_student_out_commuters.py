@@ -50,6 +50,33 @@ def test_education_legs_take_the_first_education_or_gate_leg_and_mark_the_gate()
     assert legs.set_index("person_id")["gated"].to_dict() == {1: False, 2: True, 3: False, 4: True}
 
 
+def _trips_with_leisure_gate_before_education():
+    # person 7: a gate stay (leisure, rewritten) with its return, then a normal education leg by bike;
+    # person 8: two gate stays and no education leg left; person 9: two education legs, no gate.
+    return pd.DataFrame({
+        "person_id": [7, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9],
+        "trip_index": [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
+        "preceding_purpose": ["home", "outside", "home", "education", "home", "outside", "home", "outside",
+                              "home", "education", "home", "education"],
+        "following_purpose": ["outside", "home", "education", "home", "outside", "home", "outside", "home",
+                              "education", "home", "education", "home"],
+        "mode": ["car", "car", "bike", "bike", "pt", "pt", "pt", "pt", "car", "car", "car", "car"],
+        "portal_leg": [True, True, False, False, True, True, True, True, False, False, False, False]})
+
+
+def test_a_gate_stay_before_the_education_leg_does_not_hide_it_and_is_counted():
+    trips = _trips_with_leisure_gate_before_education()
+    legs = S.outbound_education_legs(trips, [7, 8, 9]).set_index("person_id")
+    # person 7 keeps the bike education leg, not the leisure gate stay; person 8 only has gate legs
+    assert legs["mode"].to_dict() == {7: "bike", 8: "pt", 9: "car"}
+    assert legs["gated"].to_dict() == {7: False, 8: True, 9: False}
+    diagnostics = S.leg_diagnostics(trips, [7, 8, 9, 10]).set_index("person_id")
+    assert diagnostics["n_gate_stays"].to_dict() == {7: 1, 8: 2, 9: 0, 10: 0}
+    assert diagnostics["n_education_legs"].to_dict() == {7: 1, 8: 0, 9: 2, 10: 0}
+    assert diagnostics["gate_before_education"].to_dict() == {7: True, 8: False, 9: False, 10: False}
+    assert diagnostics["gate_without_education"].to_dict() == {7: False, 8: True, 9: False, 10: False}
+
+
 def test_a_trip_table_without_the_gate_column_is_refused():
     with pytest.raises(ValueError, match="portal_leg"):
         S.outbound_education_legs(_trips().drop(columns=["portal_leg"]), [1])
@@ -67,6 +94,10 @@ def test_out_commuter_modes_count_by_band_against_the_reference():
     assert cell["n_gated"].to_dict() == {("25_50", "car"): 0, ("50_100", "pt"): 1, ("5_10", "pt"): 0,
                                          ("100_plus", "car"): 1}
     assert cell.loc[("50_100", "pt"), "model_share_of_band"] == 1.0
+    assert S.out_commuter_mode_table(_students(), S.outbound_education_legs(_trips(), range(1, 7)), FACTOR, reference,
+                                     pooled=frozenset({"50_100"})).set_index(["distance_band", "mode"])[
+        "reference_band_pooled"].to_dict() == {("25_50", "car"): False, ("50_100", "pt"): True,
+                                              ("5_10", "pt"): False, ("100_plus", "car"): False}
     assert cell.loc[("50_100", "pt"), "reference_share_car_pt"] == pytest.approx(0.8)
     assert np.isnan(cell.loc[("25_50", "car"), "reference_share_car_pt"])   # band absent from the reference dict
     assert table.attrs["n_without_leg"] == 1 and table.attrs["n_out_commuters"] == 5
@@ -90,6 +121,10 @@ def test_gated_leg_table_counts_beyond_the_routable_distance_only_by_home_and_de
                                           ("03151", "Goettingen"): 1}
     assert rows["n_gated"].to_dict() == {("03101", "Hildesheim"): 1, ("03102", "Hannover"): 0,
                                          ("03151", "Goettingen"): 1}
+    # persons 2 and 4 are gated; person 3 is beyond, not gated, with an education leg; none lacks a leg
+    assert rows["n_not_gated_with_leg"].to_dict() == {("03101", "Hildesheim"): 0, ("03102", "Hannover"): 1,
+                                                      ("03151", "Goettingen"): 0}
+    assert rows["n_not_gated_without_leg"].sum() == 0
     assert rows["dest_in_region"].to_dict() == {("03101", "Hildesheim"): False, ("03102", "Hannover"): False,
                                                 ("03151", "Goettingen"): False}
 
@@ -114,6 +149,11 @@ def test_literals_repeated_from_their_owners_match_them():
     from braunschweig.data.education import student_mode_reference as ref
     from braunschweig.synthesis.portal_trips import config_keys as portal
     from braunschweig.synthesis.portal_trips import rewrite
+    from braunschweig.synthesis import student_incommuters
+    from braunschweig.synthesis.outside_tour_modes import config_keys as outside
+    assert S.TRIPS_STAGE == outside.SIMULATED_TRIPS_ALIAS
+    assert S.KEY_MIN_BAND_PERSONS == student_incommuters.KEY_MODE_BAND_MIN_PERSONS
+    assert S.DEFAULT_MIN_BAND_PERSONS == student_incommuters.DEFAULT_MODE_BAND_MIN_PERSONS
     assert S.GATE_LEG_COLUMN == rewrite.PORTAL_LEG_COLUMN
     assert S.OUTSIDE_PURPOSE == portal.OUTSIDE_PURPOSE
     assert S.KEY_MAX_ROUTABLE_DISTANCE_M == "braunschweig.portal.max_routable_distance_m"
@@ -185,7 +225,8 @@ def _world():
 def _config(tmp_path, data_path, **override):
     config = {"data_path": str(data_path), "output_path": str(tmp_path / "out"),
               S.KEY_MAX_ROUTABLE_DISTANCE_M: LIMIT_M, S.KEY_MIN_BAND_PERSONS: S.DEFAULT_MIN_BAND_PERSONS,
-              S.KEY_PORTAL_ENABLED: True, S.KEY_OUTPUT_SUBDIR: S.DEFAULT_OUTPUT_SUBDIR}
+              S.KEY_PORTAL_ENABLED: True, S.KEY_OUTPUT_SUBDIR: S.DEFAULT_OUTPUT_SUBDIR,
+              S.KEY_NO_LEG_WARN_SHARE: S.DEFAULT_NO_LEG_WARN_SHARE}
     config.update(override)
     return config
 
@@ -203,11 +244,15 @@ def test_stage_writes_both_reports_on_a_toy_population(tmp_path):
     # only person 2 is a resident-of-the-day out-commuter (person 3 is absent_*, person 1 goes to a local site)
     assert modes[["distance_band", "mode", "n_persons", "n_gated"]].to_dict("records") == [
         {"distance_band": "50_100", "mode": "pt", "n_persons": 1, "n_gated": 1}]
+    assert modes["reference_band_pooled"].dtype == bool
     gated = pd.read_csv(out / S.OUTPUT_FILES["gated"], dtype={"home_kreis": str, "dest_kreis": str})
     assert gated[["home_kreis", "dest_kreis", "n_beyond", "n_gated"]].to_dict("records") == [
         {"home_kreis": "03101", "dest_kreis": "03241", "n_beyond": 1, "n_gated": 1}]
     report = json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))
-    assert "before issue #678" in report["rule_state"] and report["counts"]["n_out_commuters"] == 1
+    assert "issue #678" in report["rule_state"] and report["counts"]["n_out_commuters"] == 1
+    assert report["counts"]["n_gate_before_education"] == 0 and report["counts"]["n_beyond_not_gated_with_leg"] == 0
+    assert report["counts"]["n_gate_without_education"] == 1   # person 2: the leg is the gate stay itself
+    assert "pooled_reference_bands" in report and report["pipeline_commit"] is not None
     assert set(report["columns_relied_on"]) == {"person_id", "trip_index", "mode", "preceding_purpose",
                                                 "following_purpose", "portal_leg"}
     assert result["report"]["status"] == S.STATUS
