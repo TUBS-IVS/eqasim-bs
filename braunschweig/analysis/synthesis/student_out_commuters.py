@@ -179,7 +179,9 @@ def leg_diagnostics(trips: pd.DataFrame, person_ids, straight_km: pd.Series) -> 
     result["gate_without_education"] = ((result["n_gate_stays"] > 0) & (result["n_education_legs"] == 0)).to_numpy()
     # an education leg after the first gate stay that is shorter than the straight line to the destination
     km = legs["person_id"].map(straight_km)
-    later = legs["is_education"] & (legs["trip_index"] > legs["person_id"].map(first_gate))         & (legs["euclidean_distance"] / 1000.0 < km)
+    after_gate = legs["trip_index"] > legs["person_id"].map(first_gate)
+    shorter = legs["euclidean_distance"] / 1000.0 < km
+    later = legs["is_education"] & after_gate & shorter
     suspect = set(legs.loc[later, "person_id"])
     result["gate_then_shorter_education_leg"] = result.index.isin(suspect)
     return result.reset_index()

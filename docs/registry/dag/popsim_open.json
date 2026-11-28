@@ -310,6 +310,10 @@
   ],
   [
    "data.spatial.municipalities",
+   "braunschweig.data.schools.university_facilities"
+  ],
+  [
+   "data.spatial.municipalities",
    "braunschweig.data.transit.cut_schedule"
   ],
   [
@@ -742,6 +746,10 @@
   ],
   [
    "synthesis.population.spatial.home.zones",
+   "braunschweig.synthesis.locations.education_gravity"
+  ],
+  [
+   "synthesis.population.spatial.home.zones",
    "braunschweig.synthesis.vehicles.cars.household"
   ],
   [
@@ -766,10 +774,6 @@
   ],
   [
    "synthesis.population.spatial.primary.locations",
-   "braunschweig.synthesis.student_incommuters"
-  ],
-  [
-   "synthesis.population.spatial.primary.locations",
    "matsim.scenario.facilities"
   ],
   [
@@ -791,6 +795,10 @@
   [
    "synthesis.population.spatial.secondary.locations",
    "synthesis.population.spatial.locations"
+  ],
+  [
+   "synthesis.population.trips",
+   "braunschweig.synthesis.locations.education_gravity"
   ],
   [
    "synthesis.population.trips",

@@ -1057,9 +1057,7 @@ config:
   # The students' routing, the residents' balanced assignment, the in-commuters from the origin-destination
   # table T and the two analysis stages (student_flows, student_out_commuters).
   braunschweig.students.flows_enabled: true
-  # Rule of the allotment of the residents inside a home Kreis: plan_length (the plan's education leg
-  # decides) or home_distance. plan_length is the owner's decision of 2026-11-27; the measured default is
-  # settled by the rule comparison against the SrV distance table (ADR-0213).
+  # Rule of the allotment of the residents inside a home Kreis: plan_length or home_distance (ADR-0213).
   braunschweig.students.kreis_matching_rule: plan_length
   # Numerical tolerance of the fit in persons, far below one person (the controlled rounding keeps every
   # column within one person of its fitted sum); not a modelling parameter.
@@ -1095,6 +1093,7 @@ config:
   # ASSUMPTION: a higher share of out-commuting students without an education leg in the trips means a
   # failed id join (student_out_commuters analysis stage).
   braunschweig.students.out_commuter_no_leg_warn_share: 0.25
+  # Output folder of the student_out_commuters analysis stage, under output_path.
   student_out_commuters_output_subdir: analysis/student_out_commuters
   # ASSUMPTION: a distance band of the students' mode table with fewer persons is pooled with a neighbour.
   braunschweig.student_incommuters.mode_band_min_persons: 30
