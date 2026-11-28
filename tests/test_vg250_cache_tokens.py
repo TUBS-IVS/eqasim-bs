@@ -103,6 +103,19 @@ def _students_vs_srv_inputs(data_path):
     return [os.path.relpath(path, data_path) for path in paths]
 
 
+def _student_incommuters_inputs(data_path):
+    """The committed tables that ``student_incommuters.validate`` digests with the student flows on (the default)."""
+    from braunschweig.synthesis import student_incommuters
+
+    class _Defaults:
+        def config(self, key):
+            return {"data_path": data_path, student_incommuters.KEY_OD_TABLE_PATH: student_incommuters.DEFAULT_OD_TABLE_PATH,
+                    student_incommuters.KEY_LEVEL_TABLE_PATH: student_incommuters.DEFAULT_LEVEL_TABLE_PATH}[key]
+
+    return [os.path.relpath(path, data_path)
+            for path in student_incommuters._flows_table_paths(_Defaults()).values()]
+
+
 _CORDON_ON = {"cordon_enabled": True}
 READERS = (
     Reader("braunschweig.data.bbsr.regiostar", path_keys=("regiostar.path",)),
@@ -123,7 +136,7 @@ READERS = (
                 {"cordon_enabled": True, "cordon_incommuter_real_origin": False}),
            hashes_source=True),
     Reader("braunschweig.synthesis.student_incommuters", _CORDON_ON, off=({"cordon_enabled": False},),
-           hashes_source=True),
+           hashes_source=True, input_files=_student_incommuters_inputs),
     Reader("braunschweig.analysis.synthesis.commute_distance_by_kreis", hashes_source=True, repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.work_participation_by_kreis", hashes_source=True,
            repo_anchored=True),

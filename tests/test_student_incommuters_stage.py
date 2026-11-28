@@ -187,6 +187,9 @@ def _full_ctx():
     }
     cfg = {"cordon_enabled": True, "education_gravity_enabled": True,
            "cordon_student_incommuters_enabled": None,
+           # The tests of this file cover the OFF path of the student flows (the residual count and the reverse
+           # decay); the ON path is tested in tests/test_student_incommuters_balance.py.
+           "braunschweig.students.flows_enabled": False,
            "student_incommuter_age_band": [18, 29],
            "education_university_slope": -0.1415,
            "education_university_max_radius_km": 150.0,
