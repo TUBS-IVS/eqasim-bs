@@ -112,7 +112,7 @@ DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES = True
 
 # --------------------------------------------------------------------------- raw MiD inputs
 
-PERSONS_FILE = "MiD2023_Personen.csv"
+PERSONS_FILE = _mid_csv_format.MID_PERSONS_FILE
 WEGE_FILE = "MiD2023_Wege.csv"
 HOUSEHOLDS_FILE = "MiD2023_Haushalte.csv"
 RAW_FILES = (PERSONS_FILE, WEGE_FILE, HOUSEHOLDS_FILE)

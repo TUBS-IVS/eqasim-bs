@@ -19,6 +19,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Union
 
+#: File name of the MiD 2023 persons table; the single spelling, shared by every reader of it
+#: that must not import a heavier module (``popsim.overnight_open_end``, the home-office donor stage).
+MID_PERSONS_FILE = "MiD2023_Personen.csv"
+
 
 def detect_csv_separator(path: Union[str, Path]) -> str:
     """Detect the field separator of a MiD CSV from its header line.

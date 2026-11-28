@@ -7,11 +7,15 @@ is the single place that decides, from the MiD overnight answer and the diary fa
 of ``braunschweig.popsim.diary_facts.compute_diary_facts``, whether the open end is
 kept.
 
+``P_STREISE`` ("Reise am Stichtag") codes follow the MiD 2023 codebook, as cited in ADR-0110
+(Context, "Why MiD ``P_STREISE`` is not the donor"): 1 Tagesreise, 2 trip with 1 to 3 overnight
+stays, 3 trip with at least 4 overnight stays, 402 child under 14 (not asked), 609 within the usual
+surroundings. Codes 9 and 610 are not in that citation: they are treated here as "no usable
+answer" (an assumption, not a codebook fact), close the day, and are counted and logged.
+
 Assumptions (documented, none is a validated reference value):
 
-- ``P_STREISE`` codes 2 and 3 mean an overnight trip on the reporting day; codes 1
-  and 609 mean none; codes 9 and 610 are "no usable answer" and close the day
-  (counted and logged); code 402 means a child who was not asked.
+- Codes 2 and 3 count as an overnight trip on the reporting day; codes 1 and 609 as none.
 - A child (402) inherits the flag from any member of the same MiD household, because
   all household members share the reporting day.
 - A middle day of a trip (the diary starts away and its first leg does not go home)
@@ -70,8 +74,8 @@ def load_overnight_answers(mid_dir: Union[str, Path], *, max_no_answer_share: fl
     _check_share(max_no_answer_share)
     # Imported here, not at module level: the mid package is not part of the decision itself,
     # and a module-level import would pull it into every stage closure that reaches this module.
-    from braunschweig.popsim.mid.csv_format import detect_csv_separator
-    persons_path = Path(mid_dir) / "MiD2023_Personen.csv"
+    from braunschweig.popsim.mid.csv_format import MID_PERSONS_FILE, detect_csv_separator
+    persons_path = Path(mid_dir) / MID_PERSONS_FILE
     if not persons_path.is_file():
         raise FileNotFoundError(f"[popsim.overnight_open_end] MiD persons file not found: {persons_path}")
     columns = ["H_ID", "P_ID", "P_STREISE"]

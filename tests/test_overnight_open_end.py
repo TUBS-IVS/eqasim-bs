@@ -146,6 +146,7 @@ def test_load_overnight_answers_reads_both_separators(tmp_path, sep):
     out = ooe.load_overnight_answers(tmp_path, max_no_answer_share=MAX_NO_ANSWER_SHARE)
     assert list(out.columns) == ["H_ID", "P_ID", "P_STREISE"]
     assert out.values.tolist() == [[10, 1, 2], [10, 2, 402]]
+    assert (out.dtypes == "int64").all()  # not the platform int (int32 on Windows)
 
 
 def test_load_overnight_answers_missing_column_raises(tmp_path):
