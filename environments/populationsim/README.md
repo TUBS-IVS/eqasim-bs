@@ -10,6 +10,6 @@ uv sync --frozen --python /usr/bin/python3.12
 ```
 
 The stage checks at start that the installed environment equals `uv.lock` (`braunschweig/popsim/tool_version.py`);
-after a pull that changes `uv.lock`, run the command above again. The start check needs a uv with `uv sync --check` (tested with uv 0.11.19 and
-0.11.21). Branch model, releases, why the versions are pinned
+after a pull that changes `uv.lock`, run the command above again. The start check needs a uv with `uv sync --check` (measured with uv 0.11.21 on the
+run server: run manifest `docs/runs/popsim-env-security-update-2026-11-27.yml`). Branch model, releases, why the versions are pinned
 and the rule for security updates: `docs/codebase/notes/populationsim-fork.md`.
