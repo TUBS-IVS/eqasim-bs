@@ -37,6 +37,14 @@ def _car_class(n_cars: pd.Series) -> np.ndarray:
     return np.where(n <= 0, "0", np.where(n == 1, "1", "2plus"))
 
 
+def _is_adult_student(members: pd.DataFrame) -> pd.Series:
+    """True for members with ``P_TAET == STUDENT_TAET`` aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older (a
+    missing age is not an adult). The one definition behind ``has_student``, the student-first pairing of
+    :func:`align_members` and the ``household_pairs`` count."""
+    return (members["P_TAET"].eq(STUDENT_TAET)
+            & (pd.to_numeric(members["HP_ALTER"], errors="coerce") >= HH_STUDENT_MIN_AGE_YEARS))
+
+
 def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame, *,
                       student_key: bool = False) -> pd.DataFrame:
     """Household match features. With ``student_key`` the column :data:`HH_STUDENT_KEY` is added: True when a
@@ -58,9 +66,7 @@ def build_hh_features(households: pd.DataFrame, persons: pd.DataFrame, *,
     feats["any_pt"] = has_pt.reindex(feats.index).fillna(False).to_numpy()
     feats["H_GEW"] = households.set_index("H_ID")["H_GEW"].reindex(feats.index).to_numpy()
     if student_key:
-        is_student_adult = (persons["P_TAET"].eq(STUDENT_TAET)
-                            & (pd.to_numeric(persons["HP_ALTER"], errors="coerce") >= HH_STUDENT_MIN_AGE_YEARS))
-        has_student = persons.assign(_student=is_student_adult).groupby("H_ID")["_student"].any()
+        has_student = persons.assign(_student=_is_adult_student(persons)).groupby("H_ID")["_student"].any()
         feats[HH_STUDENT_KEY] = has_student.reindex(feats.index).fillna(False).to_numpy(dtype=bool)
     return feats
 
@@ -216,7 +222,8 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     reordering only: pair count and rng are untouched.
 
     ``student_key`` (A1, ADR-0211; needs ``P_TAET`` in both member frames): a target member with
-    ``P_TAET == STUDENT_TAET`` is first paired with a free STUDENT donor member: of the same age band and sex,
+    ``P_TAET == STUDENT_TAET`` aged :data:`HH_STUDENT_MIN_AGE_YEARS` or older (a younger student goes through
+    today's ladder, lead decision 13) is first paired with a free STUDENT donor member: of the same age band and sex,
     else of the same age band, else any student donor member (the student status outranks sex and age band;
     each tier runs over all student targets before the next, so a looser pair never takes the donor of an
     exact one). These pairs are made before the main loop, so an earlier non-student member cannot take the
@@ -240,7 +247,10 @@ def align_members(target_members: pd.DataFrame, donor_members: pd.DataFrame, *,
     student_pairs = {}
     if student_key:
         d_student = donor_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
-        t_student = target_members["P_TAET"].eq(STUDENT_TAET).to_numpy()
+        # Only a student aged HH_STUDENT_MIN_AGE_YEARS or older is paired student-first: a younger student counts
+        # only in the person path (lead decision 13) and goes through today's ladder here. A missing age is no
+        # adult (NaN compares False), as in build_hh_features.
+        t_student = _is_adult_student(target_members).to_numpy()
         # Tier by tier over ALL student targets, so a looser student pair never takes the student donor
         # an exact one would have used: (age band, sex), then age band, then student status alone.
         student_tiers = (lambda tpos: (d_band == t_band[tpos]) & (d_sex == t_sex[tpos]),
@@ -286,8 +296,9 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     """``(n_pairs, n_crossed_coarse, n_in_split_child_band, n_crossed_fine_child_band, n_any_free)``.
 
     The fifth value, ``n_any_free``, is the number of pairs whose donor sits in a different band
-    of the ACTIVE ``age_band_edges`` (pass the edges given to :func:`align_members`): exactly the
-    pairs that took the ``any_free`` tier. Ages are read as floats (a missing age is NaN and
+    of the ACTIVE ``age_band_edges`` (pass the edges given to :func:`align_members`): the
+    pairs that took the ``any_free`` tier and, with ``student_key``, the student-first pairs across
+    age bands (the status outranks the band). Ages are read as floats (a missing age is NaN and
     counts as a crossing, as it matches no donor band in :func:`align_members`), so a nullable
     ``Int64`` age column with ``pd.NA`` does not raise.
 
@@ -297,8 +308,8 @@ def count_pair_band_crossings(target_members: pd.DataFrame, donor_members: pd.Da
     counted per pair AFTER the pairing, from the returned positions, so the pairing itself
     (and its rng-free determinism) is untouched. Every tier before ``any_free`` (the
     ``passenger_key`` and ``lift_free_never`` reorderings included) stays inside the target's
-    band of the ACTIVE edge set, so a crossing of the active bands is exactly an ``any_free``
-    pair. A crossing of the inactive bands is not: with the coarse edges active, a fine
+    band of the ACTIVE edge set, so without ``student_key`` a crossing of the active bands is exactly an
+    ``any_free`` pair (the student tiers of ``student_key`` can cross bands too). A crossing of the inactive bands is not: with the coarse edges active, a fine
     crossing can also come from the in-band tiers (two children of the same coarse band).
 
     Both band systems are measured in BOTH arms of the ``fine_child_age_bands`` flag, as in
@@ -865,8 +876,10 @@ class WeekendMatchReport:
     #: FINE edges in BOTH arms (same meaning as ``DiaryMatchReport.n_crossed_fine_child_age_band``).
     #: Run evidence for the size of the effect: ``docs/runs/fine-child-band-fallback-smoke-2026-11-11.yml``.
     n_crossed_fine_child_age_band: int = 0
-    #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: exactly the pairs that
-    #: took the ``any_free`` tier of :func:`align_members`.
+    #: Pairs whose donor sits in a different band of the ACTIVE ``age_band_edges``: the pairs that took the
+    #: ``any_free`` tier of :func:`align_members`, plus, with ``student_key``, the student-first pairs of an
+    #: adult student with a student donor of another band (the student status outranks the age band there).
+    #: The name is kept for the stable log key.
     n_any_free_pairs: int = 0
     #: A1 (ADR-0211), only with ``student_key``: :class:`StudentMatchCounts` per match path -- the keys are
     #: ``household_pairs`` (student members of a household-aligned pair), ``person_fallback`` (surplus members
@@ -1032,6 +1045,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                                    lift_free_never=lift_free_never, student_key=student_key)
             band_totals += count_pair_band_crossings(
                 target_members, donor_members, paired, age_band_edges=age_band_edges)
+            target_adult_student = (_is_adult_student(target_members).to_numpy() if student_key else None)
             for tpos, dpos in paired:
                 ridx = target_members.loc[tpos, "index"]
                 persons.loc[ridx, "source_H_ID"] = donor_members.loc[dpos, "source_H_ID"]
@@ -1040,7 +1054,7 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
                 match_level[ridx] = level
                 student_ladder[ridx] = uses_student_ladder
                 n_remapped += 1
-                if student_key and target_members.loc[tpos, "P_TAET"] == STUDENT_TAET:
+                if student_key and target_adult_student[tpos]:
                     count_student("household_pairs", ridx, donor_members.loc[dpos, "P_TAET"] == STUDENT_TAET)
             n_hh_matched += 1
             target_counts = student_level_counts if uses_student_ladder else level_counts
@@ -1172,8 +1186,9 @@ def reassign_weekend_plan_sources(households, persons, *, rng, household_id="H_I
     log_fallback_rate(
         logger, "weekend_plan_match.align_members_any_free", report.n_any_free_pairs,
         report.n_paired_members,
-        what="household-aligned member pairs took the any-age third tier (donor in another band of the "
-             "active age_band_edges; person-level remaps are not counted)")
+        what="household-aligned member pairs whose donor sits in another band of the active age_band_edges "
+             "(the any-age third tier, and with student_key also the student tiers that pair across age "
+             "bands; person-level remaps are not counted)")
     logger.info(
         "[weekend_plan_match] %d weekend households: %d HH-matched, %d via "
         "person-fallback; %d persons remapped, %d swept by per-person safety net. "

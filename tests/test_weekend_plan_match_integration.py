@@ -181,6 +181,19 @@ def test_student_key_in_the_weekend_pass_pairs_students_counts_paths_and_changes
     assert differs     # without the key the student household draws the household without a student for some seed
 
 
+def test_student_under_18_is_not_a_household_pair_student_target():
+    # a 16-year-old student in a household pairs by today's ladder and is not a household_pairs target
+    # (lead decision 13: students under 18 count only in the person path)
+    households, persons = _student_pass_frames()
+    persons.loc[(persons["H_ID"] == 3) & (persons["P_ID"] == 1), "HP_ALTER"] = 16
+    on_p, on_trace, on_report = wpm.reassign_weekend_plan_sources(
+        households, persons, rng=np.random.RandomState(0), student_key=True)
+    assert on_report.student_counts["household_pairs"] == wpm.StudentMatchCounts(0, 0, 0)
+    assert not on_trace.loc[(on_trace["H_ID"] == 3) & (on_trace["P_ID"] == 1), "hh_student_ladder"].any()
+    assert on_report.student_hh_match_level_counts == {}            # HH3 left the student ladder
+    assert sum(on_report.hh_match_level_counts.values()) == 1       # and matched on today's ladder
+
+
 def test_student_key_off_weekend_pass_is_byte_identical_with_and_without_the_arguments():
     households, persons = _student_pass_frames()
     a = wpm.reassign_weekend_plan_sources(households, persons, rng=np.random.RandomState(5))

@@ -152,6 +152,29 @@ def test_read_header_value(script, tmp_path):
         script.read_header_value(path, "k")
 
 
+def test_mover_site_kreise_default_is_the_owner_decision_of_adr_0210(script):
+    assert script.MOVER_SITE_KREISE_DEFAULT == "03158"      # Wolfenbuettel only, not Salzgitter or Wolfsburg
+
+
+def test_read_header_mapping(tmp_path):
+    # the list-valued line of the SrV by-area table, which read_header_value cannot read (it stops at a comma)
+    from braunschweig.data.csv_header import read_header_mapping
+    path = tmp_path / "table.csv"
+    path.write_text("# Source: a\n# Home areas: braunschweig=03101; surrounding=03102,03151\ncode\nx\n",
+                    encoding="utf-8")
+    assert read_header_mapping(path, "Home areas") == {"braunschweig": ("03101",),
+                                                       "surrounding": ("03102", "03151")}
+    with pytest.raises(ValueError, match="absent"):
+        read_header_mapping(path, "Other areas")
+    for bad in ("# Home areas: braunschweig\n", "# Home areas: a=1; a=2\n", "# Home areas: a=\n"):
+        path.write_text(bad + "code\nx\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Home areas"):
+            read_header_mapping(path, "Home areas")
+    path.write_text("# Home areas: a=1\n# Home areas: b=2\ncode\nx\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="more than once"):
+        read_header_mapping(path, "Home areas")
+
+
 def test_site_table_with_a_missing_column_fails_before_any_computation(script, world, tmp_path):
     broken = tmp_path / "sites.csv"
     world["sites_frame"].drop(columns=["site_ags8"]).to_csv(broken, index=False)
@@ -180,7 +203,10 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path, caplog):
         assert "weight_rule=commune_curve" in text, name
         assert "lsn_university_sites.csv" in text, name           # local-only: file name and hash only
         assert str(tmp_path) not in text, name                     # never an absolute path
-    calibration = _table(calibration_dir / calibration_files[0], dtype={"stage": str})
+        # the id A9 is another assumption in the calibration than in the level table: each header names its owner
+        assert "A9 in braunschweig/calibration/student_commuter_weights.py" in text, name
+        assert "student_level_table.py" not in text, name
+    calibration =_table(calibration_dir / calibration_files[0], dtype={"stage": str})
     fit = _table(calibration_dir / calibration_files[1])
     context = _table(calibration_dir / calibration_files[2], dtype={"code": str})
     assert list(context.columns) == ["source", "code", "band", "share", "n_unweighted"]
@@ -219,6 +245,8 @@ def test_cli_writes_all_tables_with_headers(script, world, tmp_path, caplog):
         assert "short=0.5" in text and "middle=0.25" in text and "long=0.1" in text, path.name
         assert "mover_share=0.2" in text and "weights_source=owner" in text, path.name
         assert "mover_site_kreise=[%s]" % script.MOVER_SITE_KREISE_DEFAULT in text, path.name
+        assert "student_commuter_weights.py" not in text, path.name   # A9 here is the level table's
+        assert "A9, A11, A12, A13, A16, A18" in text and "braunschweig/calibration/student_level_table.py" in text
         assert "sha256" in text and "abc1234" in text, path.name
     diagnostics = [line for line in _header(committed[0]) if line.startswith("# Diagnostics:")][0]
     parsed = json.loads(diagnostics[len("# Diagnostics:"):])

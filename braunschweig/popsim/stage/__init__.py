@@ -3136,7 +3136,7 @@ def _build_student_kreis_targets(context, student_entries, kreise, *, young_pers
     counts = _st.student_counts(level)
     counts = counts[counts["ars5"].isin(kreise)].reset_index(drop=True)
     shares = _st.read_student_shares(
-        data_path, kreise, areas=sorted(context.config(KEY_STUDENT_HOME_AREA_KREISE)))
+        data_path, kreise, home_areas=context.config(KEY_STUDENT_HOME_AREA_KREISE))
     persons_by_range = {}
     for kreis in kreise:
         persons_by_range[(kreis, _st.AGE_RANGE_YOUNG)] = float(young_persons[kreis])

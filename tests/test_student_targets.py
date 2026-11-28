@@ -125,6 +125,7 @@ def _write(root, regional=None, by_area=None, other=None):
         "group,parameter,base,label,n_unweighted,weight_sum,share,n_effective,se_share\n"
         "mobility_tools,season_ticket,students_present,flatrate,10,10,0.5,10,0.1\n")
     by_area = by_area or (
+        "# Home areas: braunschweig=03101; surrounding=03102,03151\n"
         "area,group,parameter,base,label,n_unweighted,weight_sum,share,n_effective,se_share\n"
         "braunschweig,mobility_tools,season_ticket,students_present,flatrate,10,10,0.9,10,0.1\n"
         "surrounding,mobility_tools,season_ticket,students_present,flatrate,10,10,0.8,10,0.1\n")
@@ -248,9 +249,31 @@ def test_missing_srv_row_or_column_raises_naming_the_file(tmp_path):
         ST.read_student_shares(_write(tmp_path / "d", other=nan_kreis), ["03101"])
 
 
+def test_configured_home_areas_must_equal_the_areas_the_srv_table_was_written_for(tmp_path):
+    kreise = ["03101", "03102"]
+    same = {"surrounding": ["03151", "03102"], "braunschweig": ["03101"]}      # order is no difference
+    shares = ST.read_student_shares(_write(tmp_path / "ok"), kreise, home_areas=same)
+    assert set(shares.season_ticket_by_area) == {"braunschweig", "surrounding"}
+    # moving 03102 into the city would silently give it the city ticket share: refused
+    moved = {"braunschweig": ["03101", "03102"], "surrounding": ["03151"]}
+    with pytest.raises(ValueError, match=r"srv2023_student_parameters_by_area.csv.*03102"):
+        ST.read_student_shares(_write(tmp_path / "moved"), kreise, home_areas=moved)
+    renamed = {"city": ["03101"], "surrounding": ["03102", "03151"]}
+    with pytest.raises(ValueError, match=r"differ.*city: configured \['03101'\], table \[\]"):
+        ST.read_student_shares(_write(tmp_path / "renamed"), kreise, home_areas=renamed)
+    # a table written without the header line cannot be checked: refused, not trusted
+    no_header = ("area,group,parameter,base,label,n_unweighted,weight_sum,share,n_effective,se_share\n"
+                 "braunschweig,mobility_tools,season_ticket,students_present,flatrate,10,10,0.9,10,0.1\n"
+                 "surrounding,mobility_tools,season_ticket,students_present,flatrate,10,10,0.8,10,0.1\n")
+    with pytest.raises(ValueError, match="Home areas"):
+        ST.read_student_shares(_write(tmp_path / "bare", by_area=no_header), kreise, home_areas=same)
+
+
 def test_committed_tables_are_readable_and_wolfsburg_follows_the_region():
+    from braunschweig.popsim.stage.config_keys import DEFAULT_STUDENT_HOME_AREA_KREISE
     kreise = ["03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158"]
-    shares = ST.read_student_shares(REPO_DATA, kreise, areas=["braunschweig", "surrounding"])
+    # the committed table names the default home areas of the stage (the check inside the reader)
+    shares = ST.read_student_shares(REPO_DATA, kreise, home_areas=DEFAULT_STUDENT_HOME_AREA_KREISE)
     region = pd.read_csv(REPO_DATA / ST.OTHER_ADULTS_RELPATH, comment="#", dtype={"code": str})
     region = region[(region["code"] == "03ZGB") & (region["group"] == "other_adult")
                     & (region["age_range"] == "18plus")]["share"].iloc[0]
