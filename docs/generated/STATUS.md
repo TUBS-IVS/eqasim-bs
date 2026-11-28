@@ -11,11 +11,11 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 - Production population method (resolved config): `popsim_mid`
 - `mode_choice` in the resolved production config: `False` -- no calibrated modal split exists; run mode shares are not behaviourally validated, and mode-share convergence is stability, not validation.
-- Features: 117 | stages: 137 | datasets: 114 | ADRs: 204 | run manifests: 123
+- Features: 117 | stages: 138 | datasets: 117 | ADRs: 206 | run manifests: 128
 
 ## Population synthesis
 
-11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `urbistat_gemeinde_age`, `vg250_ew`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
+11 stage(s), 5 in the production DAG. Datasets: `cleancensus_kreis_controls`, `destatis_population_kreis`, `mid2023_b1`, `mid2023_bikes_by_rs7_haustyp`, `mid2023_cars_by_rs7_haustyp`, `srv2023_reference_tables`, `srv2023_student_reference`, `student_level_table`, `urbistat_gemeinde_age`, `vg250_ew`, `zensus2022_age_sex_size`, `zensus2022_employed_by_age_kreis`, `zensus2022_grid_cells`, `zensus2022_households_size`, `zensus2022_households_type`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
@@ -188,7 +188,7 @@ A=active, s=supported, i=inactive (wired, off), -=not used.
 
 ## Analysis
 
-8 stage(s), 4 in the production DAG. Datasets: `hbefa_emission_factors`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `vg250_ew`
+9 stage(s), 5 in the production DAG. Datasets: `hbefa_emission_factors`, `regiostar`, `srv2023_activity_duration_reference`, `srv2023_departure_time_reference`, `srv2023_plan_structure_reference`, `srv2023_student_reference`, `vg250_ew`, `zensus2022_employed_by_age_kreis`
 
 | Feature | Lifecycle | Prod | Pipelines | Validation | Issue |
 |---|---|---|---|---|---|
