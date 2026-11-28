@@ -1057,8 +1057,9 @@ config:
   # The students' routing, the residents' balanced assignment, the in-commuters from the origin-destination
   # table T and the two analysis stages (student_flows, student_out_commuters).
   braunschweig.students.flows_enabled: true
-  # Rule of the allotment of the residents inside a home Kreis: plan_length or home_distance (ADR-0213).
-  braunschweig.students.kreis_matching_rule: plan_length
+  # Rule of the allotment of the residents inside a home Kreis: plan_length or home_distance (ADR-0213);
+  # the default is home_distance (owner decision 2026-11-28, ADR-0213).
+  braunschweig.students.kreis_matching_rule: home_distance
   # Numerical tolerance of the fit in persons, far below one person (the controlled rounding keeps every
   # column within one person of its fitted sum); not a modelling parameter.
   braunschweig.students.fit_tolerance: 0.000001

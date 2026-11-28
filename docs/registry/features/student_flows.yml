@@ -94,5 +94,5 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    The flows are built and unit-tested; no recorded run has compared them with the SrV tables, and the default of the matching rule is still to be set by the measurement named in ADR-0213.
+    The flows are built and unit-tested; no run is recorded as validation. The default of the matching rule is `home_distance` (owner decision of 2026-11-28, ADR-0213); the rule comparison against the SrV tables is in the run manifest docs/runs/student-flows-popsim100-20261120-2026-11-28.yml and is to be repeated after the next full population run.
   source: ADR-0213
