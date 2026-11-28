@@ -153,3 +153,138 @@ def test_set_param_value_must_be_text(tmp_path):
     path = _config(tmp_path, QSIM_CONFIG)
     with pytest.raises(TypeError):
         cm.set_param(path, "qsim", "numberOfThreads", 8)
+
+
+# A module with a parameter set, as the real DiscreteModeChoice module has (eqasim-bs#679): the same name is a direct
+# parameter and a parameter of the set, and `onlyInSet` exists only inside the set.
+SET_CONFIG = ('<config>\n\t<module name="withSets" >\n\t\t<param name="constraints" value="A, B" />\n'
+              '\t\t<parameterset type="x:Y" >\n\t\t\t<param name="constraints" value="inner" />\n'
+              '\t\t\t<param name="onlyInSet" value="1" />\n\t\t</parameterset>\n'
+              '\t\t<param name="late" value="after the set" />\n\t</module>\n</config>\n')
+
+
+def test_read_param_reads_the_direct_parameter_of_a_module_with_parameter_sets(tmp_path):
+    path = _config(tmp_path, SET_CONFIG)
+    assert cm.read_param(path, "withSets", "constraints") == "A, B"
+    assert cm.read_param(path, "withSets", "late") == "after the set"
+    # A parameter inside a parameter set is never matched, and an absent direct parameter is None, not an error.
+    assert cm.read_param(path, "withSets", "onlyInSet") is None
+    assert cm.read_param(path, "withSets", "missing") is None
+
+
+def test_read_param_refuses_a_missing_or_repeated_module_and_a_repeated_parameter(tmp_path):
+    with pytest.raises(ValueError, match="no module 'nope'"):
+        cm.read_param(_config(tmp_path, SET_CONFIG), "nope", "x")
+    twice = _config(tmp_path, '<config>\n<module name="m"/>\n<module name="m"/>\n</config>\n')
+    with pytest.raises(ValueError, match="appears 2 times"):
+        cm.read_param(twice, "m", "x")
+    repeated = _config(tmp_path, '<config><module name="m"><param name="x" value="1"/>'
+                                 '<param name="x" value="2"/></module></config>')
+    with pytest.raises(ValueError, match="parameter 'x' appears 2 times"):
+        cm.read_param(repeated, "m", "x")
+
+
+def test_set_param_edits_only_the_direct_parameter_not_one_in_a_parameter_set(tmp_path):
+    """Before this fix the whole module body was searched: the set's `constraints` made the name 'appear 2 times'."""
+    path = _config(tmp_path, SET_CONFIG)
+    assert cm.set_param(path, "withSets", "constraints", "A, B, C") == "A, B"
+    assert path.read_bytes().decode("utf-8") == SET_CONFIG.replace('value="A, B"', 'value="A, B, C"')
+
+
+def test_set_param_does_not_edit_a_parameter_that_exists_only_inside_a_parameter_set(tmp_path):
+    path = _config(tmp_path, SET_CONFIG)
+    with pytest.raises(ValueError, match="no parameter 'onlyInSet' in module 'withSets'"):
+        cm.set_param(path, "withSets", "onlyInSet", "2")
+    assert path.read_bytes().decode("utf-8") == SET_CONFIG
+
+
+def _module_config(body: str) -> str:
+    return '<config>\n\t<module name="m" >\n' + body + '\t</module>\n</config>\n'
+
+
+# Each body holds one direct parameter `x` (value "direct") after a construct that could confuse a text scan of the
+# parameter set depth; every one has same-named parameters that must not be found or edited.
+SCAN_BODIES = {
+    "self_closing_set": '\t\t<parameterset type="empty" />\n\t\t<param name="x" value="direct" />\n',
+    "nested_sets": ('\t\t<parameterset type="a" >\n\t\t\t<param name="x" value="outer" />\n'
+                    '\t\t\t<parameterset type="b" >\n\t\t\t\t<param name="x" value="inner" />\n\t\t\t</parameterset>\n'
+                    '\t\t\t<param name="x" value="outer again" />\n\t\t</parameterset>\n'
+                    '\t\t<param name="x" value="direct" />\n'),
+    "commented_out_copy": '\t\t<!-- <param name="x" value="old" /> -->\n\t\t<param name="x" value="direct" />\n',
+    "comment_with_a_set_tag": ('\t\t<!-- Defines a <parameterset type="z" > block\n\t\t     that is never closed here. -->\n'
+                               '\t\t<param name="x" value="direct" />\n'),
+    "comment_with_a_closing_set_tag": ('\t\t<!-- a stray </parameterset> in a comment -->\n'
+                                       '\t\t<parameterset type="a" >\n\t\t\t<param name="x" value="inner" />\n'
+                                       '\t\t</parameterset>\n\t\t<param name="x" value="direct" />\n'),
+}
+
+
+@pytest.mark.parametrize("body", SCAN_BODIES.values(), ids=SCAN_BODIES.keys())
+def test_the_direct_parameter_is_found_and_edited_after_sets_and_comments(tmp_path, body):
+    text = _module_config(body)
+    path = _config(tmp_path, text)
+    assert cm.read_param(path, "m", "x") == "direct"
+    assert cm.set_param(path, "m", "x", "edited") == "direct"
+    # Exactly the direct value changed, whatever else (sets, comments) the module contains.
+    assert path.read_bytes().decode("utf-8") == text.replace('value="direct"', 'value="edited"')
+
+
+def test_a_commented_out_module_is_not_a_second_module_for_set_param(tmp_path):
+    text = ('<config>\n<!-- <module name="m"><param name="x" value="old" /></module> -->\n'
+            '<module name="m"><param name="x" value="direct" /></module>\n</config>\n')
+    path = _config(tmp_path, text)
+    assert cm.set_param(path, "m", "x", "edited") == "direct"
+    assert path.read_bytes().decode("utf-8") == text.replace('value="direct"', 'value="edited"')
+
+
+DMC_CONFIG = ('<?xml version="1.0" encoding="utf-8"?>\n'
+              '<!DOCTYPE config SYSTEM "http://www.matsim.org/files/dtd/config_v2.dtd">\n'
+              '<config>\n\t<module name="DiscreteModeChoice">\n'
+              '\t\t<param name="tourFinder" value="ActivityBased" />\n'
+              '\t\t<param name="tourConstraints" value="FromTripBased, VehicleContinuity" />\n'
+              '\t\t<parameterset type="tourFilter:TourLength">\n'
+              '\t\t\t<param name="maximumLength" value="6" />\n'
+              '\t\t</parameterset>\n'
+              '\t\t<parameterset type="tourFilter:Other">\n'
+              '\t\t\t<param name="maximumLength" value="99" />\n'
+              '\t\t</parameterset>\n'
+              '\t</module>\n</config>\n')
+
+
+def test_set_parameterset_param_changes_one_value_and_returns_the_old_one(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    assert cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11") == "6"
+    new, old = path.read_bytes().decode("utf-8").split("\n"), DMC_CONFIG.split("\n")
+    assert [(a, b) for a, b in zip(old, new) if a != b] == [
+        ('\t\t\t<param name="maximumLength" value="6" />', '\t\t\t<param name="maximumLength" value="11" />')]
+    assert len(old) == len(new)
+
+
+def test_set_parameterset_param_is_a_no_op_for_the_same_value(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    assert cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "6") == "6"
+    assert path.read_bytes() == DMC_CONFIG.encode("utf-8")
+
+
+def test_set_parameterset_param_names_a_missing_set(tmp_path):
+    path = _config(tmp_path, DMC_CONFIG)
+    with pytest.raises(ValueError, match="tourFilter:Missing"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:Missing", "maximumLength", "11")
+    assert path.read_bytes() == DMC_CONFIG.encode("utf-8")
+
+
+def test_set_parameterset_param_rejects_two_sets_of_the_same_type(tmp_path):
+    twice = DMC_CONFIG.replace("tourFilter:Other", "tourFilter:TourLength")
+    path = _config(tmp_path, twice)
+    with pytest.raises(ValueError, match="tourFilter:TourLength"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+
+
+def test_set_parameterset_param_rejects_a_nested_parameter_set(tmp_path):
+    nested = DMC_CONFIG.replace('\t\t\t<param name="maximumLength" value="6" />\n',
+                                '\t\t\t<parameterset type="inner">\n\t\t\t</parameterset>\n'
+                                '\t\t\t<param name="maximumLength" value="6" />\n', 1)
+    path = _config(tmp_path, nested)
+    with pytest.raises(ValueError, match="nested"):
+        cm.set_parameterset_param(path, "DiscreteModeChoice", "tourFilter:TourLength", "maximumLength", "11")
+    assert path.read_bytes() == nested.encode("utf-8")

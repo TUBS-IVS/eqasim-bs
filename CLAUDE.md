@@ -28,7 +28,7 @@ Information is maintained ONCE, machine-readable, and rendered into views. The t
 
 **Working discipline (one task, fully closed before the next):** the canonical feature workflow is in `CONTRIBUTING.md` (brainstorm -> plan -> worktree -> TDD -> verify -> review -> PR -> record). A branch is either merged-and-deleted or explicitly parked in a GitHub issue — never just left lying around. Subagents: every dispatch names its model and a tool-call budget, per `docs/codebase/notes/subagent-budget.md`.
 
-**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`, GitHub Project board), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check"). Where the session-retro automation of `docs/codebase/notes/agent-process-automation.md` is installed, it covers these duties automatically: nothing it learns waits for a decision (ADR-0170).
+**Mandatory at `/close` (end of every session):** step 9 of `CONTRIBUTING.md` (registries/ADRs/run manifests for what happened, rebuild + check the generated docs, `SESSION_LOG.md`; no Project board, ADR-0208), the fix-now-or-issue triage for newly discovered work (quick fixes listed in `SESSION_LOG.md`, larger work proposed as issues), and the triage check in `docs/codebase/notes/issue-and-pr-conventions.md` ("Triage check"). Where the session-retro automation of `docs/codebase/notes/agent-process-automation.md` is installed, it covers these duties automatically: nothing it learns waits for a decision (ADR-0170).
 
 **PRs ALWAYS via `gh pr create --repo TUBS-IVS/eqasim-bs --base main`, written out** (pinned to the fork — never the `eqasim-org/eqasim-bavaria` upstream, which the GitHub web UI defaults to). Not the former `git pr` alias: it hides the PR's creation from the desktop app, which then refuses to let the session switch Auto-fix on (why: `docs/codebase/notes/issue-and-pr-conventions.md`).
 A PR mirrors its issue (branch `<kind>/i<issue>-<slug>`, labels, `(#NN)` or `(closes #NN)` title, `**Stages:**` line) per `docs/codebase/notes/issue-and-pr-conventions.md`.
@@ -131,7 +131,7 @@ those still need the explicit yes.
 - **The session retro is the one exception:** it files the LARGER work it finds in finished sessions on its own,
   without asking; a quick fix gets no issue there either, so the board does not fill up (it searches the open issues
   first and comments on a duplicate instead; at most two per run; ADR-0170).
-All issues, PRs, and the Project board live on the fork only.
+All issues and PRs live on the fork only.
 
 **Working hygiene (reasons and incidents: `docs/codebase/notes/git-working-hygiene.md`):**
 - **One worktree per TASK, not per session:** `git worktree add -b <branch> .claude/worktrees/<task> origin/main`.

@@ -1,0 +1,9 @@
+2026-11-25 14:21:30,100 INFO Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-25 14:21:30,101 INFO NumExpr defaulting to 16 threads.
+2026-11-25 14:21:30,483 INFO [mode_choice_reach] tourFinder: ActivityBased -> IsolatedOutsideTrips in ~/i678_timing/run_long_12_13/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+2026-11-25 14:21:30,483 INFO [mode_choice_reach] tourConstraints: FromTripBased, VehicleContinuity -> FromTripBased, BorderTourVehicleContinuity in ~/i678_timing/run_long_12_13/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+2026-11-25 14:21:30,484 INFO [mode_choice_reach] maximumLength: 6 -> 13 in ~/i678_timing/run_long_12_13/braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+Executing java: ~/i678_timing/java_capped_4h.sh -cp ~/i678_work/eqasim-java-bs/braunschweig/target/braunschweig-2.3.1.jar -Xmx48G -Djava.io.tmpdir=~/i678_timing/run_long_12_13/__java_temp -Dmatsim.useLocalDtds=true org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice --config-path braunschweig_100pct_prod20261031_config_initial_mode_choice.xml --config:plans.inputPlansFile long_12_13.xml.gz --config:standaloneModeChoice.outputDirectory mode_choice --config:standaloneModeChoice.removePersonsWithNoValidAlternatives true --config:global.numberOfThreads 16 --write-input-csv-trips true --write-output-csv-trips true --compression gzip --skip-scenario-check true --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator --config:standaloneModeChoice.chunkSize 1
+java exit 143, wall time 1997.8 s
+{
+}

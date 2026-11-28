@@ -191,6 +191,8 @@ _DEFERRED_HELPER_MODULE_NAMES = (
     "braunschweig.data.transit.router_cache",
     "braunschweig.data.transit.schedule",
     "braunschweig.matsim.scenario.day_end_margin",
+    "braunschweig.matsim.config_modules",
+    "braunschweig.matsim.simulation.mode_choice_reach",
     "braunschweig.matsim.simulation.plan_check",
     "braunschweig.popsim.closure_dwell",
     "braunschweig.popsim.plan_validation",

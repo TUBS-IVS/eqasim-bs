@@ -1,0 +1,21 @@
+# Provenance of arm D (issue #679), written 2026-11-26T09:48:03+01:00 on the run server; paths relative to the home directory
+3709fb8c677116eac67c82bb6751d006a5acbad6ac4224eea1f46368e8fd208a  i679_5b212d47.bundle
+1cdd1270e5018550b15fe057bd11ae5c87631a57eaed225a02a155423788e328  i679_55d9b194.bundle
+7a48a6c3d4ec319a6e99e9426151abd1fac862cbcb9a7d3d3e7d0a65057ac5a0  i679_java_7ad6ae72e.bundle
+6ecc3eb795326514c1f42e3e2370c14b27b570665cdf411f5de53af3e58cb7ef  i679_java_496d362cc.bundle
+6b635029aaf75e7e88b621fe1472f71ed915b031338cd374cfe5f3689705d3de  i679_java_f8accd10c.bundle
+97776a08bbe5f2ac061a84536dbd0fbb  ~/i679_d/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar
+worktrees at the final launch: eqasim-bs 55d9b19458752604da24f92d29ca180808e3b3a1, eqasim-java-bs f8accd10cc15e1368452e7986bfbb85bdbede9ed
+setup 2026-11-26T08:12:51+01:00 {'eqasim-bs': '5b212d4788bc', 'eqasim-java-bs': '7ad6ae72e234'} cache_bytes 65987971436
+launch 2026-11-26T08:47:34+01:00 {'eqasim-bs': '5b212d4788bc', 'eqasim-java-bs': 'f8accd10cc15'}
+launch 2026-11-26T09:20:32+01:00 {'eqasim-bs': '55d9b1945875', 'eqasim-java-bs': 'f8accd10cc15'}
+[isolated-run] run=i679_d eqasim-bs=5b212d4788bcac25f15c93f66651533fb8d05a89 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed start=2026-11-26T08:47:35+01:00
+[isolated-run] run=i679_d eqasim-bs=5b212d4788bcac25f15c93f66651533fb8d05a89 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed exit=1 end=2026-11-26T09:11:19+01:00
+[isolated-run] run=i679_d eqasim-bs=55d9b19458752604da24f92d29ca180808e3b3a1 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed start=2026-11-26T09:20:33+01:00
+[isolated-run] run=i679_d eqasim-bs=55d9b19458752604da24f92d29ca180808e3b3a1 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed exit=0 end=2026-11-26T09:44:25+01:00
+## DiscreteModeChoice constraints in the prepared config of arm D and arm C
+D <param name="tripConstraints" value="OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised" <param name="tourConstraints" value="FromTripBased, VehicleContinuity" <param name="tourFilters" value="OutsideFilter, TourLength" <param name="maximumLength" value="6" <param name="activityTypes" value="home"
+<param name="activityTypes" value="outside, home"
+C <param name="tripConstraints" value="OutsideConstraint, TransitWalk" <param name="tourConstraints" value="FromTripBased, VehicleContinuity" <param name="tourFilters" value="OutsideFilter, TourLength" <param name="maximumLength" value="6" <param name="activityTypes" value="home"
+<param name="activityTypes" value="outside, home"
+## fallbackBehaviour of DiscreteModeChoice, arm D then arm C: <param name="fallbackBehaviour" value="EXCEPTION" / <param name="fallbackBehaviour" value="EXCEPTION"

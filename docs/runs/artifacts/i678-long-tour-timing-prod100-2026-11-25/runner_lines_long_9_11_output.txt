@@ -1,0 +1,64 @@
+2026-11-25T14:05:56,275  INFO CommandLine:539    compression = gzip
+2026-11-25T14:05:56,275  INFO CommandLine:539    config-path = braunschweig_100pct_prod20261031_config_initial_mode_choice.xml
+2026-11-25T14:05:56,276  INFO CommandLine:539    eqasim-configurator = org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-25T14:05:56,276  INFO CommandLine:539    skip-scenario-check = true
+2026-11-25T14:05:56,276  INFO CommandLine:539    write-input-csv-trips = true
+2026-11-25T14:05:56,276  INFO CommandLine:539    write-output-csv-trips = true
+2026-11-25T14:05:56,279  INFO CommandLine:549       standaloneModeChoice.removePersonsWithNoValidAlternatives = true
+2026-11-25T14:05:56,280  INFO CommandLine:549       plans.inputPlansFile = long_9_11.xml.gz
+2026-11-25T14:05:56,280  INFO CommandLine:549       global.numberOfThreads = 16
+2026-11-25T14:05:56,280  INFO CommandLine:549       standaloneModeChoice.chunkSize = 1
+2026-11-25T14:05:56,280  INFO CommandLine:549       standaloneModeChoice.outputDirectory = mode_choice
+2026-11-25T14:07:42,630  INFO StandaloneModeChoicePerformer:129 Splitting 815 plans into 815 chunks (1 each) over 16 threads
+2026-11-25T14:08:02,631  INFO ParallelProgress:86 [Standalone mode choice, 7/815, (0.86%)]
+2026-11-25T14:08:12,634  INFO ParallelProgress:86 [Standalone mode choice, 21/815, (2.58%), RT:10s, 2.10it/s, ~06:18]
+2026-11-25T14:08:22,635  INFO ParallelProgress:86 [Standalone mode choice, 35/815, (4.29%), RT:20s, 1.75it/s, ~07:25]
+2026-11-25T14:08:32,637  INFO ParallelProgress:86 [Standalone mode choice, 68/815, (8.34%), RT:30s, 2.27it/s, ~05:29]
+2026-11-25T14:08:42,638  INFO ParallelProgress:86 [Standalone mode choice, 109/815, (13.37%), RT:40s, 2.73it/s, ~04:19]
+2026-11-25T14:08:52,640  INFO ParallelProgress:86 [Standalone mode choice, 118/815, (14.48%), RT:50s, 2.36it/s, ~04:55]
+2026-11-25T14:09:02,641  INFO ParallelProgress:86 [Standalone mode choice, 133/815, (16.32%), RT:01:00, 2.22it/s, ~05:07]
+2026-11-25T14:09:12,643  INFO ParallelProgress:86 [Standalone mode choice, 140/815, (17.18%), RT:01:10, 2.00it/s, ~05:37]
+2026-11-25T14:09:22,645  INFO ParallelProgress:86 [Standalone mode choice, 153/815, (18.77%), RT:01:20, 1.91it/s, ~05:46]
+2026-11-25T14:09:32,646  INFO ParallelProgress:86 [Standalone mode choice, 173/815, (21.23%), RT:01:30, 1.92it/s, ~05:33]
+2026-11-25T14:09:42,648  INFO ParallelProgress:86 [Standalone mode choice, 205/815, (25.15%), RT:01:40, 2.05it/s, ~04:57]
+2026-11-25T14:09:52,650  INFO ParallelProgress:86 [Standalone mode choice, 214/815, (26.26%), RT:01:50, 1.95it/s, ~05:08]
+2026-11-25T14:10:02,652  INFO ParallelProgress:86 [Standalone mode choice, 230/815, (28.22%), RT:02:00, 1.92it/s, ~05:05]
+2026-11-25T14:10:12,654  INFO ParallelProgress:86 [Standalone mode choice, 237/815, (29.08%), RT:02:10, 1.82it/s, ~05:17]
+2026-11-25T14:10:22,656  INFO ParallelProgress:86 [Standalone mode choice, 248/815, (30.43%), RT:02:20, 1.77it/s, ~05:20]
+2026-11-25T14:10:32,658  INFO ParallelProgress:86 [Standalone mode choice, 258/815, (31.66%), RT:02:30, 1.72it/s, ~05:23]
+2026-11-25T14:10:42,659  INFO ParallelProgress:86 [Standalone mode choice, 268/815, (32.88%), RT:02:40, 1.68it/s, ~05:26]
+2026-11-25T14:10:52,660  INFO ParallelProgress:86 [Standalone mode choice, 278/815, (34.11%), RT:02:50, 1.64it/s, ~05:28]
+2026-11-25T14:11:02,661  INFO ParallelProgress:86 [Standalone mode choice, 293/815, (35.95%), RT:03:00, 1.63it/s, ~05:20]
+2026-11-25T14:11:12,662  INFO ParallelProgress:86 [Standalone mode choice, 303/815, (37.18%), RT:03:10, 1.59it/s, ~05:21]
+2026-11-25T14:11:22,663  INFO ParallelProgress:86 [Standalone mode choice, 314/815, (38.53%), RT:03:20, 1.57it/s, ~05:19]
+2026-11-25T14:11:32,664  INFO ParallelProgress:86 [Standalone mode choice, 327/815, (40.12%), RT:03:30, 1.56it/s, ~05:13]
+2026-11-25T14:11:42,666  INFO ParallelProgress:86 [Standalone mode choice, 336/815, (41.23%), RT:03:40, 1.53it/s, ~05:13]
+2026-11-25T14:11:52,667  INFO ParallelProgress:86 [Standalone mode choice, 346/815, (42.45%), RT:03:50, 1.50it/s, ~05:11]
+2026-11-25T14:12:02,668  INFO ParallelProgress:86 [Standalone mode choice, 356/815, (43.68%), RT:04:00, 1.48it/s, ~05:09]
+2026-11-25T14:12:12,671  INFO ParallelProgress:86 [Standalone mode choice, 366/815, (44.91%), RT:04:10, 1.46it/s, ~05:06]
+2026-11-25T14:12:22,673  INFO ParallelProgress:86 [Standalone mode choice, 379/815, (46.50%), RT:04:20, 1.46it/s, ~04:59]
+2026-11-25T14:12:32,674  INFO ParallelProgress:86 [Standalone mode choice, 390/815, (47.85%), RT:04:30, 1.44it/s, ~04:54]
+2026-11-25T14:12:42,676  INFO ParallelProgress:86 [Standalone mode choice, 397/815, (48.71%), RT:04:40, 1.42it/s, ~04:54]
+2026-11-25T14:12:52,678  INFO ParallelProgress:86 [Standalone mode choice, 408/815, (50.06%), RT:04:50, 1.41it/s, ~04:49]
+2026-11-25T14:13:02,680  INFO ParallelProgress:86 [Standalone mode choice, 420/815, (51.53%), RT:05:00, 1.40it/s, ~04:42]
+2026-11-25T14:13:12,682  INFO ParallelProgress:86 [Standalone mode choice, 438/815, (53.74%), RT:05:10, 1.41it/s, ~04:26]
+2026-11-25T14:13:22,683  INFO ParallelProgress:86 [Standalone mode choice, 455/815, (55.83%), RT:05:20, 1.42it/s, ~04:13]
+2026-11-25T14:13:32,684  INFO ParallelProgress:86 [Standalone mode choice, 468/815, (57.42%), RT:05:30, 1.42it/s, ~04:04]
+2026-11-25T14:13:42,685  INFO ParallelProgress:86 [Standalone mode choice, 485/815, (59.51%), RT:05:40, 1.43it/s, ~03:51]
+2026-11-25T14:13:52,686  INFO ParallelProgress:86 [Standalone mode choice, 496/815, (60.86%), RT:05:50, 1.42it/s, ~03:45]
+2026-11-25T14:14:02,688  INFO ParallelProgress:86 [Standalone mode choice, 532/815, (65.28%), RT:06:00, 1.48it/s, ~03:11]
+2026-11-25T14:14:12,689  INFO ParallelProgress:86 [Standalone mode choice, 567/815, (69.57%), RT:06:10, 1.53it/s, ~02:41]
+2026-11-25T14:14:22,691  INFO ParallelProgress:86 [Standalone mode choice, 581/815, (71.29%), RT:06:20, 1.53it/s, ~02:33]
+2026-11-25T14:14:32,693  INFO ParallelProgress:86 [Standalone mode choice, 603/815, (73.99%), RT:06:30, 1.55it/s, ~02:17]
+2026-11-25T14:14:42,694  INFO ParallelProgress:86 [Standalone mode choice, 640/815, (78.53%), RT:06:40, 1.60it/s, ~01:49]
+2026-11-25T14:14:52,695  INFO ParallelProgress:86 [Standalone mode choice, 699/815, (85.77%), RT:06:50, 1.70it/s, ~01:08]
+2026-11-25T14:15:02,696  INFO ParallelProgress:86 [Standalone mode choice, 710/815, (87.12%), RT:07:00, 1.69it/s, ~01:02]
+2026-11-25T14:15:12,698  INFO ParallelProgress:86 [Standalone mode choice, 741/815, (90.92%), RT:07:10, 1.72it/s, ~42s]
+2026-11-25T14:15:22,699  INFO ParallelProgress:86 [Standalone mode choice, 764/815, (93.74%), RT:07:20, 1.74it/s, ~29s]
+2026-11-25T14:15:32,700  INFO ParallelProgress:86 [Standalone mode choice, 788/815, (96.69%), RT:07:30, 1.75it/s, ~15s]
+2026-11-25T14:15:42,701  INFO ParallelProgress:86 [Standalone mode choice, 798/815, (97.91%), RT:07:40, 1.73it/s, ~09s]
+2026-11-25T14:15:52,702  INFO ParallelProgress:86 [Standalone mode choice, 808/815, (99.14%), RT:07:50, 1.72it/s, ~04s]
+2026-11-25T14:16:02,704  INFO ParallelProgress:86 [Standalone mode choice, 809/815, (99.26%), RT:08:00, 1.69it/s, ~03s]
+2026-11-25T14:16:22,708  INFO ParallelProgress:86 [Standalone mode choice, 814/815, (99.88%), RT:08:20, 1.63it/s, ~00s]
+2026-11-25T14:16:25,166  INFO ParallelProgress:140 Standalone mode choice Done!
+2026-11-25T14:16:25,970  INFO PopulationWriter:150 Population written to: mode_choice/output_plans.xml.gz

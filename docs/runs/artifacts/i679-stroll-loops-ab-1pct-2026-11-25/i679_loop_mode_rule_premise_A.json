@@ -1,0 +1,284 @@
+{
+  "arm": "A",
+  "persons_by_group": {
+    "freight": 521,
+    "incommuter": 599,
+    "resident": 11466,
+    "student_incommuter": 81
+  },
+  "plans_read": "braunschweig.matsim.simulation.prepare__724ab5476e9ea71e72868c8d0150ceab.cache/braunschweig_1pct_i679_population.xml.gz",
+  "resident_activities_by_type": {
+    "education": 2169,
+    "escort": 1851,
+    "home": 25934,
+    "leisure": 5359,
+    "other": 2540,
+    "outside": 3549,
+    "shop": 2926,
+    "work": 4058
+  },
+  "resident_activities_without_facility_by_type": {},
+  "resident_trips": 36920,
+  "resident_trips_by_mode_after": {
+    "bicycle": 3295,
+    "car": 19301,
+    "car_passenger": 5024,
+    "outside": 1499,
+    "pt": 2152,
+    "walk": 5649
+  },
+  "resident_trips_without_input_row": 0,
+  "rule_caught_by_class_and_mode_after": {
+    "all|car": 7,
+    "all|car_passenger": 4,
+    "all|walk": 32
+  },
+  "rule_caught_by_mode_after_initial_choice": {
+    "car": 7,
+    "car_passenger": 4,
+    "walk": 32
+  },
+  "rule_caught_by_mode_before": {
+    "bicycle": 1,
+    "car": 13,
+    "car_passenger": 7,
+    "walk": 22
+  },
+  "rule_caught_by_origin_type_destination_type_mode_before": {
+    "escort|leisure|car": 2,
+    "leisure|leisure|bicycle": 1,
+    "leisure|leisure|car": 4,
+    "leisure|leisure|car_passenger": 4,
+    "leisure|leisure|walk": 16,
+    "leisure|other|car": 2,
+    "leisure|other|car_passenger": 1,
+    "leisure|other|walk": 1,
+    "leisure|shop|car": 2,
+    "other|leisure|car": 1,
+    "other|leisure|car_passenger": 1,
+    "other|leisure|walk": 5,
+    "shop|leisure|car": 2,
+    "shop|leisure|car_passenger": 1
+  },
+  "rule_caught_motorised_after_by_class_types_modes_outside": {
+    "all|leisure|leisure|car_passenger|car_passenger|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "all|leisure|leisure|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 2,
+    "all|leisure|leisure|walk|car_passenger|no_outside|tour_without_outside|tour_up_to_6_trips": 1,
+    "all|leisure|leisure|walk|car|no_outside|tour_without_outside|tour_up_to_6_trips": 2,
+    "all|leisure|other|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "all|other|leisure|car_passenger|car_passenger|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "all|other|leisure|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "all|shop|leisure|car_passenger|car_passenger|no_outside|tour_without_outside|tour_over_6_trips": 1,
+    "all|shop|leisure|car|car|no_outside|tour_without_outside|tour_up_to_6_trips": 1
+  },
+  "rule_caught_motorised_after_examples": [
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03241018",
+        "type": "leisure",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "walk",
+      "origin": {
+        "facility": "EXT03241018",
+        "type": "leisure",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "person_id": "1029428",
+      "plan_has_outside": false,
+      "trip": 3
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "sec_lu_9620",
+        "type": "leisure",
+        "x": "627300.0",
+        "y": "5815350.0"
+      },
+      "mode_after": "car",
+      "mode_before": "walk",
+      "origin": {
+        "facility": "sec_lu_9620",
+        "type": "leisure",
+        "x": "627300.0",
+        "y": "5815350.0"
+      },
+      "person_id": "1054485",
+      "plan_has_outside": false,
+      "trip": 1
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03254008",
+        "type": "leisure",
+        "x": "576222.95072",
+        "y": "5762624.671385"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "EXT03254008",
+        "type": "other",
+        "x": "576222.95072",
+        "y": "5762624.671385"
+      },
+      "person_id": "361184",
+      "plan_has_outside": true,
+      "trip": 2
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03254020",
+        "type": "leisure",
+        "x": "569051.644896",
+        "y": "5784612.128499"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03254020",
+        "type": "shop",
+        "x": "569051.644896",
+        "y": "5784612.128499"
+      },
+      "person_id": "454308",
+      "plan_has_outside": false,
+      "trip": 1
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03254032",
+        "type": "leisure",
+        "x": "580446.624934",
+        "y": "5781291.149097"
+      },
+      "mode_after": "car",
+      "mode_before": "walk",
+      "origin": {
+        "facility": "EXT03254032",
+        "type": "leisure",
+        "x": "580446.624934",
+        "y": "5781291.149097"
+      },
+      "person_id": "603566",
+      "plan_has_outside": false,
+      "trip": 3
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "sec_res_236596",
+        "type": "leisure",
+        "x": "574381.941",
+        "y": "5796767.57308"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "sec_res_236596",
+        "type": "leisure",
+        "x": "574381.941",
+        "y": "5796767.57308"
+      },
+      "person_id": "639664",
+      "plan_has_outside": true,
+      "trip": 10
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03241011",
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "740021",
+      "plan_has_outside": true,
+      "trip": 6
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03241011",
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "type": "other",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "754964",
+      "plan_has_outside": true,
+      "trip": 3
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03241018",
+        "type": "leisure",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "EXT03241018",
+        "type": "shop",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "person_id": "775447",
+      "plan_has_outside": false,
+      "trip": 2
+    },
+    {
+      "class": "all",
+      "destination": {
+        "facility": "EXT03241011",
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "784044",
+      "plan_has_outside": true,
+      "trip": 1
+    }
+  ],
+  "rule_caught_trips": 43,
+  "same_facility_without_leisure_end_by_mode_before": {
+    "bicycle": 224,
+    "car": 822,
+    "car_passenger": 214,
+    "outside": 241,
+    "walk": 655
+  }
+}

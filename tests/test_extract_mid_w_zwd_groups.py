@@ -16,10 +16,11 @@ from braunschweig.popsim.shop_subtype import (
 from scripts import extract_mid_w_zwd_groups as M
 
 
-def _leg(zweck: int, zwd: int, km: float, weight: float = 1.0) -> dict:
-    """One weekday, non-rbW leg."""
+def _leg(zweck: int, zwd: int, km: float, weight: float = 1.0, hvm: int = 1) -> dict:
+    """One weekday, non-rbW leg; ``hvm`` is the MiD main mode (``trips.MODE_BY_HVM``, 1 walk),
+    read only by the loop rule of ``--without-loops``."""
     return {"W_ZWECK": zweck, "W_ZWD": zwd, "W_GEW": weight, "W_RBW": 0,
-            "kernwo": M.KERNWO_WEEKDAY_CODES[0], "wegkm_imp": km}
+            "kernwo": M.KERNWO_WEEKDAY_CODES[0], "wegkm_imp": km, "hvm_imp": hvm}
 
 
 def _wege(extra=()) -> pd.DataFrame:
@@ -43,7 +44,8 @@ def _wege(extra=()) -> pd.DataFrame:
         _leg(10, 2202, 3.0), _leg(10, 7704, 2.5),    # leisure_unspecified (third variant only)
     ]
     legs.extend(extra)
-    return pd.DataFrame(legs)
+    # One leg per person (H_ID): no leg is followed by a way home, so every stroll is a loop.
+    return pd.DataFrame(legs).assign(H_ID=lambda frame: range(len(frame)), P_ID=1, W_ID=1)
 
 
 def _wege_without_the_code_10_legs() -> pd.DataFrame:
@@ -412,3 +414,91 @@ def test_kernwo_weekday_codes_is_the_shared_universe_definition():
 
     assert tuple(M.KERNWO_WEEKDAY_CODES) == trips.WEEKDAY_DIARY_KERNWO
     assert M.RBW_SUMMARY_LEG_CODE == trips.RBW_LEG_FLAG
+
+
+# --------------------------------------------------------------- loops left out (issue #679)
+
+
+#: A dog walk by bicycle (a loop) and a stroll by car (no loop: the model keeps it as a trip).
+_LOOP_EXTRA_LEGS = [_leg(7, 711, 3.0, hvm=2), _leg(7, 710, 9.0, hvm=4)]
+
+
+def test_leaving_out_the_loops_applies_the_models_rule_and_changes_nothing_else():
+    """The walk stroll (710) and the bicycle dog walk (711) leave the leg universe, the car stroll
+    stays (the model's rule, purpose_subtype.drop_loop_legs); the other purposes and the default
+    call are untouched, and the left-out counts are reported per mode."""
+    from braunschweig.synthesis.locations.secondary_chainsolvers.loops import LOOP_CODES
+
+    wege = _wege(extra=_LOOP_EXTRA_LEGS)
+    default_table, default_diagnostics = M.build_group_reference(wege)
+    table, diagnostics = M.build_group_reference(wege, leave_out_loops=True)
+    M.check_invariants(table)
+
+    assert M.LOOP_CODES is LOOP_CODES
+    assert "n_loop_legs_left_out" not in default_diagnostics
+    assert diagnostics["n_loop_legs_left_out"] == 2
+    # Every fixture leg is on foot unless stated: 18 walk legs, one of them the 710 stroll.
+    assert diagnostics["n_loop_legs_left_out_by_mode"] == {
+        "bicycle": {"legs": 1, "left_out": 1, "kept": 0, "out_and_back_kept": 0},
+        "walk": {"legs": 18, "left_out": 1, "kept": 17, "out_and_back_kept": 0}}
+    assert diagnostics["n_legs_after_loop_removal"] == 18      # 20 weekday legs - 2 loops
+    # leisure_local holds 706 + walk 710 + bicycle 711 + car 710 by default; 706 and car 710 remain.
+    assert int(_row(default_table, "default", "leisure_local")["n_unweighted"]) == 4
+    assert int(_row(table, "default", "leisure_local")["n_unweighted"]) == 2
+    # 10 labelled leisure legs by default (706, 710 x2, 711, 701 x2, 702, 799, 708, 709), 8 without.
+    assert diagnostics["default/leisure"]["n_labelled"] == 8
+    assert _row(table, "default", "leisure_local")["share_within_purpose"] == pytest.approx(2 / 8)
+    other = default_table["purpose"] != "leisure"
+    pd.testing.assert_frame_equal(table[table["purpose"] != "leisure"].reset_index(drop=True),
+                                  default_table[other].reset_index(drop=True))
+
+
+def test_leaving_out_the_loops_keeps_an_out_and_back_stroll():
+    """A walk stroll from home whose next diary leg goes home is out-and-back and stays: the
+    script reads the way home on the whole weekday diary, before the purpose blocks (the
+    home leg is in none of them)."""
+    person = pd.DataFrame([_leg(7, 710, 1.5), _leg(8, 7704, 1.5)]).assign(
+        H_ID=10_000, P_ID=1, W_ID=[1, 2])
+    wege = pd.concat([_wege(extra=_LOOP_EXTRA_LEGS), person], ignore_index=True)
+
+    _table, diagnostics = M.build_group_reference(wege, leave_out_loops=True)
+
+    assert diagnostics["n_loop_legs_left_out"] == 2
+    assert diagnostics["n_loop_legs_left_out_by_mode"]["walk"] == {
+        "legs": 20, "left_out": 1, "kept": 19, "out_and_back_kept": 1}
+
+
+def test_main_writes_the_loop_free_table_next_to_the_unchanged_default_table(tmp_path):
+    """The default run writes only the present table; ``--without-loops`` writes the second
+    one and leaves the first alone."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _wege(extra=_LOOP_EXTRA_LEGS).to_csv(raw / M.WEGE_FILE, sep=";", index=False)
+    out = tmp_path / "out"
+    common = ["--raw", str(raw), "--out-dir", str(out), "--source-commit", "abc12345"]
+
+    assert M.main(common) == 0
+    assert sorted(path.name for path in out.iterdir()) == [M.MID_GROUP_TABLE]
+    default_bytes = (out / M.MID_GROUP_TABLE).read_bytes()
+
+    assert M.main(common + ["--without-loops"]) == 0
+    assert sorted(path.name for path in out.iterdir()) == sorted(
+        [M.MID_GROUP_TABLE, M.MID_GROUP_TABLE_WITHOUT_LOOPS])
+    assert (out / M.MID_GROUP_TABLE).read_bytes() == default_bytes
+    loop_free_text = (out / M.MID_GROUP_TABLE_WITHOUT_LOOPS).read_text(encoding="utf-8")
+    # The loop paragraph is wrapped; read the header as one line of text.
+    header_text = " ".join(line.lstrip("#").strip() for line in loop_free_text.splitlines()
+                           if line.startswith("#"))
+    assert ("n_loop_legs_left_out=2 (bicycle 1 of 1 weekday legs, walk 1 of 18 weekday legs)"
+            in header_text)
+    # The header must not call the pre-removal count the universe of every count below.
+    assert "n_legs_after_weekday_rbw=20" in loop_free_text
+    assert "n_legs_after_loop_removal=18" in loop_free_text
+    assert "universe every count below is measured on" not in loop_free_text
+    assert "universe every count below is measured on" in (
+        out / M.MID_GROUP_TABLE).read_text(encoding="utf-8")
+    assert "# Table: %s" % M.MID_GROUP_TABLE_WITHOUT_LOOPS in loop_free_text
+    loop_free = pd.read_csv(out / M.MID_GROUP_TABLE_WITHOUT_LOOPS, comment="#")
+    local = loop_free[(loop_free["spec_variant"] == "default")
+                      & (loop_free["group"] == "leisure_local")]
+    assert int(local["n_unweighted"].iloc[0]) == 2

@@ -1,0 +1,51 @@
+dataset: hbefa_emission_factors
+title: HBEFA emission-factor tables (cold and warm, average and detailed)
+inventory_id: null
+provider: INFRAS (Handbook Emission Factors for Road Transport, HBEFA)
+vintage: unknown -- the HBEFA version to use is an open owner decision (issue #688)
+geography: unknown -- the country is chosen at export; Germany is intended
+crs: null
+roles:
+- reference_table
+used_by:
+- braunschweig.data.hbefa
+acquisition:
+  method: restricted_delivery
+  source: |
+    Exported by a licence holder from the HBEFA software (https://www.hbefa.net), four files: cold-start
+    and warm emission factors, each once as fleet average per vehicle category and once detailed per
+    sub-segment. Never downloaded by a script. Whether the institute holds a licence was not clarified
+    as of 2026-11-26 (issue #688).
+  script: null
+storage:
+  expected_path: |
+    No fixed path. The four files are named by the config keys hbefa_cold_average_path,
+    hbefa_warm_average_path, hbefa_cold_detailed_path and hbefa_warm_detailed_path, which have no default
+    (stage braunschweig.data.hbefa). Keep the files outside the repository or under the gitignored
+    eqasim-data/; never commit them.
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: null
+  notes: |
+    Not in scripts/verify_braunschweig_inputs.py: there is no fixed path to check, and the stage itself
+    refuses a missing, empty, wrong-kind or sample table before anything is computed.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: HBEFA licence agreement (INFRAS); licence status and version at the institute unknown as of 2026-11-26
+  restricted: true
+  redistribution: forbidden
+limitations: |
+  Not on the run server and not seen by anyone in this project as of 2026-11-26: every statement about the
+  table format rests on the MATSim sample tables of HBEFA 4.1 (same column layout, deliberately altered
+  values). ASSUMPTION: a real 4.1 or 5.x export carries the same column names; the stage names a missing
+  column. The MATSim emissions contrib documents HBEFA 3.1 and 4.1; a 5.x export is unproven with it.
+  Whether the cold-start tables hold heavy-goods-vehicle rows is unverified and decides how the owner
+  assumption "heavy_truck without cold start" can be implemented (ADR-0209).
+notes: |
+  Needed only for the post-run emissions chain (feature post_run_emissions), which is not in the production
+  run list. The MATSim sample tables that ship inside the run jar are NOT this dataset: the stage refuses
+  them by file name and by content hash.

@@ -1,0 +1,19 @@
+218:2026-11-25T17:52:21,592  INFO StandaloneModeChoicePerformer:129 Splitting 500 plans into 5 chunks (100 each) over 4 threads
+431:Exception in thread "main" java.util.concurrent.ExecutionException: java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because the return value of "org.matsim.contribs.discrete_mode_choice.model.DiscreteModeChoiceTrip.getInitialMode()" is null
+432:	at java.base/java.util.concurrent.FutureTask.report(FutureTask.java:124)
+433:	at java.base/java.util.concurrent.FutureTask.get(FutureTask.java:193)
+434:	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer.run(StandaloneModeChoicePerformer.java:168)
+435:	at org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice.main(RunStandaloneModeChoice.java:269)
+436:Caused by: java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because the return value of "org.matsim.contribs.discrete_mode_choice.model.DiscreteModeChoiceTrip.getInitialMode()" is null
+437:	at org.eqasim.core.simulation.mode_choice.constraints.OutsideConstraint.validateBeforeEstimation(OutsideConstraint.java:17)
+438:	at org.matsim.contribs.discrete_mode_choice.model.constraints.CompositeTripConstraint.validateBeforeEstimation(CompositeTripConstraint.java:27)
+439:	at org.matsim.contribs.discrete_mode_choice.model.constraints.TourFromTripConstraint.validateBeforeEstimation(TourFromTripConstraint.java:37)
+440:	at org.matsim.contribs.discrete_mode_choice.model.constraints.CompositeTourConstraint.validateBeforeEstimation(CompositeTourConstraint.java:33)
+441:	at org.matsim.contribs.discrete_mode_choice.model.tour_based.TourBasedModel.chooseModes(TourBasedModel.java:89)
+442:	at org.matsim.contribs.discrete_mode_choice.replanning.DiscreteModeChoiceAlgorithm.run(DiscreteModeChoiceAlgorithm.java:54)
+443:	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer$PlanAlgoThread.run(StandaloneModeChoicePerformer.java:225)
+444:	at org.eqasim.core.standalone_mode_choice.StandaloneModeChoicePerformer.lambda$run$1(StandaloneModeChoicePerformer.java:157)
+445:	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328)
+446:	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+447:	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+448:	at java.base/java.lang.Thread.run(Thread.java:1474)

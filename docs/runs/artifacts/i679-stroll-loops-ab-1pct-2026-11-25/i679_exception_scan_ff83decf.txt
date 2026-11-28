@@ -1,0 +1,9 @@
+# Exception scan of the i679 arms at ff83decf (issue #679, task C7), written 2026-11-26T02:52:32+01:00
+# Counts of lines matching each pattern (grep -c), per file; paths relative to the run directory.
+logs/run_20261125T233012.log (arm C): Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=10822
+logs/run_20261126T022153.log (arm A): Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=3041
+logs/run_20261126T022106.log (arm B): Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=847
+arm C cache/matsim.simulation.run__aeaf9cdf.../simulation_output/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=0
+arm C .../simulation_output/logfile.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=0
+arm C cache/braunschweig.matsim.simulation.prepare__0db0a4dc.../mode_choice/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 lines=0
+MATSim iterations in arm C: it.0 it.1 it.2 it.3 it.4 it.5 

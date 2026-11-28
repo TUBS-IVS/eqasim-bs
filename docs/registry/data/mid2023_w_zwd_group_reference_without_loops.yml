@@ -1,0 +1,62 @@
+dataset: mid2023_w_zwd_group_reference_without_loops
+title: MiD 2023 W_ZWD subtype-group mix and leg lengths with strolls and dog walks left out
+provider: derived in-repo from the restricted MiD 2023 B1 scientific-use delivery
+vintage: 2023 survey year (MiD 2023 B1 Standard delivery)
+geography: national (Germany), as the sibling table mid2023_w_zwd_group_reference.
+crs: null
+roles:
+- validation_reference
+- reference_table
+acquisition:
+  method: committed
+  source: |
+    Same extraction as the sibling record mid2023_w_zwd_group_reference, run with
+    --without-loops: python scripts/extract_mid_w_zwd_groups.py --raw <MiD2023 B1 CSV dir>
+    --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha> --without-loops. The loop
+    legs, except an out-and-back stroll, are removed from the leg universe after the weekday filter by the model's own rule,
+    braunschweig.popsim.purpose_subtype.drop_loop_legs (defined in
+    docs/codebase/notes/leisure-loops.md); the mode it needs is trips.map_mode of the MiD column
+    hvm_imp, which this run reads in addition. Nothing else differs.
+  script: scripts/extract_mid_w_zwd_groups.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Ships committed with every clone (git add -f, per the .gitignore allowlist), so it is not
+    listed in scripts/verify_braunschweig_inputs.py, like the sibling table. The flag is covered
+    by tests/test_extract_mid_w_zwd_groups.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: aggregate values (data-protection reviewed); the raw MiD B1 delivery is restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Role, universe, weights, labelling rule, spec variants and distance percentiles are those of
+  mid2023_w_zwd_group_reference; this record states only the difference. The count of legs left
+  out is in the file header (n_loop_legs_left_out and its split by mode) and in the extraction log,
+  not repeated here.
+
+  Purpose (issue #679): with secondary_loop_zero_displacement ON the model places a stroll or dog
+  walk at the place of the activity before it, so the model has no loop leg length. A comparison
+  with the survey that should not count loops on either side reads this table instead of the
+  sibling. The code and mode sets are the model's own (purpose_subtype.LOOP_CODES and LOOP_MODES,
+  imported), not retyped copies.
+
+  The table applies the same rule as the loop-free leisure estimates of the model
+  (secondary_leisure_estimates_without_loops), through purpose_subtype.drop_loop_legs; the rule is
+  defined in docs/codebase/notes/leisure-loops.md. It still makes no draw: the model also draws a loop for
+  legs where the detail was not asked (the unlabelled legs have no W_ZWD to test), so this table is the
+  survey without the labelled loops, not a replica of the model's loop flag.
+
+  Not consumed by scripts/validate_secondary_distances.py: that script compares with the
+  published W12 table, which this table does not replace (W12 holds no W_ZWD detail).
+notes: |
+  MEASUREMENT REFERENCE, like the sibling: not a control target and not a validated calibration
+  target; no stage reads it. Consumer: scripts/compare_purpose_subtypes_srv.py through its
+  --mid-reference argument (the default stays the sibling table).

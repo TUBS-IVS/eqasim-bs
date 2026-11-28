@@ -27,6 +27,8 @@ import matsim.runtime.eqasim as eqasim
 import matsim.runtime.java as java
 import pandas as pd
 
+from braunschweig.matsim.simulation import mode_choice_reach
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 from braunschweig.matsim.simulation.plan_check import resolve_population_path
 
 logger = logging.getLogger(__name__)
@@ -149,11 +151,16 @@ def summarise(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     }
 
 
-def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = ()) -> dict:
+def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = (),
+        reach: ReachSettings | None = None) -> dict:
     """Run eqasim's standalone mode choice on the final population and replace the population with the result.
 
     Persons of ``excluded_subpopulations`` keep their plans (the runner fails if the list matches nobody and logs the
     persons kept per subpopulation in ``mode_choice/``); the summary records the list.
+
+    ``reach`` (#678) gives the choice its own config file: ``mode_choice_reach.write_initial_config`` writes a copy of
+    the final config with those settings, the runner reads that copy and the final config keeps its bytes; the report
+    names the file passed as ``config_file`` and the two values as ``reach`` (None without ``reach``).
 
     ``config_name`` is the MATSim config in the stage directory; the population is the file its
     ``plans.inputPlansFile`` names. Travel times are free flow (no travel time option is passed). Raises ValueError if
@@ -180,10 +187,20 @@ def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = ()
                            "never a valid input")
     threads = int(context.config("matsim_threads") or context.config("processes"))
 
+    config_file = config_name
+    if reach is not None:
+        # Written before the Java call and overwritten or removed by the next call: a failed run leaves it as a trace
+        # of what was run. Passed stage-relative, so a config_name with a directory part still finds its copy.
+        written = mode_choice_reach.write_initial_config(os.path.join(stage_path, config_name), reach)
+        config_file = os.path.relpath(written, stage_path).replace(os.sep, "/")
+    logger.info("%s the runner uses the config file %s; reach settings: %s", _LOG_TAG, config_file,
+                "none (final config as is)" if reach is None else
+                f"isolate_outside_trips={reach.isolate_outside_trips}, max_tour_length={reach.max_tour_length}")
+
     started = time.monotonic()
     # Like every other Java call of the repo, pass the plans file relative to the config (the stage directory).
     relative_population = os.path.relpath(population_path, stage_path).replace(os.sep, "/")
-    eqasim.run(context, RUNNER, arguments(config_name, relative_population, threads, excluded_subpopulations))
+    eqasim.run(context, RUNNER, arguments(config_file, relative_population, threads, excluded_subpopulations))
     java_wall_time_s = time.monotonic() - started
 
     output_directory = os.path.join(stage_path, OUTPUT_DIRECTORY)
@@ -216,6 +233,9 @@ def run(context, config_name: str, excluded_subpopulations: tuple[str, ...] = ()
         "runner": RUNNER,
         "configurator": CONFIGURATOR,
         "excluded_subpopulations": list(excluded_subpopulations),
+        "config_file": config_file,
+        "reach": None if reach is None else {"isolate_outside_trips": reach.isolate_outside_trips,
+                                             "max_tour_length": reach.max_tour_length},
     })
 
     os.replace(paths[OUTPUT_PLANS], population_path)

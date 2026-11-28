@@ -76,7 +76,9 @@ status:
     batch_032 and 0.373 vs 4.903 on batch_028; these single runs are not a timing comparison (rc2_on ran under
     a different server load).
 source: >-
-  felix run server, ~/i677 (code trees, batch copies, logs).
+  felix run server, ~/i677 (code trees, batch copies, logs). The folder was deleted on 2026-11-26 to free disk
+  space (owner's decision); the code trees are reproducible with git archive of the commits named above, the
+  committed artifacts below are what remains.
 environment: >-
   felix run server, 64 cores, GNU time for wall time and peak RSS; PopulationSim from the benchmark environment of
   popsim-run-performance-2026-11-18 with the code tree of the arm first on PYTHONPATH. The server carries a

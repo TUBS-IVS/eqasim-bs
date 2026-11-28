@@ -2,7 +2,7 @@ feature: initial_mode_choice
 title: Initial mode choice before iteration 0 with free-flow travel times
 area: matsim
 description: >-
-  Every agent of the final population except the in-commuters (excluded below) chooses its modes once with the
+  Every agent of the final population except the excluded subpopulations (below) chooses its modes once with the
   production discrete mode choice model
   BEFORE MATSim iteration 0, with free-flow car travel times, the way eqasim intends its upfront mode choice
   (ADR-0178, issue #542; supersedes the first-replanning strategy of ADR-0155). As the last step of
@@ -20,8 +20,10 @@ description: >-
   standaloneModeChoice.excludedSubpopulations, which keeps those persons' plans as read, logs the persons kept
   per subpopulation in mode_choice/, warns for a listed subpopulation without persons and fails when the list
   matches nobody; initial_mode_choice.json records the list. The exclusion also re-draws the residents' random
-  choices (ADR-0182 decision 5). Without the cordon nothing is excluded and the option
-  is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
+  choices (ADR-0182 decision 5). The injected freight subpopulation is excluded too whenever the injection wrote
+  freight trips (#678; prepare._initial_mode_choice_excluded_subpopulations, which logs the list and the freight
+  trip count): freight legs are a bare truck leg without a routing mode, which fails the outside constraint. Without
+  the cordon and without injected freight nothing is excluded and the option is not passed. The DMC's own routing sets routingMode but never the walkFallbackFrom stamp, so the plan check counts a
   walk-only trip with routingMode pt as pt-as-walk (plan_check.summarise, extended with this feature). The stage
   raises when the persons of the output differ from the input (eqasim removed persons with no
   feasible alternative) or an output is missing, and logs under [initial mode choice] and writes to
@@ -98,3 +100,5 @@ assessment:
     First measured in the next 1 % and 100 % runs (wall time of the step and of iteration 1, mode shares
     before/after); the owner's verdict follows those manifests.
   source: null
+notes: >-
+  Since ADR-0206 (#678) the initial choice runs with its own reach settings (finer outside rule, longer tours) from a second config file; Kept trips (not re-chosen) are left as they came in and runner worker failures end the run, see ADR-0206; rule: docs/codebase/notes/mode-choice-reach.md, keys: configs/base_bs.yml.

@@ -1,0 +1,12 @@
+{
+ "fixed_border | fixed_border | walk->walk | stamp True->False | unfit pt->walk | legs walk -> walk": 760,
+ "fixed_vehicle | fixed_border | car->car_passenger | stamp False->False | unfit None->None | ": 470,
+ "fixed_vehicle | fixed_border | car->pt | stamp False->False | unfit None->None | ": 70,
+ "fixed_border | fixed_border | pt->pt | stamp False->False | unfit None->pt | ": 67,
+ "fixed_vehicle | fixed_border | car->walk | stamp False->False | unfit None->None | ": 43,
+ "fixed_vehicle | fixed_border | bicycle->car_passenger | stamp False->False | unfit None->None | ": 7,
+ "fixed_vehicle | fixed_border | car->walk | stamp False->False | unfit None->walk | legs walk+car+walk -> walk": 4,
+ "fixed_vehicle | fixed_border | bicycle->walk | stamp False->False | unfit None->None | ": 2,
+ "fixed_vehicle | fixed_border | bicycle->pt | stamp False->False | unfit None->None | ": 1,
+ "fixed_vehicle | fixed_border | bicycle->walk | stamp False->False | unfit None->walk | legs bicycle -> walk": 1
+}

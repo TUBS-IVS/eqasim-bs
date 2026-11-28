@@ -38,8 +38,10 @@ import matsim.writers as writers  # noqa: E402
 from braunschweig.matsim import initial_mode_choice as I  # noqa: E402
 from braunschweig.matsim.scenario import population as POP  # noqa: E402
 from braunschweig.matsim.simulation import cordon_subpopulation as CS  # noqa: E402
+from braunschweig.matsim.simulation import mode_choice_reach as R  # noqa: E402
 from braunschweig.matsim.simulation import plan_check as C  # noqa: E402
 from braunschweig.matsim.simulation import prepare  # noqa: E402
+from braunschweig.matsim.simulation.loop_mode_rule import KEY_ENABLED as LOOP_KEY  # noqa: E402
 
 CRS = "EPSG:25832"
 SVB_ID = 900001
@@ -342,30 +344,38 @@ def test_prepare_writes_the_incommuter_strategies_into_the_final_config(tmp_path
     monkeypatch.setattr(prepare, "_verify_gate_facility_links", lambda context: None)
     monkeypatch.setattr(prepare, "_attach_vrb_tariff_zones", lambda context: None)
     monkeypatch.setattr(prepare, "_cut_to_cordon", lambda context: seen.append("cut") or "config.xml")
-    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append(("freight", result)))
+    monkeypatch.setattr(prepare, "_inject_freight", lambda context, result: seen.append(("freight", result)) or 1)
     monkeypatch.setattr(prepare, "_summarise_final_schedule", lambda context: {})
     monkeypatch.setattr(prepare, "_write_vrb_fare_inputs", lambda context, result, summary: None)
-    monkeypatch.setattr(I, "run", lambda context, result, excluded: seen.append(("initial", _strategies(
+    monkeypatch.setattr(I, "run", lambda context, result, excluded, reach: seen.append(("initial", _strategies(
         (tmp_path / result).read_text(encoding="utf-8")), excluded)))
+    monkeypatch.setattr(R, "apply", lambda config_path, settings: {})  # the reach edit is tested in its own file
+    monkeypatch.setattr(R, "require_border_vehicle_constraint", lambda jar_path: None)
 
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": True, "freight_enabled": True,
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: True,
-                   CS.KEY_REROUTE_WEIGHT: 0.1, "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   CS.KEY_REROUTE_WEIGHT: 0.1, "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13, LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
 
-        def path(self):
+        def path(self, name=None):
             return str(tmp_path)
+
+        def stage(self, name, **_kwargs):
+            return "eqasim.jar"
 
     assert prepare.execute(_Context()) == "config.xml"
     assert seen[:2] == ["cut", ("freight", "config.xml")]
     _, initial_blocks, excluded = seen[2]
     for subpopulation in CS.INCOMMUTER_SUBPOPULATIONS:
         assert ("ReRoute", 0.1, subpopulation) in initial_blocks
-    # the standalone mode choice leaves the same subpopulations unchanged as the loop does
-    assert excluded == CS.INCOMMUTER_SUBPOPULATIONS == ("incommuter", "student_incommuter")
+    # the standalone mode choice leaves the in-commuters (as the loop does) and the injected freight unchanged
+    assert excluded == CS.INCOMMUTER_SUBPOPULATIONS + (prepare.FREIGHT_SUBPOPULATION,)
+    assert excluded == ("incommuter", "student_incommuter", "freight")
 
 
 def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):
@@ -379,9 +389,15 @@ def test_prepare_leaves_the_config_alone_without_the_cordon(monkeypatch):
     class _Context:
         _values = {prepare.VRB_FARES_KEY: True, "cordon_enabled": False, "freight_enabled": False,
                    prepare.PARKING_KEY: False, C.KEY_ENABLED: False, I.KEY_ENABLED: False,
-                   "braunschweig.frozen_pt_walk_lift.enabled": False}
+                   "braunschweig.frozen_pt_walk_lift.enabled": False,
+                   R.KEY_LOOP_ISOLATE: False, R.KEY_LOOP_MAX_TOUR_LENGTH: 11,
+                   R.KEY_INITIAL_ISOLATE: True, R.KEY_INITIAL_MAX_TOUR_LENGTH: 13, LOOP_KEY: False}
 
         def config(self, key):
             return self._values[key]
 
+        def path(self, name=None):
+            return "."
+
+    monkeypatch.setattr(R, "apply", lambda config_path, settings: {})  # "config.xml" is no file here
     assert prepare.execute(_Context()) == "config.xml"

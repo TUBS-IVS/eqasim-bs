@@ -1,0 +1,40 @@
+stage: braunschweig.emissions.summary
+title: Emission totals, fallback share and provenance
+layer: analysis
+description: >-
+  Reads the outputs of braunschweig.emissions.events and the view and pre-check of
+  braunschweig.emissions.inputs and writes into its own stage directory: emissions_by_pollutant.csv (total
+  in kg over the whole simulated time, the part before 24:00, the after-24:00 share, grams per vehicle-km),
+  emissions_by_vehicle_group.csv (kg per pollutant and vehicle group with the group's vehicle-km) and
+  emissions_summary_report.json (both tables plus archive, sha256 and Case of each HBEFA table, settings,
+  sample size, fallback share by vehicle-km, excluded types). Totals come from the tool's per-vehicle-type
+  file, which has no cut at 24:00; nothing is scaled again. Vehicle-km per vehicle type are measured from
+  the events (full link length per entered-link event). Vehicle groups: primary (fleet type answered by
+  the detailed table), fallback (fleet type answered below it), average_table_by_choice (default_car,
+  heavy_truck), excluded (public transport, car passengers), unknown. Logs primary against fallback
+  vehicle-km as a rate and warns above zero. Raises on a positive emission of an excluded type or of a type
+  the pre-check did not see. All values are model output computed with the configured tables; the stage
+  compares them to nothing.
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: null
+code:
+- braunschweig/emissions/summary.py
+- braunschweig/emissions/totals.py
+- braunschweig/emissions/vehicle_km.py
+pipelines:
+  popsim_mid: not_used
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: false
+inputs: []
+features:
+- post_run_emissions
+decisions:
+- ADR-0209
+notes: >-
+  Not in any run list (see braunschweig.data.hbefa); it is the stage to request, the other three follow
+  as dependencies. No config key of its own. Writes nothing to <output_path>. The fallback is bounded
+  before the Java run, by vehicle types, in braunschweig.emissions.inputs; here it is reported by
+  vehicle-km.

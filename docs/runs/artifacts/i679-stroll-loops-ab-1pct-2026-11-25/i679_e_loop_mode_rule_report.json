@@ -1,0 +1,16 @@
+{
+  "constraints": [
+    "SameFacilityLeisureNonMotorised",
+    "StrollNonMotorised"
+  ],
+  "constraint_classes_checked": [
+    "org/eqasim/braunschweig/mode_choice/constraints/SameFacilityLeisureTripConstraint.class",
+    "org/eqasim/braunschweig/mode_choice/constraints/StrollTripConstraint.class"
+  ],
+  "jar_file_name": "braunschweig-2.3.1.jar",
+  "module": "DiscreteModeChoice",
+  "parameter": "tripConstraints",
+  "trip_constraints_before": "OutsideConstraint, TransitWalk",
+  "trip_constraints_after": "OutsideConstraint, TransitWalk, SameFacilityLeisureNonMotorised, StrollNonMotorised",
+  "already_selected": false
+}

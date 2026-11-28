@@ -36,6 +36,7 @@ from braunschweig.analysis.dashboard.paths import RUNS_DIR
 from braunschweig.analysis.dashboard.run_metrics import _find_sim_output
 from braunschweig.analysis.dashboard.run_metrics import metrics_eqasim
 from braunschweig.analysis.dashboard.run_metrics import metrics_matsim
+from braunschweig.analysis.loop_trip_distances import read_loop_trips
 
 
 def assemble_run_record(
@@ -53,7 +54,12 @@ def assemble_run_record(
     # The analysis suite writes the stuck summary below <output_path>/analysis/stuck before the dashboard runs; the
     # dashboard reuses it when fresh instead of streaming the (multi-GB) events file a second time.
     stuck_summary_path = Path(output_dir) / "analysis" / "stuck" / "stuck_summary.json"
-    ms = metrics_matsim(sim_output, stuck_summary_path) if sim_output else {"available": False}
+    # Loop trips (strolls, #679) are zero-length in the model; the synthesis trips file carries their survey diary
+    # length, which replaces the 0 m in every MATSim-side km metric (rule: braunschweig/analysis/loop_trip_distances).
+    trips_csv = next(Path(output_dir).glob("*_trips.csv"), None)
+    loop_trips = read_loop_trips(trips_csv) if trips_csv is not None else None
+    ms = (metrics_matsim(sim_output, stuck_summary_path, loop_trips=loop_trips)
+          if sim_output else {"available": False})
     mid = load_mid_reference()
     cmp = build_comparisons(eqa, ms, mid)
 
