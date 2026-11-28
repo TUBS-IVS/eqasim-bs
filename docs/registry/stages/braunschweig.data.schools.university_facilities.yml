@@ -33,8 +33,5 @@ features:
 decisions:
 - ADR-0213
 notes: |-
-  Config keys: braunschweig.students.od_table_path, site_balance_path, out_commuter_balance_path,
-  destination_points_path and university_left_out_warn_share (ASSUMPTION); defaults and comments are in the
-  student flows block of configs/base_bs.yml. Output report: university_facilities_report.json in the stage's
-  cache directory (the counts of what was left out). Tests: tests/test_university_facilities.py,
-  tests/test_student_destination_points.py.
+  Config keys: the student flows block of configs/base_bs.yml. Output report:
+  university_facilities_report.json in the stage's cache directory (the counts of what was left out).

@@ -140,8 +140,7 @@ disables itself when explicitly forced on against a contradictory parent
 
 ## Config keys
 
-The keys of the student flows (the switch, the table paths, the minimum of the mode bands, the warn shares,
-the acceptance thresholds) are one block in `configs/base_bs.yml`; defaults and ASSUMPTION comments are
+The keys of the student flows are one block in `configs/base_bs.yml`; defaults and ASSUMPTION comments are
 there and are not repeated here.
 
 Set in `braunschweig/synthesis/student_incommuters.py::configure` (OFF path and shared):

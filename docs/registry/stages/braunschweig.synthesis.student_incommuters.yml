@@ -61,9 +61,6 @@ notes: |-
   ON path of braunschweig.students.flows_enabled: the effective day factor is the level-weighted mean of the
   residents' factors, read from the level table and the committed SrV tables (never typed into the
   configuration); the stage refuses the flows with the day absence on and its student cells off
-  (check_flow_settings). Config keys: braunschweig.student_incommuters.mode_band_min_persons and
-  commute_length_fallback_warn_share (both ASSUMPTION) and the table paths of the student flows block of
-  configs/base_bs.yml. Rate logs under the [student_incommuters:flows] tag: the commute length (primary:
-  commune curve; fallback: the distance of the cell of T) and the home rule per origin Kreis. Tests:
-  tests/test_student_incommuters_balance.py, tests/test_student_mode_reference.py,
-  tests/test_student_flows_switches.py.
+  (check_flow_settings). Config keys: the student flows block of configs/base_bs.yml. Rate logs under the
+  [student_incommuters:flows] tag: the commute length (primary: commune curve; fallback: the distance of the
+  cell of T) and the home rule per origin Kreis.

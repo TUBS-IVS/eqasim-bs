@@ -35,10 +35,7 @@ notes: |-
   ON path of braunschweig.students.flows_enabled, the method is in ADR-0213 and the module docstrings of
   the two files above. New inputs of the stage on that path (declared only then): the trips (the observed
   education leg), the home zones (the home Kreis) and, with the day absence on, the day-absence stage (who is
-  present on the simulated day). Config keys: braunschweig.students.kreis_matching_rule, fit_tolerance,
-  fit_max_iterations, matching_fallback_warn_share, status_fallback_warn_share (defaults and ASSUMPTION
-  comments in the student flows block of configs/base_bs.yml). Rate logs: [education routing] student
-  status, [education:university] rows of T and allotment (primary and fallback counts with a warn share).
-  The university step writes education_university_report.json into the stage's cache directory. Tests:
-  tests/test_education_routing.py, tests/test_university_assignment_fit.py,
-  tests/test_university_assignment_allotment.py, tests/test_student_flows_switches.py.
+  present on the simulated day). Config keys: the student flows block of configs/base_bs.yml. Rate logs:
+  [education routing] student status, [education:university] rows of T and allotment (primary and fallback
+  counts with a warn share). The university step writes education_university_report.json into the stage's
+  cache directory.

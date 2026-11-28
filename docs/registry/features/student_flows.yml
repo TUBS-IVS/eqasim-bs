@@ -12,12 +12,13 @@ description: |-
   and the students' mode table. Method and rejected options: ADR-0213; method text: the detail doc. One
   switch, braunschweig.students.flows_enabled, default on; off keeps the behaviour before the flows. The
   acceptance table and the diagnostics are written by the analysis stage student_flows; the out-commuting
-  students are measured, not changed, by student_out_commuters (both are in no committed run list yet, so
-  this record does not list them under stages; their stage records name this feature).
+  students are measured, not changed, by student_out_commuters.
 stages:
 - braunschweig.data.schools.university_facilities
 - braunschweig.synthesis.locations.education_gravity
 - braunschweig.synthesis.student_incommuters
+- braunschweig.analysis.synthesis.student_flows
+- braunschweig.analysis.synthesis.student_out_commuters
 pipelines:
   popsim_mid: active
   popsim_open: active

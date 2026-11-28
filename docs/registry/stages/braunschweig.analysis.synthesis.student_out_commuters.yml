@@ -21,10 +21,10 @@ code:
 - braunschweig/data/education/student_flows_inputs.py
 - braunschweig/data/education/student_mode_reference.py
 pipelines:
-  popsim_mid: not_used
+  popsim_mid: active
   popsim_open: not_used
   simple_ipf_open: not_used
-production: false
+production: true
 inputs:
 - mid2023_student_reference
 features:
@@ -32,9 +32,7 @@ features:
 decisions:
 - ADR-0213
 notes: |-
-  Parked in the registry sense (production false, not_used everywhere): the stage is in no committed run list
-  yet. Writes under <output_path>/analysis/student_out_commuters/ the two CSV tables, a summary.md and
-  student_out_commuters_report.json. Config keys: braunschweig.students.out_commuter_no_leg_warn_share
-  (ASSUMPTION), braunschweig.student_incommuters.mode_band_min_persons (the pooling of the in-commuter path),
-  braunschweig.portal.max_routable_distance_m and student_out_commuters_output_subdir. Tests:
-  tests/test_student_out_commuters.py.
+  Listed in the run lists of configs/overlays/test_100pct.yml and test_25pct.yml next to students_vs_srv.
+  Writes under <output_path>/analysis/student_out_commuters/ the two CSV tables, a summary.md and
+  student_out_commuters_report.json. Config keys: the student flows block of configs/base_bs.yml (and
+  braunschweig.portal.max_routable_distance_m of the portal layer).

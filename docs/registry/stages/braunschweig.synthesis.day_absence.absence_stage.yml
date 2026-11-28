@@ -209,6 +209,6 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   with the band path. The cells path declares the home zones stage and the home-area key, requires
   P_TAET, and its diagnostics replace the per-band names: by_cell, n_cells_overshoot, n_cells_unreachable,
   n_cell_guard_hits, area_of_kreis, n_adults, n_adults_unreadable_p_taet and its share; by_band stays as a
-  report. The frame gains absence_cell. Config key day_absence_cells_max_unreadable_p_taet_share
-  (ASSUMPTION; default in the student flows block of configs/base_bs.yml). Tests:
-  tests/test_day_absence_cells.py, tests/test_day_absence_stage.py.'
+  report. The frame gains absence_cell. Config keys: the student flows block of configs/base_bs.yml. Rate log
+  under the [day absence cells] tag: "P_TAET of the adults: primary n/N, fallback m" (the adults without a
+  readable activity code).'

@@ -44,7 +44,7 @@ evidence:
     instrumented: true
     log_marker: 'P_TAET of the adults: primary'
     note: |
-      The adults without a readable P_TAET are drawn at the band rate of all persons, counted and logged as a rate under the [day absence cells] tag. A configurable share (day_absence_cells_max_unreadable_p_taet_share) warns; no readable code at all raises.
+      The adults without a readable P_TAET are drawn at the band rate of all persons, counted and logged as a rate under the [day absence cells] tag. A configurable share warns; no readable code at all raises.
   reference:
     kind: committed
     path: eqasim-data/data/braunschweig/srv/srv2023_student_parameters_by_area.csv

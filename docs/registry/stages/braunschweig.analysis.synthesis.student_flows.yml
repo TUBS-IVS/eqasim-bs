@@ -25,10 +25,10 @@ code:
 - braunschweig/data/education/student_flows_inputs.py
 - braunschweig/synthesis/locations/university_assignment.py
 pipelines:
-  popsim_mid: not_used
+  popsim_mid: active
   popsim_open: not_used
   simple_ipf_open: not_used
-production: false
+production: true
 inputs:
 - student_od_balance
 - student_level_table
@@ -40,10 +40,7 @@ decisions:
 - ADR-0210
 - ADR-0213
 notes: |-
-  Parked in the registry sense (production false, not_used everywhere): the stage is in no committed run list
-  yet, so no DAG snapshot holds it; it is run through a run target that names it. Writes under
-  <output_path>/analysis/student_flows/ the CSV files named in OUTPUT_FILES of the module, a summary.md and
-  student_flows_report.json (verdict, counts, fallback rates, parameters, input digests). Config keys
-  (defaults and ASSUMPTION comments in the student flows block of configs/base_bs.yml):
-  braunschweig.students.acceptance_min_persons, acceptance_max_deviation_share, analysis_detour_sensitivity,
-  analysis_min_srv_respondents and flows_report_fallback_warn_share. Tests: tests/test_student_flows_analysis.py.
+  Listed in the run lists of configs/overlays/test_100pct.yml and test_25pct.yml next to students_vs_srv.
+  Writes under <output_path>/analysis/student_flows/ the CSV files named in OUTPUT_FILES of the module, a
+  summary.md and student_flows_report.json (verdict, counts, fallback rates, parameters, input digests).
+  Config keys: the student flows block of configs/base_bs.yml.
