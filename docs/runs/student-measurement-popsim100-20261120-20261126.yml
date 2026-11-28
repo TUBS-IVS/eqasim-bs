@@ -7,7 +7,13 @@ repository:
     The run executed the measurement ref 0681e38be157032619b8a88067f6df71cca55633 (bundle sha256
     807754805eea8afc975ce08c33c791c18d596f678d80537c9e22a39e1f3f9aa8), which is the run commit of
     popsim-full-rerun-20261120 (1041849c243c71859c95275447a24363ee1aa358) plus the new stage, its modules, the three
-    SrV tables and the tests; the commit above is the branch commit of the stage code. The Java side is the run's
+    SrV tables and the tests; the commit above is the branch commit of the stage code. The measurement ref 0681e38b is on no remote branch (it was delivered as the bundle above). Its stage
+    files are identical to c908290e, which is in the branch history: `git diff 0681e38b c908290e` over
+    braunschweig/analysis/student_measurement.py, braunschweig/analysis/synthesis/students_vs_srv.py,
+    tests/test_student_measurement.py, tests/test_students_vs_srv.py and the SrV tables the stage reads under
+    eqasim-data/data/braunschweig/srv/ (srv2023_student_parameters.csv, srv2023_student_share_by_kreis.csv,
+    srv2023_young_adult_status_by_kreis.csv) is empty (checked 2026-11-28). c908290e additionally holds registry records
+    and later SrV tables that the stage does not read. The Java side is the run's
     eqasim-java-bs commit cb7e81fa3851c1338cfd80921c9d55aaeef2e600. Measurement on the cached population of run
     popsim100_20261120 (see docs/runs/popsim-full-rerun-20261120.yml); the run directory, host and user are not
     recorded in tracked files.
