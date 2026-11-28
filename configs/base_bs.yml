@@ -1085,6 +1085,12 @@ config:
   # ASSUMPTION, not from a table: share of the present persons on the decay fallback of the plan rule
   # (no observed education leg) above which a WARNING is logged.
   braunschweig.students.matching_fallback_warn_share: 0.25
+  # ASSUMPTION (design B5): on the real table every home Kreis has a row of T, so any university person of a
+  # Kreis without one means a broken T; the education stage raises above this share (0.0 = on the first one).
+  braunschweig.students.no_row_fallback_max_share: 0.0
+  # ASSUMPTION, not from a table: the reporting radius (km) of the "lives next to a local site" counts of the
+  # allotment diagnostics (education stage report and student_flows analysis); it enters no allotment.
+  braunschweig.students.near_site_radius_km: 2.0
   # ASSUMPTION: any use of the student-status fallback (no P_TAET) is a defect in the popsim_mid pipeline,
   # so every share above 0.0 logs a WARNING.
   braunschweig.students.status_fallback_warn_share: 0.0

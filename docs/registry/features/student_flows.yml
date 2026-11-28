@@ -72,7 +72,8 @@ evidence:
     log_marker: 'rows of T: primary'
     note: |
       Every fallback is logged as primary n/N and fallback m with a configurable warn share: the student
-      status (tag [education routing]), the home Kreis without a row of T and the allotment by the plan's
+      status (tag [education routing]), the home Kreis without a row of T (raises above a configured share,
+      default 0) and the allotment by the plan's
       length versus the university decay ([education:university]), the commute length
       ([student_incommuters:flows]) and the home rule per origin Kreis. The analysis stage student_flows
       lists every rate in its report.

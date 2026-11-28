@@ -14,7 +14,9 @@ description: |-
   in the module docstring of braunschweig/analysis/synthesis/student_flows.py; the stage recomputes
   everything from the frames of the changed stages with the pure functions of their owning modules and reads
   no other stage's file. configure() refuses braunschweig.students.flows_enabled false and the flows with the
-  day absence on and its student cells off.
+  day absence on and its student cells off; execute() raises when the absence and the location stage disagree
+  on who is present and when the acceptance minimum is not above 0. The report counts the university
+  residents the routing placed by the unknown-status fallback apart.
 lineage:
   type: braunschweig_new
   upstream: null
