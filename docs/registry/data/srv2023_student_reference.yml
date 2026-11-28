@@ -1,0 +1,76 @@
+dataset: srv2023_student_reference
+title: SrV 2023 university-student aggregates (share, presence, education status, distance
+  bands, behaviour cells, car, licence and season-ticket availability comparison; five committed
+  tables)
+provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
+vintage: 2023 survey year
+geography: |
+  Braunschweig + Regionalverband Grossraum Braunschweig (ZGB). The student-share and the
+  distance table have one row per EXPECTED home Kreis (the 8 ZGB Kreise; Wolfsburg 03103 is not
+  surveyed by SrV and is a zero row with NaN shares) plus one 03ZGB region row; the education
+  status, behaviour and comparison tables are region level only.
+crs: null
+roles:
+- calibration_target
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/extract_srv_student_reference.py --raw <srv2023_raw dir>
+    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha> (optional --n-bootstrap,
+    --seed of the distance-band noise floor), which writes all five tables in one run. Reads
+    SrV2023_Personen.csv, SrV2023_Wege.csv and SrV2023_Haushalte.csv; the required columns are
+    srv_student_reference.PERSON_COLUMNS, srv_student_reference.LEG_COLUMNS plus the script's
+    TRIP_COLUMNS, and HHNR, AGS. The raw microdata is local-only and never committed.
+  script: scripts/extract_srv_student_reference.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison}.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the five files are committed (by the
+    Phase 0 extraction run), no SrV aggregate is listed in the verifier, and no stage reads them -
+    they are build-time references of the student-commuting feature (issue #140). Unit tests
+    on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
+    universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to
+    end): tests/test_srv_student_reference.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: aggregate values only; raw SciUse file restricted
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Definitions (student = V_ERW 7, adults 18+, education and work legs, trip class, arrival hour
+  of the first education leg, season-ticket flatrate, the exclusion rules for unreadable codes,
+  the distance observation rule of ADR-0102) live in the module docstring of
+  braunschweig/calibration/srv_student_reference.py; the shared label vocabulary, bin edges and
+  the Kish effective sample size in braunschweig/calibration/student_behaviour_labels.py. Each
+  file's own header repeats the definitions it uses and carries its "# Exclusions:" counts.
+
+  Coverage caveat inherited from every SrV table: stratified PSU design over the covered
+  municipalities, so per-Kreis rows are ASSUMPTION-grade for the full Kreis. The distance
+  table is weighted with the trip weight GEWICHT_W_ZENSUS that select_person_observations
+  returns (the convention of the committed SrV distance tables); all other tables with the
+  person weight GEWICHT_P_ZENSUS (ADR-0055).
+
+  Universe: persons away from home all day are outside every table (the participation
+  universe), while the MiD mirror keeps them; the module docstring of srv_student_reference.py
+  states it, and the students dropped this way are counted in each file's "# Exclusions:" line
+  (n_students_away_from_home, n_adult_students_away_from_home).
+
+  Note for the next phase: the per-Kreis rows of the distance table rest on few students (column
+  n_persons; every Kreis but Braunschweig holds only a handful), so only the 03ZGB region row is
+  usable as a distance reference; the Kreis rows are descriptive at most.
+
+  Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
+  measurement, not a validation.
+notes: |
+  Reference table R5 of Phase 0 of the student-commuting feature (issue #140). The behaviour
+  table uses the label vocabulary shared with the MiD seed side, so both surveys classify
+  students into the same cells.

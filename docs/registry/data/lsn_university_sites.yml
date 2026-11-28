@@ -1,0 +1,38 @@
+dataset: lsn_university_sites
+title: LSN university students per institution and site commune (K3100101, hand-read)
+provider: LSN
+vintage: WS 2024/25
+geography: |
+  Site communes (8-digit AGS) of universities in and around the study region; column scope
+  separates sites in the study-region Kreise (local) from the rest (surrounding).
+crs: null
+roles:
+- supply_input
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: LSN-Online table K3100101 (https://www.statistik.niedersachsen.de), read by hand
+  script: scripts/seed_lsn_university_sites.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/lsn_university_sites.csv
+  committed: false
+  local_only: true
+verification:
+  verifier_entry: B14
+requirements:
+  synthesis: optional
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+limitations: |
+  Sachsen-Anhalt institutions are not in LSN and stay curated in scripts/seed_nds_hochschulen.py.
+notes: |
+  New file next to nds_hochschulen.csv; the OFF path keeps reading nds_hochschulen.csv.
+  used_by stays empty until the stage that reads this table is wired in (Phase 1 of #140).
+  The values live in the SITE_ROWS constant of the seed script (semester in its SEMESTER
+  constant, pinned by tests/test_seed_student_reference_tables.py); the CSV header repeats
+  semester and access date.

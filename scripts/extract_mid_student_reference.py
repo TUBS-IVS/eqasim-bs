@@ -1,0 +1,305 @@
+"""Extract the four committed MiD 2023 university-student aggregates (issue #140, Phase 0, R4).
+
+Reads the RESTRICTED MiD 2023 scientific-use microdata (persons, trips; comma-separated) and
+writes four small aggregate tables to ``--out-dir`` (default ``eqasim-data/data/braunschweig/mid``):
+
+    mid2023_student_status_by_age.csv              status of persons with an education trip, by age band
+    mid2023_student_education_distance_mode.csv    distance band x main mode of students' education trips
+    mid2023_student_share_20_29_by_land.csv        pupil / student share of the 20-29 year olds, per Land
+    mid2023_student_behaviour_seed.csv             behaviour cells (the seed-side mirror of the SrV table)
+
+All definitions live in ``braunschweig.calibration.mid_student_reference`` (and the shared label
+vocabulary in ``braunschweig.calibration.student_behaviour_labels``); this script owns only the
+raw I/O, the CLI and the provenance headers. Each written file carries an ``# Exclusions:`` line
+with the builder's counts, so the exclusion counts live IN the file. The ``exclude_rbw_legs``,
+``exclude_holiday_plan_sources`` and ``drop_leading_arrive_home_leg`` settings are read from the
+production config ``configs/base_bs.yml``.
+
+Usage (eqasim env, from a worktree; the raw directory is restricted and always passed):
+    python scripts/extract_mid_student_reference.py --raw <MiD CSV directory> \
+        --out-dir eqasim-data/data/braunschweig/mid --source-commit <sha>
+
+The persons file is expected to carry ``BLAND``; if it does not, ``MiD2023_Haushalte.csv``
+(``H_ID``, ``BLAND``) is read and joined on ``H_ID``.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import logging
+import sys
+from pathlib import Path
+
+import pandas as pd
+import yaml
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from braunschweig.calibration import mid_student_reference as R  # noqa: E402
+from braunschweig.calibration import student_behaviour_labels as L  # noqa: E402
+
+OUT_DEFAULT = REPO / "eqasim-data" / "data" / "braunschweig" / "mid"
+CONFIG_PATH = REPO / "configs" / "base_bs.yml"
+RBW_CONFIG_KEY = "braunschweig.population.popsim.exclude_rbw_legs"
+HOLIDAY_CONFIG_KEY = "braunschweig.population.popsim.exclude_holiday_plan_sources"
+ARRIVE_HOME_CONFIG_KEY = "braunschweig.population.popsim.drop_leading_arrive_home_leg"
+
+PERSONS_FILE = "MiD2023_Personen.csv"
+TRIPS_FILE = "MiD2023_Wege.csv"
+HOUSEHOLDS_FILE = "MiD2023_Haushalte.csv"
+
+PERSON_READ_COLUMNS = list(R.BEHAVIOUR_PERSON_COLUMNS)
+TRIP_READ_COLUMNS = list(dict.fromkeys(R.LEG_KEY_COLUMNS + R.FIRST_LEG_COLUMNS
+                                       + R.ARRIVAL_COLUMNS + R.DISTANCE_COLUMNS
+                                       + [R.RBW_COLUMN] + R.DIARY_FACT_COLUMNS))
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("extract_mid_student_reference")
+
+
+def _production_flag(key: str, config_path: Path) -> bool:
+    """The boolean production value of ``config.<key>``; raises if it is missing or not a bool."""
+    document = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+    settings = document.get("config", {})
+    if key not in settings or not isinstance(settings[key], bool):
+        raise ValueError("%s: key config.%s is missing or not a boolean" % (config_path, key))
+    return settings[key]
+
+
+def production_exclude_rbw_legs(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.exclude_rbw_legs``."""
+    return _production_flag(RBW_CONFIG_KEY, config_path)
+
+
+def production_exclude_holidays(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.exclude_holiday_plan_sources``."""
+    return _production_flag(HOLIDAY_CONFIG_KEY, config_path)
+
+
+def production_drop_leading_arrive_home_leg(config_path: Path = CONFIG_PATH) -> bool:
+    """The production value of ``braunschweig.population.popsim.drop_leading_arrive_home_leg``."""
+    return _production_flag(ARRIVE_HOME_CONFIG_KEY, config_path)
+
+
+def _header_columns(path: Path) -> list:
+    return pd.read_csv(path, nrows=0).columns.tolist()
+
+
+def _require_columns(path: Path, required: list) -> None:
+    """Fail early with the file name and the missing column(s) rather than a bare KeyError."""
+    missing = [column for column in required if column not in _header_columns(path)]
+    if missing:
+        raise ValueError("%s: missing required column(s) %s" % (path, missing))
+
+
+def _exclusions(diagnostics: dict) -> str:
+    return "# Exclusions: " + ", ".join("%s=%s" % (key, value)
+                                        for key, value in diagnostics.items())
+
+
+def _common_header(table_name: str, source_commit: str, exclude_rbw_legs: bool) -> list:
+    """Provenance lines all four tables share (source, code state, universe, weight, setting)."""
+    return [
+        "# Source: MiD 2023 scientific-use microdata (SUF B1, infas/DLR/IVT/infas 360), restricted,",
+        "#   files %s / %s; generated by scripts/extract_mid_student_reference.py on %s."
+        % (PERSONS_FILE, TRIPS_FILE, dt.date.today().isoformat()),
+        "# Code state: eqasim-bs %s, modules braunschweig/calibration/mid_student_reference.py"
+        % source_commit,
+        "#   and braunschweig/calibration/student_behaviour_labels.py (definitions live there).",
+        "# Table: %s (issue #140, Phase 0 reference table R4). A measurement, not a validation."
+        % table_name,
+        "# Weight: P_GEW (person weight); a missing or non-positive weight is excluded and counted.",
+        "# Student = P_TAET %d, pupil = %d, apprentice = %d; P_TAET 99 / missing is EXCLUDED and"
+        % (R.STUDENT_P_TAET, R.PUPIL_P_TAET, R.APPRENTICE_P_TAET),
+        "#   counted (never classed 'not a student' or 'other'). Adult = HP_ALTER >= %d."
+        % L.MIN_ADULT_AGE,
+        "# exclude_rbw_legs = %s (production value of braunschweig.population.popsim."
+        "exclude_rbw_legs in configs/base_bs.yml):" % str(exclude_rbw_legs).lower(),
+        "#   true counts only directly recorded legs (W_RBW == 0), as the popsim seed does.",
+        "# Education / work leg = W_ZWECK in %s / %s (popsim.mid.participation."
+        "PARTICIPATION_W_ZWECK)." % (sorted(R.EDUCATION_W_ZWECK), sorted(R.WORK_W_ZWECK)),
+        "# National MiD sample (no regional sample of the study area): the Braunschweig region is",
+        "#   an ASSUMPTION of transferability, not a measurement.",
+    ]
+
+
+def _core_weekday_lines(exclude_holidays: bool) -> list:
+    return [
+        "# Weekday filter: ST_WOTAG in %s (Tuesday to Thursday), the reporting weekdays of the "
+        "SrV side." % list(R.CORE_WEEKDAYS),
+        "# Holiday filter: exclude_holiday_plan_sources = %s (production value of"
+        % str(exclude_holidays).lower(),
+        "#   braunschweig.population.popsim.exclude_holiday_plan_sources in configs/base_bs.yml):",
+        "#   true drops persons whose reporting day was a public holiday (%s == %d), counted as"
+        % (R.HOLIDAY_COLUMN, R.MID_HOLIDAY),
+        "#   n_holiday_reporting_day; the SrV reference days exclude public holidays.",
+    ]
+
+
+def _status_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                   exclude_holidays: bool) -> list:
+    return _common_header(R.STATUS_TABLE, source_commit, exclude_rbw_legs) + [
+        *_core_weekday_lines(exclude_holidays),
+        "# Base: persons with at least one education leg, by age band %s (HP_ALTER, bounds"
+        % [band for band, _, _ in R.STATUS_AGE_BANDS],
+        "#   inclusive; a person without a valid age is in no band, counted). Education leg =",
+        "#   W_ZWECK in %s only: the passive escort leg (W_ZWECK 13) of an escorted child is NOT"
+        % sorted(R.EDUCATION_W_ZWECK),
+        "#   counted (whether the plan realises it as education is a model rule), so the lt20 band",
+        "#   holds children with a directly recorded education trip only.",
+        "# Columns: age_band, status, n_unweighted, share (weighted within the age band).",
+        _exclusions(diagnostics),
+    ]
+
+
+def _distance_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                     exclude_holidays: bool) -> list:
+    return _common_header(R.DISTANCE_MODE_TABLE, source_commit, exclude_rbw_legs) + [
+        *_core_weekday_lines(exclude_holidays),
+        "# Base: ADULT students (the same persons as the SrV distance table) with an education leg;",
+        "#   the FIRST education leg by W_SZS then W_SZM (a person with an unreadable start time on",
+        "#   any education leg is excluded, counted). Distance = wegkm_imp, valid for 0 < km < %.0f"
+        % R.MID_TRIP_LENGTH_MAX_KM,
+        "#   (MiD filter-value bound), anything else counted and not banded. Mode = %s codes %s."
+        % (R.MODE_COLUMN, R.MODE_BY_HVM),
+        "# Bands: km edges %s, LEFT-inclusive, labels %s."
+        % (list(L.STUDENT_DISTANCE_EDGES_KM), list(L.STUDENT_DISTANCE_LABELS)),
+        "# Columns: distance_band, mode, n_unweighted, share_of_band (weighted within the band),",
+        "#   share_of_all (weighted over all banded students); NaN for an empty base, never 0.0.",
+        _exclusions(diagnostics),
+    ]
+
+
+def _share_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool) -> list:
+    return _common_header(R.SHARE_20_29_TABLE, source_commit, exclude_rbw_legs) + [
+        "# Weekday filter: none (ST_WOTAG is NOT filtered: a status share, not a day share, so",
+        "#   public-holiday reporting days are kept too); exclude_rbw_legs is unused by this",
+        "#   table, no leg is read.",
+        "# Base: persons aged %d-%d (HP_ALTER, inclusive) with a readable P_TAET."
+        % R.AGE_BAND_20_29,
+        "# Rows: %s = all of Germany, then one row per Land (BLAND 1-16, zero-padded; a Land with no"
+        % R.REGION_GERMANY,
+        "#   person is emitted with n_unweighted 0 and NaN shares).",
+        "# Columns: region, n_unweighted, share_pupils (P_TAET %d), share_students (P_TAET %d),"
+        % (R.PUPIL_P_TAET, R.STUDENT_P_TAET),
+        "#   share_pupils_and_students; weighted over the persons of the row.",
+        _exclusions(diagnostics),
+    ]
+
+
+def _behaviour_header(diagnostics: dict, source_commit: str, exclude_rbw_legs: bool,
+                      exclude_holidays: bool, drop_leading_arrive_home_leg: bool) -> list:
+    return _common_header(R.BEHAVIOUR_TABLE, source_commit, exclude_rbw_legs) + [
+        *_core_weekday_lines(exclude_holidays),
+        "# Label vocabulary: student_behaviour_labels.CONTROLS, shared with the SrV table",
+        "#   srv2023_student_behaviour.csv. Universes: %s = adults on a core weekday with a"
+        % L.UNIVERSE_ADULTS,
+        "#   readable P_TAET, non-students labelled %s; %s = the adult students alone (student"
+        % (L.NOT_STUDENT, L.UNIVERSE_STUDENTS),
+        "#   labels renormalised).",
+        "# Definitions: trip class from the day's trip count anzwege1 (right-inclusive edges %s);"
+        % list(L.TRIP_CLASS_EDGES),
+        "#   arrival = W_AZS of the first education leg by W_SZS then W_SZM (right-",
+        "#   inclusive hour edges %s; 99 excluded); flatrate = the deutschlandticket or another"
+        % list(L.ARRIVAL_HOUR_EDGES),
+        "#   flatrate group of P_FKARTE via popsim.attributes.FKARTE_TO_CATEGORY, item non-response",
+        "#   excluded (no imputation: a measurement, not a seed).",
+        "# Per-control exclusions: a student leaves only the control whose code is unreadable, in",
+        "#   both universes; counted below.",
+        "# LIMITATION (unknown day): a day the popsim seed does not keep as the person's own plan",
+        "#   source (popsim.diary_plan_match) is UNKNOWN here: anzwege1 %s (NO_DIARY_CODES), except"
+        % list(R.NO_DIARY_CODES),
+        "#   803 with mobil != 1 (not mobile: a genuine day with 0 trips, as diary_plan_match keeps",
+        "#   it); a diary with only rbW legs (exclude_rbw_legs = %s); a diary whose only direct leg"
+        % str(exclude_rbw_legs).lower(),
+        "#   is a leading arrive-home leg the trip build drops (drop_leading_arrive_home_leg = %s,"
+        % str(drop_leading_arrive_home_leg).lower(),
+        "#   production value in configs/base_bs.yml). Persons with an unknown day, students AND",
+        "#   non-students, are ABSENT from the four diary-dependent controls status_x_education_leg,",
+        "#   trip_class, arrival and work_leg in BOTH universes (n_*_without_diary,",
+        "#   n_*_only_rbw_diary, n_*_emptied_by_arrive_home_drop below); only season_ticket keeps",
+        "#   them. Those shares rest on this reduced base, while the SrV side has a diary for every",
+        "#   person: the comparison assumes these persons are not a distinct group for these cells.",
+        "# UNIVERSE GAP to srv2023_student_behaviour.csv: MiD keeps persons away from home all",
+        "#   day, the SrV universe drops them (E_ANZ_WEGE -7; the adult students lost that way are",
+        "#   n_adult_students_away_from_home in the SrV file's Exclusions line).",
+        "# Columns: %s; n_effective is the Kish size of the control's base in that universe."
+        % ", ".join(L.BEHAVIOUR_COLUMNS),
+        _exclusions(diagnostics),
+    ]
+
+
+def _write(df: pd.DataFrame, path: Path, header: list) -> None:
+    """Write the provenance-headed CSV with LF line endings and ``%.10g`` floats."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        for line in header:
+            fh.write(line + "\n")
+        df.to_csv(fh, index=False, lineterminator="\n", float_format="%.10g")
+    logger.info("wrote %s (%d rows)", path, len(df))
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--raw", required=True,
+                        help="MiD raw CSV directory (restricted; must contain %s and %s)"
+                             % (PERSONS_FILE, TRIPS_FILE))
+    parser.add_argument("--out-dir", default=str(OUT_DEFAULT),
+                        help="Directory to write the four tables into")
+    parser.add_argument("--source-commit", required=True,
+                        help="git commit of the code state, recorded in every header")
+    args = parser.parse_args(argv)
+
+    raw = Path(args.raw)
+    person_file, trip_file = raw / PERSONS_FILE, raw / TRIPS_FILE
+    for path in (person_file, trip_file):
+        if not path.exists():
+            raise FileNotFoundError("MiD raw file missing: %s" % path)
+    _require_columns(person_file, PERSON_READ_COLUMNS)
+    _require_columns(trip_file, TRIP_READ_COLUMNS)
+    # BLAND from the persons file when it carries it, else from the households file.
+    persons_have_land = "BLAND" in _header_columns(person_file)
+    persons = pd.read_csv(person_file, low_memory=False,
+                          usecols=PERSON_READ_COLUMNS + (["BLAND"] if persons_have_land else []))
+    if persons_have_land:
+        households = None
+    else:
+        household_file = raw / HOUSEHOLDS_FILE
+        if not household_file.exists():
+            raise FileNotFoundError("%s has no BLAND column and the households file is missing: "
+                                    "%s" % (person_file, household_file))
+        _require_columns(household_file, R.HOUSEHOLD_COLUMNS)
+        households = pd.read_csv(household_file, usecols=R.HOUSEHOLD_COLUMNS, low_memory=False)
+    trips = pd.read_csv(trip_file, usecols=TRIP_READ_COLUMNS, low_memory=False)
+    logger.info("read %d persons, %d trips", len(persons), len(trips))
+
+    exclude_rbw_legs = production_exclude_rbw_legs()
+    exclude_holidays = production_exclude_holidays()
+    drop_leading_arrive_home_leg = production_drop_leading_arrive_home_leg()
+    day_settings = {"exclude_rbw_legs": exclude_rbw_legs, "exclude_holidays": exclude_holidays}
+    status, status_diagnostics = R.build_status_by_age_table(persons, trips, **day_settings)
+    distance, distance_diagnostics = R.build_distance_mode_table(persons, trips, **day_settings)
+    share, share_diagnostics = R.build_share_20_29_table(persons, households)
+    behaviour, behaviour_diagnostics = R.build_behaviour_seed_table(
+        persons, trips, drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        **day_settings)
+
+    out = Path(args.out_dir)
+    commit = args.source_commit
+    _write(status, out / R.STATUS_TABLE,
+           _status_header(status_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
+    _write(distance, out / R.DISTANCE_MODE_TABLE,
+           _distance_header(distance_diagnostics, commit, exclude_rbw_legs, exclude_holidays))
+    _write(share, out / R.SHARE_20_29_TABLE,
+           _share_header(share_diagnostics, commit, exclude_rbw_legs))
+    _write(behaviour, out / R.BEHAVIOUR_TABLE,
+           _behaviour_header(behaviour_diagnostics, commit, exclude_rbw_legs, exclude_holidays,
+                             drop_leading_arrive_home_leg))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
