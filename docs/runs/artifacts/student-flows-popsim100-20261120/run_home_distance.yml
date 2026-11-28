@@ -1,0 +1,22 @@
+## Run overlay of flows_final2, written by scripts/isolated_run.py overlay on 2026-11-28T02:32:56+01:00.
+## Source: <run server home>/i140_flows/run_overlay_flows_plan_length.yml (sha256 25264f4bdda5875ae80edee6644639189615506bb509f0a5c6ea03cddb6a7dc4).
+## Paths are relative to RUN_DIR/eqasim-bs, the launch directory, so every isolated run carries the
+## same strings: output_path enters synthesis stage hashes, analysis_working_directory the analysis suite's.
+## `launch` compares this file with its gate record: edit it only before `gate --write`.
+working_directory: ../cache
+run:
+- braunschweig.analysis.synthesis.student_flows
+config:
+  braunschweig.students.kreis_matching_rule: home_distance
+  sampling_rate: 1.0
+  output_path: ../output
+  analysis_working_directory: ../cache
+  output_prefix: braunschweig_100pct_popsim20261120_
+  matsim_last_iteration: 0
+  braunschweig.population.popsim.work_dir: ../popsim_work
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: auto
+  cache_share_enabled: false
+  cache_share_export: false
+  cache_share_recompute: []
+  braunschweig.chainsolvers.processes: 16

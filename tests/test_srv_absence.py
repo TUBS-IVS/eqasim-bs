@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from braunschweig.calibration import srv_absence as A
+from braunschweig.calibration.srv_student_reference import STUDENT_V_ERW as STUDENT_CODE
 
 
 def _persons():
@@ -18,6 +19,7 @@ def _persons():
         "V_ALTER": [70, 30, 32, 40, 38, 8],
         "E_ANZ_WEGE": [-7, -7, -7, 3, 0, 2],
         "GEWICHT_P_ZENSUS": [1.0] * 6, "MITTL_WERKTAG": [1] * 6,
+        "V_ERW": [10, 7, 3, 1, 1, 6],
     })
 
 
@@ -37,6 +39,7 @@ def _persons_with_partial_households():
         "V_ALTER": [45, 10, 44, 60, 58, 7, 40, 39, 12],
         "E_ANZ_WEGE": [-7, -7, 2, -7, 3, -7, 3, 2, 4],
         "GEWICHT_P_ZENSUS": [1.0] * 9, "MITTL_WERKTAG": [1] * 9,
+        "V_ERW": [1, 6, 1, 10, 1, 6, 1, 1, 6],
     })
     return pd.concat([_persons(), extra], ignore_index=True)
 
@@ -83,12 +86,76 @@ def test_prepare_logs_the_drop_rate_not_just_the_count(caplog):
 
 def test_by_age_band_rates_and_all_row():
     prepared, _ = A.prepare_absence_persons(_persons())
-    table = A.build_absence_by_age_band(prepared)
+    table = A.build_absence_by_age_band(prepared, STUDENT_CODE)
     row = table.set_index("band")
     assert row.loc["30-44", "p_absent"] == pytest.approx(2 / 4)   # 30, 32 absent; 40, 38 present
     assert row.loc["6-17", "p_absent"] == pytest.approx(0.0)
     assert row.loc["all", "n_unweighted"] == 6 and row.loc["all", "p_absent"] == pytest.approx(0.5)
     assert list(table["band"]) == list(A.AGE_BAND_LABELS) + ["all"]   # every band present, even empty
+
+
+def _persons_for_non_student_band():
+    """Seven persons aged 18-29, each with a distinct role for the non-student columns:
+    students (V_ERW 7, one away, one home), three readable non-students (weights 3 / 1 / 1, the
+    first away) and two persons with an unreadable V_ERW (-8 not surveyed, blank -> NaN), both
+    weighted 10 so that classing them as non-student would be visible."""
+    return pd.DataFrame({
+        "HHNR": list(range(20, 27)), "PNR": [1] * 7, "V_ALTER": [20, 21, 22, 23, 24, 25, 26],
+        "E_ANZ_WEGE": [-7, 2, -7, 2, 3, -7, 2],
+        "GEWICHT_P_ZENSUS": [1.0, 1.0, 3.0, 1.0, 1.0, 10.0, 10.0], "MITTL_WERKTAG": [1] * 7,
+        "V_ERW": [7, 7, 1, 1, 3, -8, np.nan],
+    })
+
+
+def test_non_student_columns_exclude_students_and_unreadable_codes():
+    prepared, _ = A.prepare_absence_persons(_persons_for_non_student_band())
+    row = A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=0.5).set_index("band").loc["18-29"]
+    assert row["n_unweighted_non_student"] == 3 and row["n_absent_unweighted_non_student"] == 1
+    assert row["p_absent_non_student"] == pytest.approx(3.0 / 5.0)     # weights 3 (away), 1, 1
+    # the legacy columns still describe EVERY person of the band, students and unreadable ones too
+    assert row["n_unweighted"] == 7 and row["n_absent_unweighted"] == 3
+    assert A.count_unreadable_employment_code(prepared) == 2
+
+
+def test_non_student_columns_leave_the_legacy_columns_untouched():
+    """The by-age columns that existed before the non-student columns must not depend on V_ERW."""
+    persons = _persons_with_partial_households()
+    other = persons.assign(V_ERW=[7] * len(persons))
+    old_columns = ["band", "age_min", "age_max", "n_unweighted", "n_absent_unweighted", "p_absent"]
+    first = A.build_absence_by_age_band(A.prepare_absence_persons(persons)[0], STUDENT_CODE)
+    second = A.build_absence_by_age_band(A.prepare_absence_persons(other)[0], STUDENT_CODE)
+    assert list(first.columns) == old_columns + ["n_unweighted_non_student",
+                                                 "n_absent_unweighted_non_student", "p_absent_non_student"]
+    pd.testing.assert_frame_equal(first[old_columns], second[old_columns])
+
+
+def test_builder_raises_when_too_many_employment_codes_are_unreadable_and_accepts_at_the_bound():
+    prepared, _ = A.prepare_absence_persons(_persons_for_non_student_band())   # 2 of 7 unreadable
+    with pytest.raises(ValueError, match="unreadable V_ERW"):
+        A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=0.25)
+    table = A.build_absence_by_age_band(prepared, STUDENT_CODE, max_unreadable_share=2 / 7)   # at the bound
+    assert table.set_index("band").loc["all", "n_unweighted_non_student"] == 3
+
+
+def test_invariants_reject_inconsistent_non_student_columns():
+    by_age, by_size, _, _ = _all_tables()
+    for column, value, match in (("n_unweighted_non_student", 10 ** 6, "n_unweighted_non_student exceeds"),
+                                 ("n_absent_unweighted_non_student", 10 ** 6, "n_absent_unweighted_non_student"),
+                                 ("p_absent_non_student", 1.2, "p_absent_non_student")):
+        broken = by_age.copy()
+        broken.loc[3, column] = value   # row 3 = band 30-44, populated in the toy frame
+        with pytest.raises(ValueError, match=match):
+            A.check_invariants(broken, by_size)
+    nan_with_base = by_age.copy()
+    nan_with_base.loc[3, "p_absent_non_student"] = np.nan   # the base of 30-44 is non-empty
+    with pytest.raises(ValueError, match="NaN exactly"):
+        A.check_invariants(nan_with_base, by_size)
+
+
+def test_non_student_share_is_nan_not_zero_for_an_empty_base():
+    prepared, _ = A.prepare_absence_persons(_persons().assign(V_ERW=[7] * 6))   # everybody a student
+    row = A.build_absence_by_age_band(prepared, STUDENT_CODE).set_index("band").loc["all"]
+    assert row["n_unweighted_non_student"] == 0 and np.isnan(row["p_absent_non_student"])
 
 
 def test_by_household_size_all_absent_share():
@@ -134,7 +201,7 @@ def test_by_household_size_person_counts_sum_to_the_by_age_all_row():
     counts must reconcile with the by-age table's 'all' row (same universe, both built from the
     same ``prepared`` frame)."""
     prepared, _ = A.prepare_absence_persons(_persons())
-    by_age = A.build_absence_by_age_band(prepared)
+    by_age = A.build_absence_by_age_band(prepared, STUDENT_CODE)
     by_size = A.build_absence_household_by_size(prepared, _households())
     all_row_n_unweighted = int(by_age.loc[by_age["band"] == A.ALL_BAND, "n_unweighted"].iloc[0])
     assert int(by_size["n_persons_unweighted"].sum()) == all_row_n_unweighted == len(prepared)
@@ -142,7 +209,7 @@ def test_by_household_size_person_counts_sum_to_the_by_age_all_row():
 
 def test_invariants_accept_the_builder_output_and_reject_a_share_above_one():
     prepared, _ = A.prepare_absence_persons(_persons())
-    by_age = A.build_absence_by_age_band(prepared)
+    by_age = A.build_absence_by_age_band(prepared, STUDENT_CODE)
     by_size = A.build_absence_household_by_size(prepared, _households())
     A.check_invariants(by_age, by_size)
     broken = by_age.copy(); broken.loc[0, "p_absent"] = 1.2
@@ -155,7 +222,7 @@ def test_invariants_reject_more_absent_persons_than_persons_in_a_size_class():
     more absent persons than persons, so a violation must raise rather than silently pass through
     into the committed CSV."""
     prepared, _ = A.prepare_absence_persons(_persons())
-    by_age = A.build_absence_by_age_band(prepared)
+    by_age = A.build_absence_by_age_band(prepared, STUDENT_CODE)
     by_size = A.build_absence_household_by_size(prepared, _households())
     broken = by_size.copy()
     broken.loc[0, "n_absent_persons_unweighted"] = broken.loc[0, "n_persons_unweighted"] + 1
@@ -197,7 +264,7 @@ def test_clustering_share_distinguishes_clustered_from_partial_absence():
     persons = _persons()
     partial = pd.DataFrame({
         "HHNR": [4, 4], "PNR": [1, 2], "V_ALTER": [50, 48],
-        "E_ANZ_WEGE": [-7, 3], "GEWICHT_P_ZENSUS": [1.0, 1.0], "MITTL_WERKTAG": [1, 1],
+        "E_ANZ_WEGE": [-7, 3], "GEWICHT_P_ZENSUS": [1.0, 1.0], "MITTL_WERKTAG": [1, 1], "V_ERW": [1, 1],
     })
     prepared, _ = A.prepare_absence_persons(pd.concat([persons, partial], ignore_index=True))
     result = A.clustering_share(prepared)
@@ -338,7 +405,7 @@ def test_composition_negative_age_code_counts_in_all_but_in_no_band_and_not_in_c
     the 'all' row only -- neither a band nor the '0-17' children row may count them."""
     persons = pd.concat([_persons_with_partial_households(), pd.DataFrame({
         "HHNR": [7], "PNR": [1], "V_ALTER": [-10], "E_ANZ_WEGE": [-7],
-        "GEWICHT_P_ZENSUS": [1.0], "MITTL_WERKTAG": [1]})], ignore_index=True)
+        "GEWICHT_P_ZENSUS": [1.0], "MITTL_WERKTAG": [1], "V_ERW": [1]})], ignore_index=True)
     prepared, _ = A.prepare_absence_persons(persons)
     row = A.build_absence_composition_by_band(prepared).set_index("band")
     assert row.loc[A.ALL_BAND, "n_absent_unweighted"] == 8                      # 7 + the missing-age person
@@ -379,7 +446,8 @@ def test_partial_subset_size_top_codes_the_absent_member_count():
     persons = _persons()
     big = pd.DataFrame({   # size 7 household (class 5), 6 members away, 1 present -> k top-coded to 4
         "HHNR": [9] * 7, "PNR": list(range(1, 8)), "V_ALTER": [40, 38, 12, 10, 8, 6, 70],
-        "E_ANZ_WEGE": [-7, -7, -7, -7, -7, -7, 2], "GEWICHT_P_ZENSUS": [1.0] * 7, "MITTL_WERKTAG": [1] * 7})
+        "E_ANZ_WEGE": [-7, -7, -7, -7, -7, -7, 2], "GEWICHT_P_ZENSUS": [1.0] * 7, "MITTL_WERKTAG": [1] * 7,
+        "V_ERW": [1] * 7})
     households = pd.concat([_households(), pd.DataFrame({"HHNR": [9], "GEWICHT_HH_ZENSUS": [1.0], "V_ANZ_PERS": [7]})],
                            ignore_index=True)
     prepared, _ = A.prepare_absence_persons(pd.concat([persons, big], ignore_index=True))
@@ -416,7 +484,7 @@ def test_wilson_interval_edge_cases():
 def _all_tables():
     prepared, _ = A.prepare_absence_persons(_persons_with_partial_households())
     households = _households_with_partial()
-    return (A.build_absence_by_age_band(prepared), A.build_absence_household_by_size(prepared, households),
+    return (A.build_absence_by_age_band(prepared, STUDENT_CODE), A.build_absence_household_by_size(prepared, households),
             A.build_absence_composition_by_band(prepared), A.build_absence_partial_subset_size(prepared, households))
 
 
@@ -457,3 +525,20 @@ def test_invariants_reject_a_children_row_that_is_not_the_sum_of_its_two_bands()
     broken.loc[children, "n_whole_household_unweighted"] += 1
     with pytest.raises(ValueError, match="0-17"):
         A.check_invariants(by_age, by_size, broken, partial_subset)
+
+
+# ---------------------------------------------------------------------------
+# The committed by-age table (written by scripts/extract_srv_absence.py from the local-only
+# delivery; the value below is the committed output, not an external reference).
+# ---------------------------------------------------------------------------
+
+def test_committed_by_age_table_keeps_its_columns_and_pins_the_non_student_young_adults():
+    from pathlib import Path
+    path = (Path(__file__).resolve().parents[1] / "eqasim-data" / "data" / "braunschweig" / "srv"
+            / A.ABSENCE_BY_AGE_TABLE)
+    table = pd.read_csv(path, comment="#").set_index("band")
+    assert list(table.columns) == A.BY_AGE_COLUMNS[1:]      # the first six are the pre-#140 columns, in order
+    assert table.loc["18-29", "n_unweighted"] == 1639 and table.loc["18-29", "p_absent"] == pytest.approx(0.08305189101)
+    young = table.loc["18-29"]
+    assert young["n_unweighted_non_student"] == 1164 and young["n_absent_unweighted_non_student"] == 78
+    assert young["p_absent_non_student"] == pytest.approx(0.06266962597)

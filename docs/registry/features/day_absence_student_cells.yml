@@ -1,0 +1,62 @@
+feature: day_absence_student_cells
+title: Day absence by cells - students by home area, other adults by age band (#140, Phase 4)
+area: behavior
+description: |-
+  The individual stage of the general day-absence draw runs per cell instead of per adult age band:
+  students by the home area of their Kreis at the SrV away share of that area, other adults by age band at
+  the rate measured among non-students, an adult of unknown status and persons under 18 by band at the band
+  rate of all persons. The household stage and the draw rule are unchanged. The effect: the students of a
+  home area are away at the rate the day factor of the student flows assumes. Decision, rejected options
+  and consequences: ADR-0212 (amends ADR-0110). Switch day_absence_student_cells_enabled, default on; off
+  draws by age band (byte-identical to the code before); the student flows refuse the combination
+  day absence on and cells off.
+stages:
+- braunschweig.synthesis.day_absence.absence_stage
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - day_absence_student_cells_enabled
+introduced:
+  issue: '#140'
+  pr: null
+  adr: ADR-0212
+detail_doc: docs/features/student-incommuters.md
+code_paths:
+- braunschweig/synthesis/day_absence/cells.py
+- braunschweig/synthesis/day_absence/absence.py
+- braunschweig/synthesis/day_absence/absence_stage.py
+evidence:
+  tests:
+  - tests/test_day_absence_cells.py
+  - tests/test_day_absence_stage.py
+  - tests/test_srv_absence.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_day_absence_stage.py
+    note: |
+      test_cells_off_is_byte_identical_to_the_code_before_the_switch compares the OFF output with stored digests of the code before the switch. The stage's cache hash changes once even with the switch off (a new module and key); the output is identical.
+  fallback_rate:
+    instrumented: true
+    log_marker: 'P_TAET of the adults: primary'
+    note: |
+      The adults without a readable P_TAET are drawn at the band rate of all persons, counted and logged as a rate under the [day absence cells] tag. A configurable share warns; no readable code at all raises.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_student_parameters_by_area.csv
+validation:
+  state: unvalidated
+  runs: []
+  metric: null
+  note: The cell rates are SrV values; the deviation guard compares the realised rate of each cell with its rate in every run. The per-cell comparison of the checkpoint run and the guard warning of the Wolfsburg student cell are in docs/runs/student-flows-popsim100-20261120-2026-11-28.yml; a measurement, not validation.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: |
+    Built and unit-tested; the realised rate per cell under the production settings (a person living alone is reached by the household stage only, assumption A25 of the design) is to be read from the first recorded run.
+  source: ADR-0212

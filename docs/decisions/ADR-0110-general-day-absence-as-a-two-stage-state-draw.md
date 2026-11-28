@@ -646,3 +646,5 @@
      run manifest `docs/runs/general-day-absence-arm4-100pct-2026-09-18.yml` with the artefacts
      `absence_composition_model.csv` / `absence_composition_vs_srv.csv`; README SrV row. No draw code,
      no stage, no config key and no DAG node changed.
+
+- **Amended by [ADR-0212](ADR-0212-day-absence-cells-students-by-home-area-other-adults-by-age-band.md) (2026-11-28, issue #140):** with `day_absence_student_cells_enabled` the individual stage draws per cell (students by home area, other adults by age band) instead of per age band; Decisions 1 and 4 are amended there.

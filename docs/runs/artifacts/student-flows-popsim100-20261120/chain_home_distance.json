@@ -1,0 +1,111 @@
+{
+  "chain": [
+    {
+      "dependencies": [],
+      "seconds": 111.6,
+      "stage": "braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69"
+    },
+    {
+      "dependencies": [
+        "braunschweig.data.building_potentials__981af07e406865b92bed1aa1dd89e93c",
+        "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421",
+        "eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f"
+      ],
+      "seconds": 0.3,
+      "stage": "braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27"
+    },
+    {
+      "dependencies": [
+        "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41",
+        "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5",
+        "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41"
+      ],
+      "seconds": 23.3,
+      "stage": "braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700"
+    },
+    {
+      "dependencies": [
+        "braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930",
+        "braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea",
+        "braunschweig.data.schools.kita_facilities__522211874fa82fe14e4826f06ecb0a7a",
+        "braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27",
+        "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41",
+        "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5",
+        "braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700",
+        "braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852",
+        "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41",
+        "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421",
+        "synthesis.population.spatial.primary.candidates__1395670415a56599aee21872003c3fb3"
+      ],
+      "seconds": 33.2,
+      "stage": "braunschweig.synthesis.locations.education_gravity__33ce4abe99a5c5fc6fe5821620051dff"
+    },
+    {
+      "dependencies": [
+        "braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69",
+        "braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488",
+        "braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27",
+        "braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e",
+        "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41",
+        "braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c",
+        "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421",
+        "matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f",
+        "matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1",
+        "matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e"
+      ],
+      "seconds": 115.3,
+      "stage": "braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4"
+    },
+    {
+      "dependencies": [
+        "braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27",
+        "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41",
+        "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5",
+        "braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700",
+        "braunschweig.synthesis.locations.education_gravity__33ce4abe99a5c5fc6fe5821620051dff",
+        "braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852",
+        "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41",
+        "braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4"
+      ],
+      "seconds": 29.6,
+      "stage": "braunschweig.analysis.synthesis.student_flows__73dbdf8c225eaeab735b201cad3862b4"
+    }
+  ],
+  "links": [
+    "braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930.p",
+    "braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930.cache",
+    "braunschweig.data.building_potentials__981af07e406865b92bed1aa1dd89e93c.p",
+    "braunschweig.data.building_potentials__981af07e406865b92bed1aa1dd89e93c.cache",
+    "braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488.p",
+    "braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488.cache",
+    "braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea.p",
+    "braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea.cache",
+    "braunschweig.data.schools.kita_facilities__522211874fa82fe14e4826f06ecb0a7a.p",
+    "braunschweig.data.schools.kita_facilities__522211874fa82fe14e4826f06ecb0a7a.cache",
+    "braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e.p",
+    "braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e.cache",
+    "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41.p",
+    "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41.cache",
+    "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5.p",
+    "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5.cache",
+    "braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c.p",
+    "braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c.cache",
+    "braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852.p",
+    "braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852.cache",
+    "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41.p",
+    "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41.cache",
+    "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421.p",
+    "data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421.cache",
+    "eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f.p",
+    "eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f.cache",
+    "matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.p",
+    "matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache",
+    "matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1.p",
+    "matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1.cache",
+    "matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.p",
+    "matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.cache",
+    "synthesis.population.spatial.primary.candidates__1395670415a56599aee21872003c3fb3.p",
+    "synthesis.population.spatial.primary.candidates__1395670415a56599aee21872003c3fb3.cache"
+  ],
+  "source_cache": "<source cache>"
+}

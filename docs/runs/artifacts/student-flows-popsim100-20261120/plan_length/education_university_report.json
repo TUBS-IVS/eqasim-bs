@@ -1,0 +1,214 @@
+{
+  "absent_without_fitted_row": {
+    "kreise": [],
+    "n_persons": 0
+  },
+  "allotment_diagnostics": {
+    "mean_abs_leg_gap_km": 8.57022468185295,
+    "mean_distance_km": 16.168661243921033,
+    "n_by_path": {
+      "fallback_decay": 241,
+      "plan_length": 8748
+    },
+    "n_near_local_site": 1881,
+    "n_near_local_site_sent_elsewhere": 480,
+    "n_near_local_site_with_place": 1881,
+    "n_near_local_site_with_place_sent_elsewhere": 480,
+    "n_persons": 8989,
+    "n_with_observed_leg": 8748,
+    "radius_km": 2.0
+  },
+  "counts_by_kreis": {
+    "03101": {
+      "absent_fallback_decay": 7,
+      "absent_plan_length": 385,
+      "fallback_decay": 102,
+      "plan_length": 3753
+    },
+    "03102": {
+      "absent_fallback_decay": 1,
+      "absent_plan_length": 187,
+      "fallback_decay": 24,
+      "plan_length": 782
+    },
+    "03103": {
+      "absent_fallback_decay": 3,
+      "absent_plan_length": 121,
+      "fallback_decay": 18,
+      "plan_length": 996
+    },
+    "03151": {
+      "absent_fallback_decay": 1,
+      "absent_plan_length": 213,
+      "fallback_decay": 23,
+      "plan_length": 984
+    },
+    "03153": {
+      "absent_fallback_decay": 2,
+      "absent_plan_length": 127,
+      "fallback_decay": 25,
+      "plan_length": 636
+    },
+    "03154": {
+      "absent_plan_length": 43,
+      "fallback_decay": 11,
+      "plan_length": 249
+    },
+    "03157": {
+      "absent_fallback_decay": 1,
+      "absent_plan_length": 184,
+      "fallback_decay": 13,
+      "plan_length": 713
+    },
+    "03158": {
+      "absent_fallback_decay": 3,
+      "absent_plan_length": 165,
+      "fallback_decay": 25,
+      "plan_length": 635
+    }
+  },
+  "dropped_zero_share_destinations": [
+    "TiHo Hannover | 03241001",
+    "Uni L\u00fcneburg | 03355022"
+  ],
+  "fit": {
+    "column_rounded": {
+      "HS Braunschweig/Wolfenb\u00fcttel | 03102000": 482,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03103000": 685,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03158037": 1461,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03360023": 40,
+      "HS Hannover | 03241001": 65,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03159016": 9,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03254021": 71,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03255023": 3,
+      "Hochsch. f. Bildende K\u00fcnste Braunschweig | 03101000": 248,
+      "Hochsch. f. Musik, Theater und Medien Hannover | 03241001": 9,
+      "Hochschule Harz | curated": 91,
+      "Hochschule Magdeburg-Stendal | curated": 15,
+      "MHH Hannover | 03241001": 34,
+      "OVGU Magdeburg | curated": 78,
+      "TU Braunschweig | 03101000": 4267,
+      "TU Clausthal | 03153018": 813,
+      "Uni G\u00f6ttingen | 03159016": 119,
+      "Uni Hannover | 03241001": 299,
+      "Uni Hildesheim | 03254021": 200
+    },
+    "column_targets": {
+      "HS Braunschweig/Wolfenb\u00fcttel | 03102000": 482.30465163606823,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03103000": 684.149348060263,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03158037": 1461.771784114146,
+      "HS Braunschweig/Wolfenb\u00fcttel | 03360023": 40.28587128798729,
+      "HS Hannover | 03241001": 64.46398820175396,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03159016": 9.13771613082879,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03254021": 71.73776601253272,
+      "HS Hildesheim/Holzminden/G\u00f6ttingen | 03255023": 2.674091581701089,
+      "Hochsch. f. Bildende K\u00fcnste Braunschweig | 03101000": 247.52845065139445,
+      "Hochsch. f. Musik, Theater und Medien Hannover | 03241001": 8.689462777116228,
+      "Hochschule Harz | curated": 90.5902973769718,
+      "Hochschule Magdeburg-Stendal | curated": 14.953967163516666,
+      "MHH Hannover | 03241001": 33.97157761750749,
+      "OVGU Magdeburg | curated": 77.57908358235412,
+      "TU Braunschweig | 03101000": 4267.526588113734,
+      "TU Clausthal | 03153018": 813.2408269759476,
+      "Uni G\u00f6ttingen | 03159016": 119.12638489082396,
+      "Uni Hannover | 03241001": 299.2170120750544,
+      "Uni Hildesheim | 03254021": 200.05113175029882
+    },
+    "iterations": 82,
+    "max_deviation_persons": 7.9562335031369e-07,
+    "row_totals": {
+      "03101": 3855,
+      "03102": 806,
+      "03103": 1014,
+      "03151": 1007,
+      "03153": 661,
+      "03154": 260,
+      "03157": 726,
+      "03158": 660
+    },
+    "rows_left_out": []
+  },
+  "legacy_without_row": {
+    "kreise": [],
+    "n_persons": 0
+  },
+  "n_absent": 1443,
+  "n_by_path": {
+    "absent_fallback_decay": 18,
+    "absent_plan_length": 1425,
+    "fallback_decay": 241,
+    "plan_length": 8748
+  },
+  "n_persons": 10432,
+  "n_present": 8989,
+  "plan_rule": {
+    "fallback_share": 0.026810546223161643,
+    "n_fallback": 241,
+    "n_persons": 8989,
+    "n_primary": 8748,
+    "warn_share": 0.25
+  },
+  "plan_rule_absent": {
+    "fallback_share": 0.012474012474012475,
+    "n_fallback": 18,
+    "n_persons": 1443,
+    "n_primary": 1425,
+    "warn_share": 0.25
+  },
+  "random_stream": {
+    "generator": "numpy.random.default_rng([random_seed, stream_id])",
+    "random_seed": 1234,
+    "stream_id": 140
+  },
+  "realised_distance_km_by_home_kreis": {
+    "03101": {
+      "mean": 9.475960829604556,
+      "median": 4.005270043216584,
+      "n_present": 3855,
+      "p90": 25.603146405621196
+    },
+    "03102": {
+      "mean": 17.972594958695385,
+      "median": 15.76528114372964,
+      "n_present": 806,
+      "p90": 41.574272746993955
+    },
+    "03103": {
+      "mean": 20.47523241914745,
+      "median": 19.841719853245127,
+      "n_present": 1014,
+      "p90": 49.44202269818993
+    },
+    "03151": {
+      "mean": 30.26942556155468,
+      "median": 25.89210033764719,
+      "n_present": 1007,
+      "p90": 50.99389424538573
+    },
+    "03153": {
+      "mean": 14.131761462524965,
+      "median": 15.01321650651098,
+      "n_present": 661,
+      "p90": 22.257757936052034
+    },
+    "03154": {
+      "mean": 28.620156764360782,
+      "median": 28.903023849118746,
+      "n_present": 260,
+      "p90": 43.37542321015809
+    },
+    "03157": {
+      "mean": 24.818359604346632,
+      "median": 21.285193379404166,
+      "n_present": 726,
+      "p90": 33.22282820339693
+    },
+    "03158": {
+      "mean": 13.850857212873782,
+      "median": 9.383772480994132,
+      "n_present": 660,
+      "p90": 33.04075094181837
+    }
+  },
+  "rule": "plan_length"
+}

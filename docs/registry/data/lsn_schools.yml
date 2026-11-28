@@ -27,5 +27,13 @@ licensing:
   license: dl-de/by-2-0
   restricted: false
   redistribution: allowed
-limitations: null
+limitations: |-
+  Vocational schools (BBS): the capacity of a school is the sum of ALL pupil-count columns of the LSN BBS
+  2024 directory (every column whose name starts with "Anzahl", one per Schulform), with no split by
+  age (scripts/extract_nds_schools.py reads them, braunschweig/data/schools/readers.py build_bbs_long
+  sums them). The capacities therefore count adult pupils too, and the weight of a vocational school as a
+  destination of an adult apprentice or pupil (ADR-0213, routing by status) is the number of all its
+  pupils. Whether the pupil-count columns overlap (the same pupil counted under two Schulformen) is
+  unknown: the directory does not say, and no check against a second source exists in the repository. The
+  "Anzahl" columns are assumed to be pupil counts (not verified against the workbook).
 notes: Regenerated locally (geocoded facility CSV is not committed for data-protection reasons).

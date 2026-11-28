@@ -1,0 +1,39 @@
+stage: braunschweig.analysis.synthesis.student_out_commuters
+title: Out-commuting students - modes and legs rewritten as a stay at a gate
+layer: analysis
+description: |-
+  A read-only measurement of the synthesis (issue #140, Phase 4, design B6a, ADR-0213): the modes of the
+  out-commuting students (residents of the day whose destination is a surrounding institution) by distance
+  band of the students' mode table against the reference the in-commuters draw from, and, per home Kreis and
+  destination, the students beyond the routable distance and how many of them have the leg rewritten as a
+  stay at a cordon gate. Phase 4 does not change how a leg out of the region is moded or rewritten; the stage
+  reports what the existing mechanisms did. It reads the trips the simulation starts from
+  (synthesis.population.trips.simulated) and counts the students whose education leg is uncertain; the
+  definitions, the counted blind spot and the code state it measures are in the module docstring of
+  braunschweig/analysis/synthesis/student_out_commuters.py. configure() refuses a run without the portal
+  layer (nothing is rewritten then) and a run with braunschweig.students.flows_enabled false (no
+  destinations of the out-commuters then).
+lineage:
+  type: braunschweig_new
+  upstream: null
+  notes: eqasim precedent analysis/synthesis/*; the report is Braunschweig-specific (issue #140).
+code:
+- braunschweig/analysis/synthesis/student_out_commuters.py
+- braunschweig/data/education/student_flows_inputs.py
+- braunschweig/data/education/student_mode_reference.py
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+production: true
+inputs:
+- mid2023_student_reference
+features:
+- student_flows
+decisions:
+- ADR-0213
+notes: |-
+  Listed in the run lists of configs/overlays/test_100pct.yml and test_25pct.yml next to students_vs_srv.
+  Writes under <output_path>/analysis/student_out_commuters/ the two CSV tables, a summary.md and
+  student_out_commuters_report.json. Config keys: the student flows block of configs/base_bs.yml (and
+  braunschweig.portal.max_routable_distance_m of the portal layer).

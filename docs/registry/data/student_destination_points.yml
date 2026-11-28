@@ -1,0 +1,49 @@
+dataset: student_destination_points
+title: Destination points of the student origin-destination table
+provider: derived in-repo from the student balance builder (student_od_balance), VG250 commune centroids and the curated institution list of scripts/seed_nds_hochschulen.py
+vintage: |
+  A separate run of the points sub-command on the same inputs and the same preparation as the balance run of
+  student_od_table.csv; the points do not depend on the enrollment semester. The consistency with T is evidenced
+  by the distance-reproduction check of tests/test_student_destination_points.py, not by a shared run.
+geography: |
+  One point per destination_id of student_od_table.csv: a local site or an LSN-listed site at the
+  population-weighted centroid of its commune, an institution outside the LSN statistics at its
+  curated coordinate.
+crs: EPSG:25832
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Written by the points sub-command of scripts/build_student_balance.py with --final, from the
+    same preparation and student_geometry.site_points as the balance sub-command of record
+    student_od_balance; the header carries the inputs with sha256 and the code state.
+  script: scripts/build_student_balance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/student_destination_points.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: committed with the checkout. Pinned by
+    tests/test_student_destination_points.py (one row per destination of T, finite coordinates, and,
+    when the local-only VG250 archive is present, the distance of every commuter row of T
+    reproduced from these points). The path is ignored by the catch-all eqasim-data/* rule, so the
+    file is committed with git add -f; the .gitignore comment next to the CHE entry lists it.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: not_needed
+licensing:
+  license: derived from LSN (dl-de/by-2-0) and VG250 commune geometry; ASSUMPTION - the coordinates of the three curated institutions are public locations (their source is scripts/seed_nds_hochschulen.py; no licence text was checked)
+  restricted: false
+  redistribution: allowed
+  notes: |
+    Coordinates and ids only; no enrollment figures.
+limitations: |
+  A commune-centre point places a site at the centre of its commune, not at the campus (the
+  distances of T were built on the same points, so the table is consistent with T by construction).
+notes: |
+  Phase 4 of the student layer (issue #140). Sibling record: student_od_balance (not edited here).

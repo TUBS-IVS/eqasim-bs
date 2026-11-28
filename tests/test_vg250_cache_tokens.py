@@ -103,6 +103,32 @@ def _students_vs_srv_inputs(data_path):
     return [os.path.relpath(path, data_path) for path in paths]
 
 
+def _student_incommuters_inputs(data_path):
+    """The committed tables that ``student_incommuters.validate`` digests with the student flows on (the default)."""
+    from braunschweig.synthesis import student_incommuters
+
+    class _Defaults:
+        def config(self, key):
+            return {"data_path": data_path, student_incommuters.KEY_OD_TABLE_PATH: student_incommuters.DEFAULT_OD_TABLE_PATH,
+                    student_incommuters.KEY_DESTINATION_POINTS_PATH: student_incommuters.DEFAULT_DESTINATION_POINTS_PATH,
+                    student_incommuters.KEY_LEVEL_TABLE_PATH: student_incommuters.DEFAULT_LEVEL_TABLE_PATH}[key]
+
+    return [os.path.relpath(path, data_path)
+            for path in student_incommuters._flows_table_paths(_Defaults()).values()]
+
+
+def _student_flows_inputs(data_path):
+    """The committed tables that ``student_flows.validate`` digests (default configuration)."""
+    from braunschweig.analysis.synthesis import student_flows
+
+    class _Defaults:
+        def config(self, key):
+            return {"data_path": data_path, student_flows.KEY_OD_TABLE_PATH: student_flows.DEFAULT_OD_TABLE_PATH,
+                    student_flows.KEY_LEVEL_TABLE_PATH: student_flows.DEFAULT_LEVEL_TABLE_PATH}[key]
+
+    return [os.path.relpath(path, data_path) for path in student_flows.table_paths(_Defaults()).values()]
+
+
 _CORDON_ON = {"cordon_enabled": True}
 READERS = (
     Reader("braunschweig.data.bbsr.regiostar", path_keys=("regiostar.path",)),
@@ -122,14 +148,18 @@ READERS = (
            off=({"cordon_enabled": False},
                 {"cordon_enabled": True, "cordon_incommuter_real_origin": False}),
            hashes_source=True),
-    Reader("braunschweig.synthesis.student_incommuters", _CORDON_ON, off=({"cordon_enabled": False},),
-           hashes_source=True),
+    # With the parent feature on, so the injection is active and validate digests the flows tables too.
+    Reader("braunschweig.synthesis.student_incommuters", {**_CORDON_ON, "education_gravity_enabled": True},
+           off=({"cordon_enabled": False},),
+           hashes_source=True, input_files=_student_incommuters_inputs),
     Reader("braunschweig.analysis.synthesis.commute_distance_by_kreis", hashes_source=True, repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.work_participation_by_kreis", hashes_source=True,
            repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.plan_structure_vs_srv", hashes_source=True, repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.students_vs_srv", hashes_source=True, repo_anchored=True,
            input_files=_students_vs_srv_inputs),
+    Reader("braunschweig.analysis.synthesis.student_flows", hashes_source=True, repo_anchored=True,
+           input_files=_student_flows_inputs),
     Reader("braunschweig.analysis.analysis_suite", {"analysis_suite_enabled": True},
            off=({"analysis_suite_enabled": False},), hashes_source=True, repo_anchored=True, tolerant=True),
     Reader("braunschweig.analysis.simwrapper_export", {"simwrapper_export_enabled": True},

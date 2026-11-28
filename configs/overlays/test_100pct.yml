@@ -26,6 +26,8 @@ run:
   - braunschweig.analysis.analysis_suite
   - braunschweig.analysis.synthesis.plan_structure_vs_srv
   - braunschweig.analysis.synthesis.students_vs_srv
+  - braunschweig.analysis.synthesis.student_flows
+  - braunschweig.analysis.synthesis.student_out_commuters
   - braunschweig.analysis.synthesis.departure_time_vs_srv
   - braunschweig.analysis.verbindungen_validation
   - braunschweig.analysis.synthesis.commute_distance_by_kreis

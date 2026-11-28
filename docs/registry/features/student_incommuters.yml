@@ -56,3 +56,8 @@ assessment:
   pending_reason: |
     The decisions are recorded in ADR-0210 (origin-destination balance, weights, student level) and ADR-0211 (employed target, education entries, student donor key); the measurements are in docs/runs/student-balance-2026-11-26.yml, docs/runs/student-balance-2026-11-27.yml and docs/runs/student-synthesis-smoke-20261127.yml. The STATUS matrix itself marks the validation run as pending: no validation run exists for the default-ON in-commuter placement.
   source: null
+notes: |-
+  The description above is the OFF path of braunschweig.students.flows_enabled (the count of enrollment minus
+  the residents placed, the reverse decay). With the switch on (default) the count, the origin, the commute
+  length and the mode come from the origin-destination table T; see the feature record student_flows,
+  ADR-0213 and the detail doc.

@@ -5,19 +5,38 @@ description: 'Assigns students to school/Kita/university facilities by the calib
   per-RS7 gravity models (ADR-0024). Since ADR-0157 (issue #465) persons aged education_adult_min_age (30) and
   older choose among all education facilities (schools and universities, uniform weights) by distance decay
   (education_adult_slope -0.15 per km, education_adult_max_radius_km 30, ASSUMPTIONS) instead of a university;
-  null switches the band off.'
+  null switches the band off. With braunschweig.students.flows_enabled (default on, issue #140 Phase 4,
+  ADR-0213) the routing is by student status (braunschweig/synthesis/locations/education_routing.py) and
+  education_adult_min_age no longer decides; the university level is assigned by a balanced assignment of
+  the persons present (braunschweig/synthesis/locations/university_assignment.py).'
 lineage:
   type: braunschweig_new
   upstream: null
   notes: null
 code:
 - braunschweig/synthesis/locations/education_gravity.py
+- braunschweig/synthesis/locations/education_routing.py
+- braunschweig/synthesis/locations/university_assignment.py
 pipelines:
   popsim_mid: active
   popsim_open: active
   simple_ipf_open: not_used
 production: true
+inputs:
+- student_od_balance
 features:
 - education_gravity
+- student_flows
 decisions:
 - ADR-0024
+- ADR-0157
+- ADR-0213
+notes: |-
+  ON path of braunschweig.students.flows_enabled, the method is in ADR-0213 and the module docstrings of
+  the two files above. New inputs of the stage on that path (declared only then): the trips (the observed
+  education leg), the home zones (the home Kreis) and, with the day absence on, the day-absence stage (who is
+  present on the simulated day). Config keys: the student flows block of configs/base_bs.yml. Rate logs:
+  [education routing] student status, [education:university] rows of T and allotment (primary and fallback
+  counts with a warn share); the persons of a home Kreis without a row of T raise above a configured share
+  (default 0). The university step writes education_university_report.json into the stage's
+  cache directory.

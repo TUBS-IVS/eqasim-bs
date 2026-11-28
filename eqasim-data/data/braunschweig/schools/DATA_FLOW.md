@@ -63,3 +63,10 @@ Reporting (offline, post-run):
 `tests/test_school_typing.py`, `tests/test_school_readers.py`,
 `tests/test_school_facilities.py`, `tests/test_education_gravity_model.py`,
 `tests/test_education_gravity_stage.py`, `tests/test_education_validation.py`.
+
+## Student destination points
+
+`scripts/build_student_balance.py points` reuses the site and point preparation of `balance`
+(`student_geometry.site_points`) and writes `student_destination_points.csv`, one point per destination of
+`student_od_table.csv`. Later phases of the student layer (#140) place university facilities at these points and
+measure distances to them. Fields and sources: README section "Student destination points".

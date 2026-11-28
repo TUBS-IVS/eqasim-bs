@@ -1,0 +1,107 @@
+section,key,model,balance,deviation,deviation_share,rule_applies
+site,HS Braunschweig/Wolfenbüttel | 03102000|residents_of_day,482,495.1664397,-13.16643972,-0.02658992747,True
+site,HS Braunschweig/Wolfenbüttel | 03102000|incommuters,64,63.79859986,0.2014001377,0.003156811249,True
+site,HS Braunschweig/Wolfenbüttel | 03102000|total,546,558.9650397,-12.96503966,-0.02319472372,True
+site,HS Braunschweig/Wolfenbüttel | 03103000|residents_of_day,685,702.3937998,-17.39379978,-0.02476360097,True
+site,HS Braunschweig/Wolfenbüttel | 03103000|incommuters,59,58.98287486,0.01712513998,0.0002903408833,True
+site,HS Braunschweig/Wolfenbüttel | 03103000|total,744,761.3766746,-17.37667464,-0.02282270421,True
+site,HS Braunschweig/Wolfenbüttel | 03158037|residents_of_day,1461,1500.753367,-39.75336733,-0.02648894095,True
+site,HS Braunschweig/Wolfenbüttel | 03158037|incommuters,148,147.8234306,0.1765693712,0.001194461328,True
+site,HS Braunschweig/Wolfenbüttel | 03158037|total,1609,1648.576798,-39.57679804,-0.02400664506,True
+site,Hochsch. f. Bildende Künste Braunschweig | 03101000|residents_of_day,248,254.1293791,-6.12937906,-0.02411912815,True
+site,Hochsch. f. Bildende Künste Braunschweig | 03101000|incommuters,27,26.8012367,0.1987632985,0.007416198765,True
+site,Hochsch. f. Bildende Künste Braunschweig | 03101000|total,275,280.9306158,-5.930615789,-0.02111060687,True
+site,TU Braunschweig | 03101000|residents_of_day,4267,4381.330223,-114.3302233,-0.02609486559,True
+site,TU Braunschweig | 03101000|incommuters,462,462.0680568,-0.06805683664,-0.0001472874734,True
+site,TU Braunschweig | 03101000|total,4729,4843.39828,-114.3982798,-0.02361942445,True
+site,TU Clausthal | 03153018|residents_of_day,813,834.9278066,-21.92780665,-0.02626311697,True
+site,TU Clausthal | 03153018|incommuters,67,66.75327628,0.2467237224,0.003696054129,True
+site,TU Clausthal | 03153018|total,880,901.681083,-21.68108298,-0.02404517893,True
+site,all_local_sites|residents_of_day,7956,8168.701016,-212.7010158,-0.02603853604,True
+site,all_local_sites|incommuters,827,826.2274752,0.7725248332,0.0009350025948,True
+site,all_local_sites|total,8783,8994.928491,-211.9284909,-0.02356088668,True
+incommuters_by_origin,03155,30,30.23325258,-0.2332525814,-0.007715100476,True
+incommuters_by_origin,03159,43,42.79449338,0.2055066152,0.004802174274,True
+incommuters_by_origin,03241,321,320.99729,0.002709972417,8.442352946e-06,True
+incommuters_by_origin,03252,7,7.326088983,-0.3260889826,-0.04451065001,True
+incommuters_by_origin,03254,200,199.3293466,0.6706534436,0.003364549451,True
+incommuters_by_origin,03255,3,2.812422484,0.1875775164,0.0666960663,True
+incommuters_by_origin,03256,1,0.7591928983,0.2408071017,0.317188296,True
+incommuters_by_origin,03257,5,4.445524391,0.5544756086,0.1247267048,True
+incommuters_by_origin,03351,81,81.29418379,-0.2941837874,-0.003618755657,True
+incommuters_by_origin,03353,0,0,0,,True
+incommuters_by_origin,03354,4,4.267111189,-0.2671111887,-0.06259766312,True
+incommuters_by_origin,03355,0,0.3673339079,-0.3673339079,-1,True
+incommuters_by_origin,03358,4,4.455503759,-0.455503759,-0.1022339524,True
+incommuters_by_origin,03360,27,26.96192445,0.03807555034,0.001412197056,True
+incommuters_by_origin,05762,0,0,0,,True
+incommuters_by_origin,05766,0,0,0,,True
+incommuters_by_origin,05770,0,0,0,,True
+incommuters_by_origin,05774,0,0,0,,True
+incommuters_by_origin,06611,0,0,0,,True
+incommuters_by_origin,06632,0,0,0,,True
+incommuters_by_origin,06633,0,0,0,,True
+incommuters_by_origin,06634,0,0,0,,True
+incommuters_by_origin,06635,0,0,0,,True
+incommuters_by_origin,06636,0,0,0,,True
+incommuters_by_origin,12070,0,0,0,,True
+incommuters_by_origin,13076,0,0,0,,True
+incommuters_by_origin,15003,11,10.67180376,0.3281962442,0.0307535869,True
+incommuters_by_origin,15081,15,14.86260964,0.1373903559,0.0092440264,True
+incommuters_by_origin,15083,13,12.98338152,0.01661847595,0.00127998056,True
+incommuters_by_origin,15084,0,0,0,,True
+incommuters_by_origin,15085,62,61.66601184,0.3339881559,0.005416081662,True
+incommuters_by_origin,15086,0,0,0,,True
+incommuters_by_origin,15087,0,0,0,,True
+incommuters_by_origin,15088,0,0,0,,True
+incommuters_by_origin,15089,0,0,0,,True
+incommuters_by_origin,15090,0,0,0,,True
+incommuters_by_origin,16061,0,0,0,,True
+incommuters_by_origin,16062,0,0,0,,True
+incommuters_by_origin,16063,0,0,0,,True
+incommuters_by_origin,16064,0,0,0,,True
+incommuters_by_origin,16065,0,0,0,,True
+incommuters_by_origin,16067,0,0,0,,True
+incommuters_by_origin,16068,0,0,0,,True
+incommuters_by_origin,total,827,826.2274752,0.7725248332,0.0009350025948,True
+out_commuters,HS Braunschweig/Wolfenbüttel | 03360023,40,41.36018881,-1.360188812,-0.03288642656,True
+out_commuters,HS Hannover | 03241001,65,66.18307209,-1.183072089,-0.01787575057,True
+out_commuters,HS Hildesheim/Holzminden/Göttingen | 03159016,9,9.381394827,-0.3813948265,-0.04065438387,True
+out_commuters,HS Hildesheim/Holzminden/Göttingen | 03254021,71,73.6508223,-2.650822295,-0.03599175423,True
+out_commuters,HS Hildesheim/Holzminden/Göttingen | 03255023,3,2.745402524,0.2545974759,0.09273593714,True
+out_commuters,"Hochsch. f. Musik, Theater und Medien Hannover | 03241001",9,8.921187743,0.07881225733,0.008834278529,True
+out_commuters,Hochschule Harz | curated,91,93.00610076,-2.006100756,-0.02156956092,True
+out_commuters,Hochschule Magdeburg-Stendal | curated,15,15.35274987,-0.3527498748,-0.02297633178,True
+out_commuters,MHH Hannover | 03241001,34,34.87750965,-0.8775096475,-0.02515975643,True
+out_commuters,OVGU Magdeburg | curated,78,79.64791234,-1.647912339,-0.02068996274,True
+out_commuters,Uni Göttingen | 03159016,119,122.3031702,-3.30317017,-0.02700805029,True
+out_commuters,Uni Hannover | 03241001,299,307.1963376,-8.196337563,-0.02668110443,True
+out_commuters,Uni Hildesheim | 03254021,200,205.3859658,-5.385965767,-0.02622363094,True
+out_commuters,total,1033,1060.011814,-27.01181441,-0.02548255976,True
+students_population,03101,10180,12331.26959,-2151.269592,-0.1744564561,True
+students_population,03102,2605,2073.126616,531.8733845,0.2565561507,True
+students_population,03103,2940,2560.254817,379.7451835,0.1483231986,True
+students_population,03151,2904,2060.768596,843.2314037,0.4091829647,True
+students_population,03153,2821,3328.634541,-507.634541,-0.1525053396,True
+students_population,03154,1492,1585.916765,-93.9167649,-0.059219227,True
+students_population,03157,2204,2254.984904,-50.98490383,-0.02260986481,True
+students_population,03158,2067,2483.535754,-416.5357542,-0.1677188474,True
+students_population,total,27213,28678.49158,-1465.491585,-0.05110072056,True
+students_of_day,03101,3855,4172.127044,-317.1270438,-0.07601087897,True
+students_of_day,03102,806,635.369758,170.630242,0.2685526654,True
+students_of_day,03103,1014,831.1699665,182.8300335,0.2199670836,True
+students_of_day,03151,1007,631.5822847,375.4177153,0.5944082416,True
+students_of_day,03153,661,1020.156563,-359.156563,-0.3520602386,True
+students_of_day,03154,260,486.0501735,-226.0501735,-0.4650758004,True
+students_of_day,03157,726,691.1055031,34.89449689,0.05049083928,True
+students_of_day,03158,660,761.1515376,-101.1515376,-0.1328927719,True
+students_of_day,total,8989,9228.71283,-239.7128302,-0.02597467649,True
+students_30plus_report,03101,433,314.8072374,118.1927626,0.3754448711,False
+students_30plus_report,03102,118,52.92522863,65.07477137,1.229560515,False
+students_30plus_report,03103,137,65.36121359,71.63878641,1.096044312,False
+students_30plus_report,03151,138,52.6097385,85.3902615,1.623088499,False
+students_30plus_report,03153,68,84.97732018,-16.97732018,-0.1997864859,False
+students_30plus_report,03154,21,40.48715923,-19.48715923,-0.4813170299,False
+students_30plus_report,03157,75,57.56792215,17.43207785,0.3028088769,False
+students_30plus_report,03158,88,63.40263862,24.59736138,0.3879548536,False
+students_30plus_report,total,1078,732.1384583,345.8615417,0.4723990904,False

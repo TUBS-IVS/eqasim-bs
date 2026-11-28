@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "run_name": "flows_final2",
+  "run_dir": "<run server home>/i140_flows/flows_final2",
+  "setup": {
+    "time": "2026-11-28T02:32:56+01:00",
+    "host": "matsim",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73",
+    "repositories": {
+      "eqasim-bs": {
+        "shared_checkout": "<run server home>/eqasim-bs",
+        "ref": "run/i140-student-flows",
+        "bundle": "<run server home>/i140_flows/run-i140-student-flows-2.bundle",
+        "bundle_sha256": "f9edd20200b9490dc5213a96a433f4aa5fd7de40cc55c8aa6e0a8110a20d82da",
+        "bundle_ref": "refs/heads/run/i140-student-flows",
+        "namespaced_ref": "refs/isolated-runs/flows_final2/eqasim-bs",
+        "commit": "9921a2a018275305e565064f5ce195bcae899bab",
+        "worktree": "<run server home>/i140_flows/flows_final2/eqasim-bs"
+      },
+      "eqasim-java-bs": {
+        "shared_checkout": "<run server home>/eqasim-java-bs",
+        "ref": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "bundle": null,
+        "bundle_sha256": null,
+        "bundle_ref": null,
+        "namespaced_ref": null,
+        "commit": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "worktree": "<run server home>/i140_flows/flows_final2/eqasim-java-bs"
+      }
+    },
+    "symlink_farm": {
+      "shared_data": "<run server home>/eqasim-bs/eqasim-data",
+      "links": 87,
+      "kept": 385,
+      "excluded": [
+        "_run_1pct_allfeat_popsim.log",
+        "_run_25pct_allfeat_popsim.log",
+        "analysis",
+        "cache_bs_100pct_popsim_t3",
+        "cache_bs_1pct_allfeat_popsim",
+        "cache_shared",
+        "matsim_archive",
+        "output_bs_100pct_allfeat_popsim",
+        "output_bs_100pct_allfeat_popsim_i240",
+        "output_bs_100pct_allfeat_popsim_kreis5",
+        "output_bs_1pct_escort",
+        "output_bs_1pct_parking_v2_plans",
+        "output_bs_1pct_pv2_legacy",
+        "output_bs_1pct_pv2_off",
+        "output_bs_1pct_pv2_zones",
+        "output_bs_1pct_pv2_zones_nogarage",
+        "output_bs_1pct_pv3_legacy",
+        "output_bs_1pct_pv3_off",
+        "output_bs_1pct_pv3_v3",
+        "output_bs_1pct_pv3_v3_cost_0.5",
+        "output_bs_1pct_pv3_v3_cost_2.0",
+        "output_bs_1pct_pv3_v3_ev_off",
+        "output_bs_1pct_pv3_v3_free_shift_-0.1",
+        "output_bs_1pct_pv3_v3_free_shift_-0.2",
+        "output_bs_25pct_parking_v2_plans",
+        "output_bs_pv3_off_25pct",
+        "output_bs_pv3_v3_25pct",
+        "output_bs_test_matsim",
+        "output_i385_smoke",
+        "output_taz_calib_run.log",
+        "output_taz_calib_run.pid",
+        "parking_v2_legacy_resolved.yml",
+        "parking_v2_off_resolved.yml",
+        "parking_v2_plans25_resolved.yml",
+        "parking_v2_plans_resolved.yml",
+        "parking_v2_zones_v2_no_garages_resolved.yml",
+        "parking_v2_zones_v2_resolved.yml",
+        "parking_v3_legacy_resolved.yml",
+        "parking_v3_off_25pct_resolved.yml",
+        "parking_v3_off_resolved.yml",
+        "parking_v3_v3_25pct_resolved.yml",
+        "parking_v3_v3_cost_0.5_resolved.yml",
+        "parking_v3_v3_cost_2.0_resolved.yml",
+        "parking_v3_v3_ev_off_resolved.yml",
+        "parking_v3_v3_free_shift_-0.1_resolved.yml",
+        "parking_v3_v3_free_shift_-0.2_resolved.yml",
+        "parking_v3_v3_resolved.yml",
+        "popsim_work_allfeat",
+        "popsim_work_allfeat_opt",
+        "popsim_work_escort_reuse",
+        "popsim_work_test"
+      ]
+    },
+    "cache": null,
+    "shared_checkouts": {
+      "before": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "after": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "unchanged": true,
+      "changes": []
+    }
+  },
+  "overlay": {
+    "time": "2026-11-28T02:32:56+01:00",
+    "source": "<run server home>/i140_flows/run_overlay_flows_plan_length.yml",
+    "source_sha256": "25264f4bdda5875ae80edee6644639189615506bb509f0a5c6ea03cddb6a7dc4",
+    "prefix": null,
+    "changes": [],
+    "output_dir": "<run server home>/i140_flows/flows_final2/output",
+    "run_yml_sha256": "7631654e9ca1248170b28c7ae35ee3b47f8bced55ed93795e661593e5ffc8f00",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73"
+  }
+}

@@ -52,3 +52,5 @@
   in the repository; the log reports the assigned distribution for a later comparison with the survey.
 - **Status:** implemented; NOT part of the first 1 % rerun of the #465 fixes (launched before this decision); to be
   measured in a follow-up rerun. A smoke, not a validation.
+
+- **Amended by [ADR-0213](ADR-0213-students-are-placed-by-the-enrollment-balance.md) (2026-11-28, issue #140):** with `braunschweig.students.flows_enabled` the routing is by student status and `education_adult_min_age` no longer decides (Decision 1 for the ON path).
