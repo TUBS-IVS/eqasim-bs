@@ -45,7 +45,7 @@ status:
 source: >-
   run server, ~/seclock-2026-11-27 (environments, run copies, logs); removed after the artifacts are committed.
 environment: >-
-  run server, 64 cores, GNU time for wall time and peak RSS; uv 0.11 and Python 3.12 of the server.
+  run server, 64 cores, GNU time for wall time and peak RSS; uv 0.11.21 and Python 3.12 of the server.
 validation:
 - metric: >-
     Check 1, identity: per batch, the sha256 of final_expanded_household_ids.csv, synthetic_households.csv and
@@ -143,3 +143,7 @@ notes: >-
   GHSA-qccp-gfcp-xxvc and GHSA-vxq7-64xx-v4gw. Each new version is the highest first-patched version of its package's
   alerts, except certifi: 2026.10.19 instead of 2026.10.18, because the advisory itself says 2026.10.18 removed every
   emSign root and 2026.10.19 restored the unaffected ones.
+  The uv version (0.11.21) was read on the run server after the run, from the binary the scripts call
+  (~/.local/bin/uv, installed 2026-06-11 and unchanged since); sync_check.sh itself did not record it. The exit
+  codes in start_check.txt, and the exit code 1 that braunschweig/popsim/tool_version.py treats as an outdated
+  environment (SYNC_CHECK_OUTDATED_EXIT), were measured with that uv.

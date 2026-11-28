@@ -7,7 +7,7 @@ so these tests read them directly (not data-gated). Two kinds of check:
   summing to 1, NaN where the base is empty, shared label vocabulary of the two surveys);
 * three value pins per file, copied unrounded from the files written by the extraction run of
   2026-11-25 (code state ``fbb54d76``; the MiD behaviour table and the decision tables from the
-  re-run of 2026-11-26 at code state ``f8c79e4d``, run manifest
+  re-run of 2026-11-26 at code state ``f8c79e4d``, committed in ``172fd501``; run manifest
   ``student-commuting-phase0-reference-2026-11-25``). A pin failing after a deliberate re-extraction means
   the pin is to be re-copied from the new file together with a new run manifest; it is not a
   reference value, only a guard against an unnoticed change of a committed table.
