@@ -505,3 +505,16 @@ def test_stage_refuses_an_incommuter_id_that_is_also_a_residents_id(tmp_path, mo
 
     with pytest.raises(ValueError, match="residents' ids"):
         _run_stage(tmp_path, monkeypatch, mutate_world=clash)
+
+
+@pytest.mark.parametrize("paths,present,present_fallback,absent,absent_fallback", [
+    (["plan_length", "plan_length", "fallback_decay", "absent_plan_length", "absent_fallback_decay",
+      "absent_fallback_decay", "legacy_decay"], 3, 1, 3, 2),
+    (["home_distance", "home_distance", "absent_home_distance", "absent_home_distance", "absent_home_distance"],
+     2, 0, 3, 0)])
+def test_university_rule_rates_count_the_absent_students_under_both_rules(paths, present, present_fallback, absent,
+                                                                          absent_fallback):
+    """Regression: the absent block reported n 0 because it was computed from the present residents only."""
+    present_entry, absent_entry = S.university_rule_rates(pd.Series(paths), 0.25)
+    assert (present_entry["n"], present_entry["fallback"]) == (present, present_fallback)
+    assert (absent_entry["n"], absent_entry["fallback"]) == (absent, absent_fallback)

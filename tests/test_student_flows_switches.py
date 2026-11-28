@@ -76,7 +76,7 @@ def test_off_path_declares_no_new_input_and_no_new_key():
                   stage.KEY_DAY_ABSENCE_STUDENT_CELLS}
     assert flows_keys <= set(on.declared)
     assert not flows_keys & set(off.declared)
-    assert on.declared[stage.KEY_KREIS_MATCHING_RULE] == "plan_length"
+    assert on.declared[stage.KEY_KREIS_MATCHING_RULE] == "home_distance"   # owner decision 2026-11-28 (ADR-0213)
 
 
 def test_flows_with_day_absence_off_declare_no_absence_stage():
@@ -217,6 +217,7 @@ def _run(tmp_path, people, row_order=None, **overrides):
         _write_od_table(data_path)
     out_dir = tmp_path / ("out_%d" % len(list(tmp_path.glob("out_*"))))
     out_dir.mkdir()
+    overrides.setdefault(stage.KEY_KREIS_MATCHING_RULE, "plan_length")   # these tests exercise the plan rule
     configured = _configure(random_seed=5, data_path=str(data_path), education_bbs_share_by_age={16: 0.5},
                             **overrides)
     order = np.arange(len(people)) if row_order is None else row_order
@@ -244,7 +245,7 @@ def test_on_path_gives_every_destination_its_share_of_the_present_persons_and_co
     for destination, heads in _REGION_HEADS.items():
         received = int((fitted["destination_id"] == destination).sum())
         assert abs(received - n_fitted * heads / region_heads) < 1.0, destination
-    assert set(fitted["assignment_path"]) == {"plan_length", "fallback_decay"}   # the plan rule, default
+    assert set(fitted["assignment_path"]) == {"plan_length", "fallback_decay"}   # the plan rule, set explicitly by _run
     # a person with an observed leg is a primary case, one without a leg the counted fallback
     assert (fitted["assignment_path"] == "fallback_decay").tolist() == fitted["leg_km"].isna().tolist()
 

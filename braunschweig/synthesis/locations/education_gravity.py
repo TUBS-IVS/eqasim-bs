@@ -44,7 +44,7 @@ from braunschweig.synthesis.locations.education_routing import (
 )
 from braunschweig.synthesis.locations import university_assignment as _university_assignment
 from braunschweig.synthesis.locations.university_assignment import (
-    ALLOTMENT_RULES, PATH_FALLBACK_DECAY, RULE_PLAN_LENGTH, allot_within_kreis, allotment_diagnostics,
+    ALLOTMENT_RULES, PATH_FALLBACK_DECAY, RULE_HOME_DISTANCE, allot_within_kreis, allotment_diagnostics,
     controlled_round, destination_centres, draw_buildings, fit_flow_matrix, observed_education_leg_km,
 )
 
@@ -79,9 +79,9 @@ DEFAULT_STATUS_FALLBACK_WARN_SHARE = 0.0
 # ------------------------------------------------------------------ the residents' university flows (ON path, B5)
 #: Rule of the allotment inside a home Kreis: ``plan_length`` (the plan's education leg decides, the decay of
 #: ``education_university_slope`` the counted fallback) or ``home_distance`` (``university_assignment.ALLOTMENT_RULES``).
-#: The default is the owner's choice of 2026-11-27; the measurement against SrV (Task 15) decides it for good.
+#: The default is the owner decision of 2026-11-28 (ADR-0213); ``plan_length`` stays selectable.
 KEY_KREIS_MATCHING_RULE = "braunschweig.students.kreis_matching_rule"
-DEFAULT_KREIS_MATCHING_RULE = RULE_PLAN_LENGTH
+DEFAULT_KREIS_MATCHING_RULE = RULE_HOME_DISTANCE
 #: Largest accepted column deviation of the fit, in persons. A numerical tolerance far below one person (the
 #: rounding keeps every column within one person of its fitted sum), not a modelling parameter.
 KEY_FIT_TOLERANCE = "braunschweig.students.fit_tolerance"

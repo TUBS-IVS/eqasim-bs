@@ -616,6 +616,26 @@ def allotment_by_kreis(assigned: pd.DataFrame, centres: pd.DataFrame, rng: np.ra
     return pd.DataFrame(rows)
 
 
+def university_rule_rates(paths: pd.Series, warn_share: float) -> list:
+    """The fallback rates of the allotment inside a home Kreis, present and absent persons, from ``assignment_path``.
+
+    Present: primary = ``plan_length`` or ``home_distance``, fallback = ``fallback_decay``. Absent: the same
+    paths with the prefix ``absent_``. Under the home rule no path is a fallback, so its fallback count is 0.
+    """
+    paths = paths.astype(str)
+    primary_paths = (_university_assignment.PATH_PLAN_LENGTH, _university_assignment.PATH_HOME_DISTANCE)
+    fallback_path = _university_assignment.PATH_FALLBACK_DECAY
+    present_set = (*primary_paths, fallback_path)
+    absent_set = tuple(ABSENT_PATH_PREFIX + p for p in present_set)
+    return [
+        fallback_entry("university plan rule, present (Task 9)", int(paths.isin(present_set).sum()),
+                       int((paths == fallback_path).sum()), warn_share,
+                       "present students without an observed education leg, placed by the university decay"),
+        fallback_entry("university plan rule, absent (Task 9)", int(paths.isin(absent_set).sum()),
+                       int((paths == ABSENT_PATH_PREFIX + fallback_path).sum()), warn_share,
+                       "absent students, same fallback")]
+
+
 def fallback_entry(tag: str, n: int, n_fallback: int, warn_share: float, meaning: str) -> dict:
     """One fallback rate, logged as ``[tag] primary n/N (x%), fallback m (y%)``; a WARNING above ``warn_share``."""
     primary = n - n_fallback
@@ -977,17 +997,13 @@ def execute(context):
                                     "adults without a readable P_TAET, drawn at the age-band rate"))
     else:
         skipped["absence_cells_fallback"] = "the absence stage reports no cells diagnostics (day absence off)"
-    paths_all = university["assignment_path"].astype(str)
-    present_allotted = paths_all.isin(allotted_paths)
-    absent_allotted = paths_all.isin([ABSENT_PATH_PREFIX + p for p in allotted_paths])
-    rates.append(fallback_entry("university plan rule, present (Task 9)", int(present_allotted.sum()),
-                                int((paths_all == _university_assignment.PATH_FALLBACK_DECAY).sum()), warn_share,
-                                "present students without an observed education leg, placed by the university decay"))
-    rates.append(fallback_entry("university plan rule, absent (Task 9)", int(absent_allotted.sum()),
-                                int((paths_all == ABSENT_PATH_PREFIX + _university_assignment.PATH_FALLBACK_DECAY).sum()),
-                                warn_share, "absent students, same fallback"))
+    # ``university`` holds the present residents only; the absent persons (paths ``absent_*``) are in ``frame``.
+    university_all = frame[(frame["routed_level"] == "university") & frame["destination_id"].notna()
+                           & frame["assignment_path"].notna()]
+    paths_all = university_all["assignment_path"].astype(str)
+    rates.extend(university_rule_rates(paths_all, warn_share))
     legacy = paths_all.isin([PATH_LEGACY_DECAY, ABSENT_PATH_PREFIX + PATH_LEGACY_DECAY])
-    rates.append(fallback_entry("legacy decay, Kreis without a row of T (Task 10)", len(university),
+    rates.append(fallback_entry("legacy decay, Kreis without a row of T (Task 10)", len(university_all),
                                 int(legacy.sum()), 0.0, "students of a home Kreis without a row of T (must be 0)"))
     if has_commuters:
         rates.append(fallback_entry("in-commuter commute length (Task 11)", len(incommuters),
