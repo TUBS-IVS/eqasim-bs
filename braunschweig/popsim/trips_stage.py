@@ -476,12 +476,14 @@ def build_open_end_donors(mid_wege: pd.DataFrame, overnight_answers: pd.DataFram
     return _overnight_open_end.keeps_open_end(facts, overnight)
 
 
-def _log_closure_share(table: pd.DataFrame) -> None:
+def _log_closure_share(table: pd.DataFrame, open_end_summary: dict | None = None) -> None:
     """Log how many trips / persons carry a SYNTHESISED chain closure.
 
     The closure is a modelling assumption, not observed behaviour, so its share is
     reported as an explicit rate (CLAUDE.md fallback transparency) rather than left
-    implicit in the trip count.
+    implicit in the trip count. ``open_end_summary`` (feature ON only) is the donor-level
+    decision summary of :mod:`braunschweig.popsim.overnight_open_end`; its kept-open counts
+    (own flag vs inherited from the household) are repeated next to the closure rate.
     """
     if "is_synthetic_closure" not in table.columns:
         logger.warning(
@@ -510,6 +512,13 @@ def _log_closure_share(table: pd.DataFrame) -> None:
             "appended", int(per_person.sum()), len(per_person),
             100.0 * float(per_person.sum()) / max(len(per_person), 1),
         )
+        if open_end_summary is not None and "n_kept_own" in open_end_summary:
+            logger.info(
+                "[trips_stage] overnight open day end, donor level: %d open-end donors, kept open %d "
+                "(own overnight answer %d, inherited from the household %d)",
+                open_end_summary["n_open_end"], open_end_summary["n_kept"],
+                open_end_summary["n_kept_own"], open_end_summary["n_kept_inherited"],
+            )
 
 
 def _log_departure_time_model(diagnostics: dict) -> None:
@@ -794,12 +803,14 @@ def run(
     # Overnight open day end (issue #694): decided per MiD donor BEFORE the trip build, from the
     # donor Wege as delivered. Nothing is read or computed when the flag is OFF.
     open_end_donors = None
+    open_end_summary = None
     if keep_overnight_open_ends:
         if overnight_answers is None:
             raise ValueError(
                 "[trips_stage] keep_overnight_open_ends=True requires overnight_answers "
                 "(overnight_open_end.load_overnight_answers output); none was given.")
         open_end_donors = build_open_end_donors(mid_wege, overnight_answers)
+        open_end_summary = open_end_donors.attrs.get(_overnight_open_end.DECISION_SUMMARY_ATTR)
     # Built BEFORE the trip table: the empirical model must see the donor diaries
     # as reported, i.e. before any synthetic closure has been appended to them.
     dwell_model = build_closure_dwell_model(
@@ -844,7 +855,7 @@ def run(
             table["is_synthetic_closure"].fillna(False).astype(bool)
         )
 
-    _log_closure_share(table)
+    _log_closure_share(table, open_end_summary)
     # A SNAPSHOT (dict(...)), never the live mapping: ClosureDwellModel.report is one dict
     # that draw() mutates in place, and logging keeps the ARGUMENT in LogRecord.args and
     # renders it lazily (LogRecord.getMessage() recomputes msg % args on every call), so a
@@ -944,7 +955,7 @@ def configure(context):
         DEFAULT_DEPARTURE_TIME_MODEL, DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG,
         DEFAULT_ESCORT_PASSIVE_EDUCATION, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS,
-        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
         DEFAULT_W_ZWECK_10_AS_LEISURE, KEY_CLOSURE_DWELL_MIN_OBS,
         KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MAX_MEDIAN_SHIFT_HOURS,
@@ -952,7 +963,7 @@ def configure(context):
         KEY_DEPARTURE_TIME_MODEL, KEY_DROP_LEADING_ARRIVE_HOME_LEG,
         KEY_ESCORT_PASSIVE_EDUCATION, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_W_ZWECK_10_AS_LEISURE, require_positive,
     )
@@ -1003,6 +1014,9 @@ def configure(context):
     # popsim stage's trip_class seed and the commute-day donor stage read the same key and
     # must agree (see config_keys.KEY_KEEP_OVERNIGHT_OPEN_ENDS).
     context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS)
+    # Warn threshold of the same decision (no-usable-answer share of open-end diaries).
+    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+                   DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE)
     # W_ZWECK 10 "anderer Zweck" -> leisure (issue #373, ADR-0111): a TRIP-BUILD flag
     # declared with the SHARED key/default constants, like escort_passive_education
     # above -- the popsim stage's leisure_participation KREIS-control seed and the
@@ -1146,13 +1160,16 @@ def execute(context):
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_EDUCATION,
         KEY_ESCORT_PASSIVE_FROM_ADULT, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
         KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
         KEY_W_ZWECK_10_AS_LEISURE,
     )
     keep_overnight_open_ends = bool(context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS))
     # Read only when the feature is ON; OFF touches no extra file.
-    overnight_answers = (_overnight_open_end.load_overnight_answers(mid_dir)
-                         if keep_overnight_open_ends else None)
+    overnight_answers = (
+        _overnight_open_end.load_overnight_answers(
+            mid_dir, max_no_answer_share=float(context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE)))
+        if keep_overnight_open_ends else None)
     escort_purpose = bool(context.config("escort_purpose"))
     escort_passive_education = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
     explicit_round_trip_purposes = bool(context.config("explicit_round_trip_purposes"))

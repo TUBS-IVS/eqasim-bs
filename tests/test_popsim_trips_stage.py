@@ -1122,6 +1122,8 @@ def _overnight_fixture(p_streise):
     persons, wege = _persons_and_wege_not_ending_home()
     wege = wege.assign(W_RBW=[0, 0], W_SO1=[1, 1])
     answers = pd.DataFrame({"H_ID": [10], "P_ID": [1], "P_STREISE": [p_streise]})
+    # What load_overnight_answers does in production: the frame carries the warn threshold.
+    answers.attrs["overnight_max_no_answer_share"] = 0.20
     return persons, wege, answers
 
 
@@ -1149,6 +1151,19 @@ def test_on_leaves_the_overnight_day_open(caplog):
     closed = trips_stage.run(persons, wege, random_seed=1,
                              keep_overnight_open_ends=True, overnight_answers=answers)
     assert closed["is_synthetic_closure"].any()
+
+
+def test_on_with_only_unusable_answers_closes_every_day_and_warns(caplog):
+    """Fallback transparency: every donor has P_STREISE 610 ("no usable answer"), so nothing can
+    be kept open. The day is closed as before AND the stage says so loudly, instead of the
+    feature silently doing nothing."""
+    persons, wege, answers = _overnight_fixture(610)
+    with caplog.at_level(logging.INFO):
+        out = trips_stage.run(persons, wege, random_seed=1,
+                              keep_overnight_open_ends=True, overnight_answers=answers)
+    assert out["is_synthetic_closure"].any()
+    assert any(r.levelno >= logging.WARNING and "overnight_open_end" in r.getMessage()
+               for r in caplog.records)
 
 
 def test_on_without_answers_raises():
@@ -1183,8 +1198,8 @@ def test_execute_reads_the_answers_only_when_the_flag_is_on(tmp_path, monkeypatc
     loaded = []
     handed = {}
 
-    def load_answers(mid_dir):
-        loaded.append(mid_dir)
+    def load_answers(mid_dir, *, max_no_answer_share):
+        loaded.append((mid_dir, max_no_answer_share))
         return answers
 
     def build_trips(self, persons_frame, donor_trips, **kwargs):
@@ -1217,7 +1232,8 @@ def test_execute_reads_the_answers_only_when_the_flag_is_on(tmp_path, monkeypatc
     assert loaded == [] and handed["keep_overnight_open_ends"] is False
     assert handed["overnight_answers"] is None
     assert execute_with(True) == "built"
-    assert loaded == [str(tmp_path)] and handed["keep_overnight_open_ends"] is True
+    # the warn threshold reaches the loader from the declared (default) config value
+    assert loaded == [(str(tmp_path), 0.20)] and handed["keep_overnight_open_ends"] is True
     assert handed["overnight_answers"] is answers
 
 
@@ -1235,6 +1251,7 @@ def test_open_end_decision_does_not_depend_on_the_dropped_wege_columns():
     wege = pd.concat([wege, pd.DataFrame(
         {column: range(5) for column in UNUSED_MID_WEGE_COLUMNS[:5]})], axis=1)
     answers = pd.DataFrame({"H_ID": [10, 20, 30], "P_ID": [1, 1, 1], "P_STREISE": [2, 2, 1]})
+    answers.attrs["overnight_max_no_answer_share"] = 0.20
     narrowed = drop_unused_mid_wege_columns(wege, log_tag="[test]")
     assert set(UNUSED_MID_WEGE_COLUMNS[:5]).isdisjoint(narrowed.columns)
     from_raw = trips_stage.build_open_end_donors(wege, answers)

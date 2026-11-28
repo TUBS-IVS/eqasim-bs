@@ -643,6 +643,18 @@ DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG = True
 # -- all readers must see the SAME value, or seed and plan count different days.
 KEY_KEEP_OVERNIGHT_OPEN_ENDS = "braunschweig.population.popsim.keep_overnight_open_ends"
 DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS = True
+# Warn threshold (a share in [0, 1], unit: fraction of open-end diaries) for the open-end MiD
+# diaries whose owner gave no usable overnight answer (P_STREISE 9 / 610): above it
+# braunschweig.popsim.overnight_open_end logs a WARNING, because such days are closed by default
+# and a high share means the answer is mis-read or mis-joined. ASSUMPTION: 0.20 is a plausibility
+# bound, not a reference value (the no-answer share over all MiD persons is in
+# docs/runs/i694-overnight-open-end-smoke-1pct-2026-11-27.yml). Read, like the key above, by
+# braunschweig.popsim.stage, braunschweig.popsim.trips_stage and
+# braunschweig.synthesis.commute_day.home_office_donors_stage; it only warns, it never changes
+# a decision, so it is not part of ENTD_REJECTED_KEYS.
+KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE = (
+    "braunschweig.population.popsim.overnight_open_end_max_no_answer_share")
+DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE = 0.20
 # Dwell-time model applied when a synthesised trip-chain closure is needed
 # (spec 2026-09-05-plan-structure-fix-design.md): "empirical" (default) draws
 # the closing dwell duration from the observed distribution of the same purpose

@@ -1313,6 +1313,7 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_DIARY_PLAN_MATCH: False,
         popsim_stage.KEY_DROP_LEADING_ARRIVE_HOME_LEG: False,
         popsim_stage.KEY_KEEP_OVERNIGHT_OPEN_ENDS: False,
+        popsim_stage.KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE: 0.20,
         popsim_stage.KEY_ESCORT_PASSIVE_EDUCATION: False,
         popsim_stage.KEY_EXCLUDE_RBW_LEGS: False,
         popsim_stage.KEY_SEED_RESOLVE_BINARY_SEX: True,
@@ -1456,6 +1457,11 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert contract_kwargs["mode"] == "warn"
 
 
+def _with_threshold(answers, kwargs):
+    answers.attrs["overnight_max_no_answer_share"] = kwargs["max_no_answer_share"]
+    return answers
+
+
 def _capture_seed_build(monkeypatch, popsim_stage, *, keep_overnight_open_ends, complete_members=True,
                         trip_class_counts_closure=True):
     """Run _build_populationsim_seed with doubles; return project_completed_seed's kwargs."""
@@ -1473,7 +1479,7 @@ def _capture_seed_build(monkeypatch, popsim_stage, *, keep_overnight_open_ends, 
                         lambda mid_dir, **kwargs: (pd.DataFrame(), pd.DataFrame(), _Report()))
     answers = pd.DataFrame({"H_ID": [1], "P_ID": [1], "P_STREISE": [2]})
     monkeypatch.setattr(popsim_stage.overnight_open_end, "load_overnight_answers",
-                        lambda mid_dir: answers)
+                        lambda mid_dir, **kwargs: _with_threshold(answers, kwargs))
 
     class _Source:
         def seed_columns(self):

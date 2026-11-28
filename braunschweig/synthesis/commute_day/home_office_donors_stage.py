@@ -234,12 +234,13 @@ def configure(context):
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DIARY_PLAN_MATCH,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
-        DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+        DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
         require_positive,
     )
@@ -256,6 +257,8 @@ def configure(context):
     # Overnight open day end (issue #694): the SAME shared key trips_stage and the popsim stage
     # read; a donor day must end open exactly when the day it replaces does.
     context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS)
+    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+                   DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE)
     # require_positive (issue #409 range-guard follow-up): both pairing parameters are
     # documented "valid range > 0" (config_keys); a non-positive value would otherwise reach
     # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked -- see that module's own
@@ -408,7 +411,7 @@ def execute(context):
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
         KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     if not bool(context.config(KEY_ENABLED)):
@@ -442,7 +445,9 @@ def execute(context):
     open_end_donors = None
     if bool(context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS)):
         open_end_donors = _trips_stage.build_open_end_donors(
-            wege, _overnight_open_end.load_overnight_answers(mid_dir))
+            wege, _overnight_open_end.load_overnight_answers(
+                mid_dir, max_no_answer_share=float(
+                    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE))))
 
     attributes, trips, diagnostics = build_home_office_donor_pool(
         persons, wege, households,

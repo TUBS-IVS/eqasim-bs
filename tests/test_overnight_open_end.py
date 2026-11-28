@@ -7,8 +7,13 @@ import pytest
 from braunschweig.popsim import overnight_open_end as ooe
 
 
+MAX_NO_ANSWER_SHARE = 0.20
+
+
 def _answers(rows):
-    return pd.DataFrame(rows, columns=["H_ID", "P_ID", "P_STREISE"])
+    answers = pd.DataFrame(rows, columns=["H_ID", "P_ID", "P_STREISE"])
+    answers.attrs[ooe.MAX_NO_ANSWER_SHARE_ATTR] = MAX_NO_ANSWER_SHARE
+    return answers
 
 
 def _facts(rows):
@@ -138,7 +143,7 @@ def test_load_overnight_answers_reads_both_separators(tmp_path, sep):
     path = tmp_path / "MiD2023_Personen.csv"
     path.write_text(sep.join(["H_ID", "P_ID", "P_STREISE", "OTHER"]) + "\n"
                     + sep.join(["10", "1", "2", "x"]) + "\n" + sep.join(["10", "2", "402", "y"]) + "\n")
-    out = ooe.load_overnight_answers(tmp_path)
+    out = ooe.load_overnight_answers(tmp_path, max_no_answer_share=MAX_NO_ANSWER_SHARE)
     assert list(out.columns) == ["H_ID", "P_ID", "P_STREISE"]
     assert out.values.tolist() == [[10, 1, 2], [10, 2, 402]]
 
@@ -146,13 +151,13 @@ def test_load_overnight_answers_reads_both_separators(tmp_path, sep):
 def test_load_overnight_answers_missing_column_raises(tmp_path):
     (tmp_path / "MiD2023_Personen.csv").write_text("H_ID,P_ID\n1,1\n")
     with pytest.raises(KeyError, match="P_STREISE"):
-        ooe.load_overnight_answers(tmp_path)
+        ooe.load_overnight_answers(tmp_path, max_no_answer_share=MAX_NO_ANSWER_SHARE)
 
 
 def test_load_overnight_answers_null_answer_raises(tmp_path):
     (tmp_path / "MiD2023_Personen.csv").write_text("H_ID,P_ID,P_STREISE\n1,1,2\n1,2,\n")
     with pytest.raises(ValueError, match="missing values"):
-        ooe.load_overnight_answers(tmp_path)
+        ooe.load_overnight_answers(tmp_path, max_no_answer_share=MAX_NO_ANSWER_SHARE)
 
 
 def test_null_fact_raises_with_column_and_count():
