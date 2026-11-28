@@ -1,0 +1,12 @@
+group,routed_level,persons
+not_student,adult_education,20784
+not_student,bbs,6612
+not_student,bbs_adult,3948
+not_student,grundschule,38694
+not_student,kindergarten,41961
+not_student,oberstufe,15217
+not_student,sekundar_1,56279
+student,bbs,39
+student,oberstufe,123
+student,sekundar_1,245
+student,university,8989

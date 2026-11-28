@@ -1,0 +1,555 @@
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] working_directory: (added) ../cache
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] run: (added) ['braunschweig.analysis.synthesis.student_flows']
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.braunschweig.students.kreis_matching_rule: (added) home_distance
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.sampling_rate: (added) 1.0
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.output_path: (added) ../output
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.analysis_working_directory: (added) ../cache
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.output_prefix: (added) braunschweig_100pct_popsim20261120_
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.matsim_last_iteration: (added) 0
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.work_dir: (added) ../popsim_work
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.max_cells: (added) 750
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.braunschweig.population.popsim.num_workers: (added) auto
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.cache_share_enabled: True -> False
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.cache_share_export: (added) False
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.cache_share_recompute: (added) []
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] config.braunschweig.chainsolvers.processes: 0 -> 16
+2026-11-28 02:41:44,068 INFO braunschweig: [config-merge] composed configs/base_bs.yml + ../run_home_distance.yml: 2 overridden, 13 added
+2026-11-28 02:41:44,071 INFO braunschweig.synpp_deterministic: [synpp deterministic] patched synpp 1.6.2 process_stages: implicit config propagation now topological and order-independent (stage hashes stable across processes)
+2026-11-28 02:41:44,423 INFO numexpr.utils: Note: NumExpr detected 64 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-11-28 02:41:44,423 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+2026-11-28 02:41:49,895 INFO run_stages_readonly: chain ['braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69', 'braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27', 'braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700', 'braunschweig.synthesis.locations.education_gravity__33ce4abe99a5c5fc6fe5821620051dff', 'braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4', 'braunschweig.analysis.synthesis.student_flows__73dbdf8c225eaeab735b201cad3862b4']; 34 dependency entries linked read-only from <run server home>/popsim100_20261120/cache
+2026-11-28 02:42:43,835 INFO braunschweig.popsim.sources.mid: [MidSource] loaded donor: 218101 households, 420979 persons, 1087393 trips from eqasim-data/data/braunschweig/popsim/mid2023_raw
+2026-11-28 02:42:44,549 INFO braunschweig.popsim.missing: [popsim.missing] employed: 0/420979 structural (deterministic), 200 (0.05%) item-nonresponse (imputed from ('alter_gr1',) group; 0/200 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-28 02:42:44,603 INFO braunschweig.data.hts.mid_donor: [mid_donor] sex: primary 420238/420979 (99.8%), fallback 741/420979 (0.2%); non-binary/missing codes use the observed MiD pool, seeded by random_seed; within the expected bound of 1.0% (MiD 2023 carries such codes by construction)
+2026-11-28 02:42:45,062 INFO braunschweig.popsim.expand: [popsim.expand.sex] primary 420238/420979 (99.8%), fallback 741 (0.2%): persons without an observed binary sex (codes 3 diverse / 9 not specified), imputed
+2026-11-28 02:42:45,083 INFO braunschweig.popsim.expand: [popsim.expand.sex] imputation tiers for 741 persons: band pool 741, global pool 0 (incl. persons without alter_gr1), constant 'male' 0.
+2026-11-28 02:42:45,083 INFO braunschweig.popsim.expand: [popsim.expand.sex_constant] primary 741/741 (100.0%), fallback 0 (0.0%): imputed persons that got the constant 'male' because no pool existed
+2026-11-28 02:42:45,083 INFO braunschweig.popsim.expand: [popsim.expand] sex: imputed 741 non-binary/missing codes (3 diverse / 9 not specified) to binary male/female (seeded); sex_raw retains the original category.
+2026-11-28 02:42:45,097 INFO braunschweig.data.hts.mid_donor: [mid_donor] age: primary 420979/420979 (100.0%), fallback 0/420979 (0.0%)
+2026-11-28 02:42:55,097 INFO braunschweig.popsim.trips: [popsim.trips] expand_persons_to_trips: 305206/420979 persons (72.5%) have donor trips; 115773 persons without trips.
+2026-11-28 02:43:06,040 INFO braunschweig.popsim.trips: [popsim.trips] home-start assumption applied to 305206 first trips (MiD has no per-trip origin purpose; diary-starts-at-home convention, mirrors entd/cleaned.py). Home-END closure is checked/repaired by PlanValidator.
+2026-11-28 02:43:33,924 INFO braunschweig.data.hts.mid_donor: [mid_donor] 218101 households, 420979 persons, 1087393 trips; donor pool: 86697 with a work leg, 26082 with an education leg
+2026-11-28 02:43:34,718 INFO braunschweig.popsim.missing: [popsim.missing] economic_status: 0/218101 structural (deterministic), 0 (0.00%) item-nonresponse (imputed from ('hhgr_gr', 'RegioStaR7') group; 0/0 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-28 02:43:34,750 INFO braunschweig.popsim.missing: [popsim.missing] household_income: 0/218101 structural (deterministic), 0 (0.00%) item-nonresponse (imputed from ('hhgr_gr', 'RegioStaR7') group; 0/0 (0.0%) fell back to the global pool on an unseen group key)
+2026-11-28 02:43:34,966 INFO braunschweig.data.hts.mid_donor: [mid_donor] consumption units: member age primary 485462/485733 (99.9%), fallback 271/485733 (0.1%) counted as 14 or older
+2026-11-28 02:43:36,658 INFO braunschweig.data.hts.mid_donor: [mid_donor] donor household income: primary 420667/420979 donors (99.93%) from their own MiD household, 312 (0.07%) without a household record (all four household columns NaN)
+2026-11-28 02:43:38,930 INFO braunschweig.data.hts.mid_donor: [mid_donor] donor draw attributes: reporting day weekday 299889/420979 (71.2%), weekend 121090/420979, unreadable kernwo 0/420979; commute distance from a home-work leg primary 83062/420979 (19.7%), fallback (no such leg, NaN) 337917/420979; education distance from a home-education leg primary 25734/420979 (6.1%), fallback (no such leg, NaN) 395245/420979
+2026-11-28 02:43:41,532 INFO run_stages_readonly: executed braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69 in 111.6 s
+2026-11-28 02:43:41,545 INFO run_stages_readonly: Loading cache for eqasim_common.locations.education__3a187d0bdff44a97e3641203c243094f ...
+2026-11-28 02:43:41,576 INFO run_stages_readonly: Loading cache for braunschweig.data.building_potentials__981af07e406865b92bed1aa1dd89e93c ...
+2026-11-28 02:43:41,702 INFO run_stages_readonly: Loading cache for data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421 ...
+2026-11-28 02:43:41,793 INFO run_stages_readonly: executed braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27 in 0.3 s
+2026-11-28 02:43:41,824 INFO run_stages_readonly: Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:43:42,840 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] parameters: household_stage=True, day_absence_individual_stage_min_household_size=2, day_absence_escort_protection_enabled=True, random_seed=1234 (+7351 offset), reference bands {'0-5': 0.0334, '6-17': 0.0189, '18-29': 0.0831, '30-44': 0.0442, '45-64': 0.0489, '65-74': 0.0588, '75+': 0.0581}, sizes {1: 0.0529, 2: 0.034, 3: 0.0131, 4: 0.0149, 5: 0.0018}
+2026-11-28 02:43:42,840 INFO run_stages_readonly: Loading cache for braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5 ...
+2026-11-28 02:43:52,245 INFO braunschweig.synthesis.escort_duty: [escort duty] escort duty: 114177/1000512 persons with a trip (11.4%) have an 'escort' leg on their pre-assignment day
+2026-11-28 02:43:52,246 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:43:55,989 INFO braunschweig.synthesis.day_absence.cells: [day absence cells] P_TAET of the adults: primary 941359/942846 (99.84%), fallback 1487 (0.16%) without a readable code, drawn in their band at the rate of all persons
+2026-11-28 02:43:56,413 INFO braunschweig.synthesis.day_absence.cells: [day absence cells] 1129395 persons in 15 cells: {'0-5': 63836, '18-29': 29, '30-44': 708, '45-64': 523, '6-17': 122713, '65-74': 34, '75+': 193, 'adult:18-29': 122026, 'adult:30-44': 206634, 'adult:45-64': 327391, 'adult:65-74': 129449, 'adult:75+': 128646, 'student:braunschweig': 10180, 'student:surrounding': 14093, 'student:wolfsburg': 2940}
+2026-11-28 02:43:56,473 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] student cells: home areas {'03101': 'braunschweig', '03102': 'surrounding', '03103': 'wolfsburg', '03151': 'surrounding', '03153': 'surrounding', '03154': 'surrounding', '03157': 'surrounding', '03158': 'surrounding'}; cell rates (SrV) {'0-5': 0.0334, '6-17': 0.0189, '18-29': 0.0831, '30-44': 0.0442, '45-64': 0.0489, '65-74': 0.0588, '75+': 0.0581, 'adult:18-29': 0.0627, 'adult:30-44': 0.0442, 'adult:45-64': 0.049, 'adult:65-74': 0.0588, 'adult:75+': 0.0581, 'student:braunschweig': 0.087, 'student:surrounding': 0.1729, 'student:wolfsburg': 0.1239}
+2026-11-28 02:43:59,269 WARNING braunschweig.synthesis.day_absence.absence: [day absence] cell 65-74: household stage realised 5.88% > reference 5.88% (overshoot); residual set to 0
+2026-11-28 02:44:02,836 INFO braunschweig.synthesis.day_absence.absence: [day absence] 55952/1129395 persons absent (4.95%): 30613 by the household stage, 25339 by the individual stage; 55.4% of absent persons live in a fully absent household; per band {'0-5': '3.32% vs 3.34% (n_eligible=56758)', '6-17': '1.86% vs 1.89% (n_eligible=114722)', '18-29': '7.47% vs 8.31% (n_eligible=105474)', '30-44': '4.55% vs 4.42% (n_eligible=125072)', '45-64': '4.90% vs 4.89% (n_eligible=216999)', '65-74': '5.82% vs 5.88% (n_eligible=80293)', '75+': '5.81% vs 5.81% (n_eligible=73790)'}; per household size class (REPORTED, not targeted -- see ADR-0110 Assumptions) {1: '5.28% (n=237496)', 2: '6.52% (n=352268)', 3: '4.33% (n=211191)', 4: '3.86% (n=200884)', 5: '2.77% (n=127556)'}
+2026-11-28 02:44:02,837 INFO braunschweig.synthesis.day_absence.absence: [day absence] cells path: the rates above per band are REPORTED, not targeted; drawn per cell {'0-5': '3.32% vs 3.34% (n=63836, n_eligible=56758)', '6-17': '1.86% vs 1.89% (n=122713, n_eligible=114722)', '18-29': '3.45% vs 8.31% (n=29, n_eligible=27)', '30-44': '4.66% vs 4.42% (n=708, n_eligible=631)', '45-64': '4.02% vs 4.89% (n=523, n_eligible=225)', '65-74': '5.88% vs 5.88% (n=34, n_eligible=16)', '75+': '5.70% vs 5.81% (n=193, n_eligible=141)', 'adult:18-29': '6.23% vs 6.27% (n=122026, n_eligible=89216)', 'adult:30-44': '4.42% vs 4.42% (n=206634, n_eligible=122520)', 'adult:45-64': '4.90% vs 4.90% (n=327391, n_eligible=216618)', 'adult:65-74': '5.82% vs 5.88% (n=129449, n_eligible=80263)', 'adult:75+': '5.81% vs 5.81% (n=128646, n_eligible=73620)', 'student:braunschweig': '8.81% vs 8.70% (n=10180, n_eligible=6564)', 'student:surrounding': '17.60% vs 17.29% (n=14093, n_eligible=9807)', 'student:wolfsburg': '11.16% vs 12.39% (n=2940, n_eligible=1980)'}
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 0-5: realised 3.32% vs reference 3.34% (n=63836, n_eligible=56758)
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 6-17: realised 1.86% vs reference 1.89% (n=122713, n_eligible=114722)
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 18-29: realised 3.45% vs reference 8.31% (n=29, n_eligible=27)
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 30-44: realised 4.66% vs reference 4.42% (n=708, n_eligible=631)
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 45-64: realised 4.02% vs reference 4.89% (n=523, n_eligible=225)
+2026-11-28 02:44:02,911 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 65-74: realised 5.88% vs reference 5.88% (n=34, n_eligible=16)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell 75+: realised 5.70% vs reference 5.81% (n=193, n_eligible=141)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell adult:18-29: realised 6.23% vs reference 6.27% (n=122026, n_eligible=89216)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell adult:30-44: realised 4.42% vs reference 4.42% (n=206634, n_eligible=122520)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell adult:45-64: realised 4.90% vs reference 4.90% (n=327391, n_eligible=216618)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell adult:65-74: realised 5.82% vs reference 5.88% (n=129449, n_eligible=80263)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell adult:75+: realised 5.81% vs reference 5.81% (n=128646, n_eligible=73620)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell student:braunschweig: realised 8.81% vs reference 8.70% (n=10180, n_eligible=6564)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell student:surrounding: realised 17.60% vs reference 17.29% (n=14093, n_eligible=9807)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] cell student:wolfsburg: realised 11.16% vs reference 12.39% (n=2940, n_eligible=1980)
+2026-11-28 02:44:02,912 WARNING braunschweig.synthesis.day_absence.absence_stage: [day absence] cell student:wolfsburg realised 11.16% vs reference 12.39% (-1.24 pp, n=2940) exceeds day_absence_max_band_deviation_pp=1.00 pp
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] size 1: realised 5.28% vs SrV 5.14% (delta 0.13 pp, n=237496)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] size 2: realised 6.52% vs SrV 5.87% (delta 0.65 pp, n=352268)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] size 3: realised 4.33% vs SrV 5.43% (delta -1.10 pp, n=211191)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] size 4: realised 3.86% vs SrV 4.16% (delta -0.30 pp, n=200884)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] size 5: realised 2.77% vs SrV 1.75% (delta 1.01 pp, n=127556)
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] 325674/1129395 (28.84%) persons are present but ineligible for the individual stage: 224965 by household size below day_absence_individual_stage_min_household_size=2, 100709 by escort protection
+2026-11-28 02:44:02,912 INFO braunschweig.synthesis.day_absence.absence_stage: [day absence] escort protection: 100709/1098782 present persons (9.17%) are excluded from the individual stage by escort protection (escort leg, not already excluded by household size)
+2026-11-28 02:44:05,078 INFO run_stages_readonly: executed braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700 in 23.3 s
+2026-11-28 02:44:05,862 INFO run_stages_readonly: Loading cache for synthesis.population.spatial.primary.candidates__1395670415a56599aee21872003c3fb3 ...
+2026-11-28 02:44:05,992 INFO run_stages_readonly: Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:44:07,882 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852 ...
+2026-11-28 02:44:08,984 INFO run_stages_readonly: Loading cache for braunschweig.data.schools.facilities__580da761229f34171ea6c8d4c11e0bea ...
+2026-11-28 02:44:08,985 INFO run_stages_readonly: Loading cache for braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27 ...
+2026-11-28 02:44:08,986 INFO run_stages_readonly: Loading cache for braunschweig.data.schools.kita_facilities__522211874fa82fe14e4826f06ecb0a7a ...
+2026-11-28 02:44:08,987 INFO run_stages_readonly: Loading cache for data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421 ...
+2026-11-28 02:44:09,016 INFO run_stages_readonly: Loading cache for braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930 ...
+2026-11-28 02:44:09,491 INFO braunschweig.synthesis.locations.education_gravity: [education:university] destinations of T without a student of the region, left out (no share, no facility): ['TiHo Hannover | 03241001', 'Uni Lüneburg | 03355022']
+2026-11-28 02:44:09,491 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:44:10,484 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700 ...
+2026-11-28 02:44:11,136 INFO braunschweig.synthesis.locations.education_gravity: [education:university] rule home_distance, fit tolerance 1e-06 persons, at most 1000 iterations; generator default_rng([1234, 140])
+2026-11-28 02:44:11,140 INFO run_stages_readonly: Loading cache for braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5 ...
+2026-11-28 02:44:22,348 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] observed education legs: 197698 persons with a home<->education leg, 834 of them without a length (they take the fallback of the plan rule); 802814 of 1000512 persons with trips have no such leg
+2026-11-28 02:44:22,378 INFO braunschweig.synthesis.locations.education_routing: [education routing] student status: primary 199645/199645 (100.0%), fallback 0 (0.0%); 10846 students; 0 without a usable P_TAET value, 0 with a missing studies or employed flag
+2026-11-28 02:44:35,215 INFO braunschweig.synthesis.locations.education_gravity: [education:university] rows of T: primary 10432/10432 (100.0%), fallback 0 (0.0%) placed by the legacy decay because their home Kreis has no row of T [] (must be 0 on the real table)
+2026-11-28 02:44:35,228 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] fit converged after 82 iterations: 8 home Kreise x 19 destinations, 8989 persons, maximum column deviation 7.96e-07 persons; 0 home Kreise without persons left out: []
+2026-11-28 02:44:36,057 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03101 by home distance: 3855 persons, 17 destinations with persons
+2026-11-28 02:44:36,167 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03102 by home distance: 806 persons, 13 destinations with persons
+2026-11-28 02:44:36,307 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03103 by home distance: 1014 persons, 11 destinations with persons
+2026-11-28 02:44:36,431 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03151 by home distance: 1007 persons, 10 destinations with persons
+2026-11-28 02:44:36,575 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03153 by home distance: 661 persons, 8 destinations with persons
+2026-11-28 02:44:36,649 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03154 by home distance: 260 persons, 11 destinations with persons
+2026-11-28 02:44:36,764 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03157 by home distance: 726 persons, 15 destinations with persons
+2026-11-28 02:44:36,860 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03158 by home distance: 660 persons, 11 destinations with persons
+2026-11-28 02:44:36,865 INFO braunschweig.synthesis.locations.education_gravity: [education:university] allotment (home_distance rule) of the present persons: primary 8989/8989 (100.0%), fallback 0 (0.0%) placed by the university decay (no observed education leg); warn above braunschweig.students.matching_fallback_warn_share=0.25
+2026-11-28 02:44:36,915 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03101, absent by home distance: 392 persons, 15 destinations with persons
+2026-11-28 02:44:36,945 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03102, absent by home distance: 188 persons, 11 destinations with persons
+2026-11-28 02:44:36,968 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03103, absent by home distance: 124 persons, 11 destinations with persons
+2026-11-28 02:44:36,999 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03151, absent by home distance: 214 persons, 10 destinations with persons
+2026-11-28 02:44:37,018 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03153, absent by home distance: 129 persons, 4 destinations with persons
+2026-11-28 02:44:37,032 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03154, absent by home distance: 43 persons, 9 destinations with persons
+2026-11-28 02:44:37,061 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03157, absent by home distance: 185 persons, 14 destinations with persons
+2026-11-28 02:44:37,088 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] allotment home Kreis 03158, absent by home distance: 168 persons, 10 destinations with persons
+2026-11-28 02:44:37,093 INFO braunschweig.synthesis.locations.education_gravity: [education:university] allotment (home_distance rule) of the absent persons: primary 1443/1443 (100.0%), fallback 0 (0.0%) placed by the university decay (no observed education leg); warn above braunschweig.students.matching_fallback_warn_share=0.25
+2026-11-28 02:44:37,094 INFO braunschweig.synthesis.locations.education_gravity: [education:university] absent persons: 1443 allotted on their own totals, of them 0 (Kreise []) on the shares of their row of T because their Kreis has nobody present (no fitted row)
+2026-11-28 02:44:37,297 INFO braunschweig.synthesis.locations.education_gravity: [education:university] 10432 persons (8989 present, 1443 absent) placed; per path {'absent_home_distance': 1443, 'home_distance': 8989}
+2026-11-28 02:44:38,295 INFO run_stages_readonly: executed braunschweig.synthesis.locations.education_gravity__33ce4abe99a5c5fc6fe5821620051dff in 33.2 s
+2026-11-28 02:44:39,302 INFO run_stages_readonly: Loading cache for braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27 ...
+2026-11-28 02:44:39,305 INFO run_stages_readonly: Loading cache for data.spatial.municipalities__c04db1943ae15b4681d256f4d6eee421 ...
+2026-11-28 02:44:39,308 INFO run_stages_readonly: Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:44:40,393 INFO run_stages_readonly: Loading cache for braunschweig.data.hts.mid_donor__8ae54c4fad3b63cf2d9f81c74777bc69 ...
+2026-11-28 02:44:41,819 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.cordon_gates__11eceeb40f1c607cc7669833cb38e93c ...
+2026-11-28 02:44:41,821 INFO run_stages_readonly: Loading cache for braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488 ...
+2026-11-28 02:44:41,856 INFO braunschweig.data.education.student_flows_inputs: [student flows inputs] student_level_table.csv: 8 Kreise, 28678.5 students (64 cells summed to 16 rows)
+2026-11-28 02:44:41,860 INFO braunschweig.synthesis.student_incommuters: [student_incommuters:flows] effective day factor 0.321799 (absence mode cells, education-leg share e 0.370566, away shares {'braunschweig': 0.0869729022, 'surrounding': 0.1729445122, 'wolfsburg': 0.1239264157}, f per Kreis {'03101': 0.338337, '03102': 0.306479, '03103': 0.324643, '03151': 0.306479, '03153': 0.306479, '03154': 0.306479, '03157': 0.306479, '03158': 0.306479})
+2026-11-28 02:44:41,873 INFO braunschweig.data.education.student_incommuter_counts: [student_incommuter_counts] balance: f_eff 0.321799 x sampling rate 1 x 2567.526 heads of T = 826.227 persons of the day, rounded to 827 over 43 origin Kreise and 6 sites
+2026-11-28 02:44:54,746 INFO braunschweig.data.cordon.incommuter_origins: [incommuter_origins] in-ring primary 826/827 (99.9%), far (caller fallback) 1 (0.1%)
+2026-11-28 02:44:54,748 INFO braunschweig.synthesis.student_incommuters: [student_incommuters] home placement: in-ring primary 826/827 (99.9%), gate fallback 1/827 (0.1%)
+2026-11-28 02:44:54,752 INFO braunschweig.synthesis.student_incommuters: [student_incommuters:flows] home rule per origin Kreis (in-ring primary / gate fallback): {'03155': (30, 0), '03159': (43, 0), '03241': (321, 0), '03252': (7, 0), '03254': (200, 0), '03255': (3, 0), '03256': (0, 1), '03257': (5, 0), '03351': (81, 0), '03354': (4, 0), '03358': (4, 0), '03360': (27, 0), '15003': (11, 0), '15081': (15, 0), '15083': (13, 0), '15085': (62, 0)}
+2026-11-28 02:44:56,746 INFO braunschweig.synthesis.student_incommuters: [student_incommuters:flows] commute length: primary 827/827 (100.0%) from a commune drawn by population x T's weight curve, fallback 0 (0.0%) on the distance of T's cell; fallback per origin Kreis none
+2026-11-28 02:44:56,902 INFO braunschweig.synthesis.student_incommuters: [student_incommuters] donor age: primary 4291/18852 student donors (22.76%), excluded 14561: 14561 younger than 18, 0 without an age
+2026-11-28 02:44:56,908 INFO braunschweig.synthesis.incommuters: [incommuters] donor eligibility: primary 4039/4291 commuter donors (94.13%), excluded 252: 5 without a household record, 163 without a weekday reporting day, 0 without a positive weight, 84 without a commute distance
+2026-11-28 02:44:57,947 INFO braunschweig.data.cordon.donor_draw: [braunschweig.cordon.donor_draw] 827 agents; tilted primary 827/827 (100.0%), no Kreis scale 0 (0.0%), target not reached 0 (0.0%); commute window primary 827/827 (100.0%), whole pool 0 (0.0%), widest window ratio 22.00; smallest effective size 231.1
+2026-11-28 02:44:58,860 INFO braunschweig.data.cordon.plans: [braunschweig.cordon.plans] in-commuter day bound 104400 s: primary 827/827 fit at the first draw, re-drawn 0 (0.0%, max attempts used 0/20), still unfit 0
+2026-11-28 02:44:58,865 WARNING braunschweig.data.cordon.plans: [incommuters] middle arrival (education): primary 825/827 (99.8%), fallback 2/827 (0.2%)
+2026-11-28 02:44:58,865 WARNING braunschweig.data.cordon.plans: [incommuters] middle departure (education): primary 780/827 (94.3%), fallback 47/827 (5.7%)
+2026-11-28 02:44:58,865 INFO braunschweig.data.cordon.plans: [incommuters] middle activity duration imputation: duration pool 47/47 (100.0%), direct fixed assumption 0/47 (0.0%); pool may include repaired anchors; empty-pool assumption 21600 seconds
+2026-11-28 02:44:58,865 WARNING braunschweig.data.cordon.plans: [incommuters] home departure (education): primary 825/827 (99.8%), fallback 2/827 (0.2%)
+2026-11-28 02:44:58,865 INFO braunschweig.data.cordon.plans: [incommuters] outbound duration imputation: duration pool 2/2 (100.0%), direct fixed assumption 0/2 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-28 02:44:58,866 WARNING braunschweig.data.cordon.plans: [incommuters] home arrival (education): primary 771/827 (93.2%), fallback 56/827 (6.8%)
+2026-11-28 02:44:58,866 INFO braunschweig.data.cordon.plans: [incommuters] return duration imputation: duration pool 56/56 (100.0%), direct fixed assumption 0/56 (0.0%); pool may include repaired anchors; empty-pool assumption 3600 seconds
+2026-11-28 02:44:58,866 INFO braunschweig.synthesis.student_incommuters: [student_incommuters] day bound 104400 s: 11/827 days moved earlier as a whole (1.3%), 0 still late
+2026-11-28 02:44:58,883 INFO braunschweig.data.education.student_mode_reference: [student mode reference] mid2023_student_education_distance_mode.csv: 6 bands, pooled [('50_100', '100_plus')] (fewer than 30 car/pt persons each)
+2026-11-28 02:44:58,884 INFO braunschweig.data.education.student_mode_reference: [student mode reference] band 50_100: car share of car and pt 0.3941 on its own, 0.4095 pooled with ['100_plus']
+2026-11-28 02:44:58,885 INFO braunschweig.data.education.student_mode_reference: [student mode reference] band 100_plus: car share of car and pt 0.7150 on its own, 0.4095 pooled with ['50_100']
+2026-11-28 02:44:58,914 INFO run_stages_readonly: Loading cache for matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e ...
+2026-11-28 02:44:58,914 INFO run_stages_readonly: Loading cache for braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e ...
+2026-11-28 02:45:07,337 INFO braunschweig.data.transit.connections: [pt-router] routing 992 task(s) with 56 thread(s), config <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28 02:45:07,337 INFO run_stages_readonly: Loading cache for matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f ...
+2026-11-28 02:45:07,337 INFO run_stages_readonly: Loading cache for matsim.runtime.java__f381c66d72cbe4408578d8eee1a7c9d1 ...
+2026-11-28 02:45:07,353 WARNING braunschweig.java_heap: [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.19 GB = 83.09 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-28T02:45:08,202  INFO CommandLine:511 Received 0 positional command line arguments:
+2026-11-28T02:45:08,205  INFO CommandLine:512    
+2026-11-28T02:45:08,205  INFO CommandLine:534 Received 5 command line options with 0 prefixes:
+2026-11-28T02:45:08,206  INFO CommandLine:539    config-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28T02:45:08,206  INFO CommandLine:539    input-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_tasks.csv
+2026-11-28T02:45:08,206  INFO CommandLine:539    output-legs-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_legs.csv
+2026-11-28T02:45:08,206  INFO CommandLine:539    output-trips-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_trips.csv
+2026-11-28T02:45:08,206  INFO CommandLine:539    threads = 56
+2026-11-28T02:45:08,220  INFO EqasimConfigurator:314 Identifying eqasim configurator ...
+2026-11-28T02:45:08,221  INFO EqasimConfigurator:332   Found as property: org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-28T02:45:08,333  INFO IOUtils:211 Resolved <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml to <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28T02:45:08,346  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/]
+2026-11-28T02:45:08,449  INFO Version:18 HV000001: Hibernate Validator 9.1.0.Final
+2026-11-28T02:45:08,617  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml ...
+2026-11-28T02:45:08,655  INFO ConfigReader:105 using config_v2-reader
+2026-11-28T02:45:08,656  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/config_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:09,354  WARN RoutingConfigGroup:444 The first mode routing (= teleported mode) params that are explicitly defined clear the default mode routing (= teleported mode) params.  If you want to avoid this 
+2026-11-28T02:45:09,355  WARN RoutingConfigGroup:445     warning, use clearTeleportedModeParams(true) in code, and "clearDefaultTeleportedModeParams"=true in xml config.
+2026-11-28T02:45:09,359  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml]
+2026-11-28T02:45:09,391  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.cache/network.xml.gz ...
+2026-11-28T02:45:09,509  INFO MatsimNetworkReader:122 using network_v2-reader.
+2026-11-28T02:45:09,509  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/network_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:09,550  INFO NetworkImpl:192  node # 1
+2026-11-28T02:45:09,551  INFO NetworkImpl:192  node # 4
+2026-11-28T02:45:09,553  INFO NetworkImpl:192  node # 16
+2026-11-28T02:45:09,560  INFO NetworkImpl:192  node # 64
+2026-11-28T02:45:09,575  INFO NetworkImpl:192  node # 256
+2026-11-28T02:45:09,591  INFO NetworkImpl:192  node # 1024
+2026-11-28T02:45:09,619  INFO NetworkImpl:192  node # 4096
+2026-11-28T02:45:09,684  INFO NetworkImpl:192  node # 16384
+2026-11-28T02:45:09,872  INFO NetworkImpl:192  node # 65536
+2026-11-28T02:45:10,704  INFO NetworkImpl:192  node # 262144
+2026-11-28T02:45:10,863  INFO NetworkImpl:152  link # 1
+2026-11-28T02:45:10,868  INFO NetworkImpl:152  link # 4
+2026-11-28T02:45:10,875  INFO NetworkImpl:152  link # 16
+2026-11-28T02:45:10,889  INFO NetworkImpl:152  link # 64
+2026-11-28T02:45:10,914  INFO NetworkImpl:152  link # 256
+2026-11-28T02:45:10,923  WARN LinkImpl:131 length=0.0 of link id 100305 may cause problems
+2026-11-28T02:45:10,924  WARN LinkImpl:133  Future occurences of this logging statement are suppressed.
+2026-11-28T02:45:10,977  INFO NetworkImpl:152  link # 1024
+2026-11-28T02:45:11,122  INFO NetworkImpl:152  link # 4096
+2026-11-28T02:45:11,424  INFO NetworkImpl:152  link # 16384
+2026-11-28T02:45:12,354  INFO NetworkImpl:152  link # 65536
+2026-11-28T02:45:15,411  INFO NetworkImpl:152  link # 262144
+2026-11-28T02:45:21,240  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.cache/schedule.xml.gz ...
+2026-11-28T02:45:21,242  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/transitSchedule_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:24,691  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e.cache/transit_vehicles.xml.gz ...
+2026-11-28T02:45:24,751  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:24,845  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/matsimCommon.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:24,886  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/vehicleDefinitionsEnumTypes.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:24,943  INFO MatsimVehicleReader$VehicleReader:77 Found following schemaLocation in vehicle definition file: http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd
+2026-11-28T02:45:24,944  INFO VehicleReaderV2:24 Using org.matsim.vehicles.VehicleReaderV2
+2026-11-28T02:45:24,957  INFO Counter:71 [VehiclesImpl] added vehicle # 1
+2026-11-28T02:45:24,958  INFO Counter:71 [VehiclesImpl] added vehicle # 4
+2026-11-28T02:45:24,959  INFO Counter:71 [VehiclesImpl] added vehicle # 16
+2026-11-28T02:45:24,962  INFO Counter:71 [VehiclesImpl] added vehicle # 64
+2026-11-28T02:45:24,970  INFO Counter:71 [VehiclesImpl] added vehicle # 256
+2026-11-28T02:45:24,990  INFO Counter:71 [VehiclesImpl] added vehicle # 1024
+2026-11-28T02:45:25,037  INFO Counter:71 [VehiclesImpl] added vehicle # 4096
+2026-11-28T02:45:25,157  INFO Counter:71 [VehiclesImpl] added vehicle # 16384
+2026-11-28T02:45:25,386  INFO InjectorBuilder:59 Setting output directory to <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp/eqasim_standalone8727468663771531048
+2026-11-28T02:45:25,395  INFO ScoringConfigGroup$ScoringParameterSet:1630 NO OPENING OR CLOSING TIMES DEFINED!
+
+There is no activity type that has an opening *and* closing time (or opening time and late penalty) defined.
+This usually means that the activity chains can be shifted by an arbitrary
+number of hours without having an effect on the score of the plans, and thus
+resulting in wrong results / traffic patterns.
+If you are using MATSim without time adaptation, you can ignore this warning.
+
+
+2026-11-28T02:45:25,396  INFO VspConfigConsistencyCheckerImpl:62 NOT running vsp config consistency check because vsp defaults checking level is set to IGNORE
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:<run server home>/popsim100_20261120/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+2026-11-28T02:45:27,427  INFO SimStepParallelEventsManagerImpl:83 number of threads=1
+2026-11-28T02:45:27,445  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:27,445  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:27,446  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkEnterEvent
+2026-11-28T02:45:27,446  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:45:27,447  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:45:27,447  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleLeavesTrafficEvent
+2026-11-28T02:45:27,447  INFO EventsManagerImpl:205     > org.matsim.core.api.experimental.events.VehicleArrivesAtFacilityEvent
+2026-11-28T02:45:27,447  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleAbortsEvent
+2026-11-28T02:45:27,448  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:27,448  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:27,448  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkEnterEvent
+2026-11-28T02:45:27,448  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:45:27,448  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:45:27,449  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleLeavesTrafficEvent
+2026-11-28T02:45:27,449  INFO EventsManagerImpl:205     > org.matsim.core.api.experimental.events.VehicleArrivesAtFacilityEvent
+2026-11-28T02:45:27,449  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleAbortsEvent
+2026-11-28T02:45:27,456  INFO StrategyManager:79 global innovation switch off after iteration: 2147483647
+2026-11-28T02:45:27,457  INFO GenericStrategyManagerImpl:370 setting PlanSelectorForRemoval to class org.matsim.core.replanning.selectors.WorstPlanForRemovalSelector
+2026-11-28T02:45:27,462  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/]
+2026-11-28T02:45:27,466  INFO NetworkImpl:192  node # 1
+2026-11-28T02:45:27,467  INFO NetworkImpl:192  node # 4
+2026-11-28T02:45:27,467  INFO NetworkImpl:192  node # 16
+2026-11-28T02:45:27,468  INFO NetworkImpl:192  node # 64
+2026-11-28T02:45:27,468  INFO NetworkImpl:192  node # 256
+2026-11-28T02:45:27,469  INFO NetworkImpl:192  node # 1024
+2026-11-28T02:45:27,470  INFO NetworkImpl:192  node # 4096
+2026-11-28T02:45:27,477  INFO NetworkImpl:192  node # 16384
+2026-11-28T02:45:27,496  INFO NetworkImpl:192  node # 65536
+2026-11-28T02:45:27,541  INFO NetworkImpl:192  node # 262144
+2026-11-28T02:45:27,547  INFO NetworkImpl:152  link # 1
+2026-11-28T02:45:27,548  INFO NetworkImpl:152  link # 4
+2026-11-28T02:45:27,548  INFO NetworkImpl:152  link # 16
+2026-11-28T02:45:27,549  INFO NetworkImpl:152  link # 64
+2026-11-28T02:45:27,551  INFO NetworkImpl:152  link # 256
+2026-11-28T02:45:27,555  INFO NetworkImpl:152  link # 1024
+2026-11-28T02:45:27,566  INFO NetworkImpl:152  link # 4096
+2026-11-28T02:45:27,589  INFO NetworkImpl:152  link # 16384
+2026-11-28T02:45:27,674  INFO NetworkImpl:152  link # 65536
+2026-11-28T02:45:28,041  INFO NetworkImpl:152  link # 262144
+2026-11-28T02:45:32,183  INFO CalcLinkStats:151  resetting `count' to zero.  This info is here since we want to check when this is happening during normal simulation runs.  kai, jan'11
+2026-11-28T02:45:32,910  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:32,911  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:32,911  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:45:32,911  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:45:32,911  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:32,911  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:32,912  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:45:32,912  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:45:32,921  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:32,921  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:32,922  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.Event
+2026-11-28T02:45:32,922  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:32,922  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:32,922  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.Event
+2026-11-28T02:45:32,953  INFO AbstractController:57 Used Controler-Class: org.matsim.core.controler.NewControler
+2026-11-28T02:45:32,953  INFO Config:417 ConfigConsistencyChecker with runtime type=class org.matsim.core.config.consistency.ConfigConsistencyCheckerImpl was already added; not adding it a second time
+2026-11-28T02:45:32,956  INFO Injector:86 === printInjector output skipped ===
+2026-11-28T02:45:32,956  INFO Injector:87 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or set log.setLogLevel(Level.DEBUG) in your run class.
+2026-11-28T02:45:33,217  WARN EqasimRaptorUtils:49 Setting 'other' routing cost for following modes: funicular, ferry
+2026-11-28T02:45:33,220  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:33,221  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:33,221  INFO EventsManagerImpl:205     > org.matsim.pt.router.TransitScheduleChangedEvent
+2026-11-28T02:45:33,222  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:45:33,222  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:45:33,224  INFO EventsManagerImpl:205     > org.matsim.pt.router.TransitScheduleChangedEvent
+2026-11-28T02:45:33,226  INFO SwissRailRaptorData:106 Preparing data for SwissRailRaptor...
+2026-11-28T02:45:43,048  INFO SwissRailRaptorData:313 SwissRailRaptor data preparation done. Took 9 seconds.
+2026-11-28T02:45:43,048  INFO SwissRailRaptorData:314 SwissRailRaptor statistics:  #routes = 13849
+2026-11-28T02:45:43,049  INFO SwissRailRaptorData:315 SwissRailRaptor statistics:  #departures = 52466
+2026-11-28T02:45:43,049  INFO SwissRailRaptorData:316 SwissRailRaptor statistics:  #routeStops = 212576
+2026-11-28T02:45:43,049  INFO SwissRailRaptorData:317 SwissRailRaptor statistics:  #stopFacilities = 31022
+2026-11-28T02:45:43,049  INFO SwissRailRaptorData:318 SwissRailRaptor statistics:  #transfers (between routeStops) = 2566610
+2026-11-28T02:45:43,049  INFO SwissRailRaptorData:319 SwissRailRaptor statistics:  #chainedDepartures = 0
+2026-11-28T02:45:43,158  INFO NetworkImpl:411 building QuadTree for nodes: xrange(522929.8199825291,688122.3493168398); yrange(5676592.338708283,5901226.615464258)
+2026-11-28T02:45:43,371  INFO NetworkImpl:420 Building QuadTree took 0.287 seconds.
+2026-11-28T02:45:48,609  INFO ParallelProgress:140 Routing trips ... Done!
+2026-11-28T02:45:48,770  INFO InjectorBuilder:78 Deleting output directory <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp/eqasim_standalone8727468663771531048
+2026-11-28 02:45:49,244 INFO braunschweig.data.transit.connections: [pt-router] 47/992 task(s) (4.7%) have no trips row (the router found no route; examples ['c103', 'c132', 'c172'])
+2026-11-28 02:45:49,317 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 960/1020 (94.1%): pt 960, plausible short walk 0; rejected: no_route 47, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 13
+2026-11-28 02:45:49,317 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 13/973 pt trip(s) (1.3%)
+2026-11-28 02:45:49,352 INFO braunschweig.data.transit.connections: [pt-router] routing 861 task(s) with 56 thread(s), config <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28 02:45:49,354 WARNING braunschweig.java_heap: [resources] java_memory 100G -> 83G (memory budget 86.28 GB (psutil) - driver RSS 3.19 GB = 83.09 GB for the JVM; configured 100G exceeds it, clamped to 83G)
+2026-11-28T02:45:50,322  INFO CommandLine:511 Received 0 positional command line arguments:
+2026-11-28T02:45:50,325  INFO CommandLine:512    
+2026-11-28T02:45:50,326  INFO CommandLine:534 Received 5 command line options with 0 prefixes:
+2026-11-28T02:45:50,326  INFO CommandLine:539    config-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28T02:45:50,326  INFO CommandLine:539    input-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_tasks.csv
+2026-11-28T02:45:50,327  INFO CommandLine:539    output-legs-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_legs.csv
+2026-11-28T02:45:50,327  INFO CommandLine:539    output-trips-path = <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_trips.csv
+2026-11-28T02:45:50,327  INFO CommandLine:539    threads = 56
+2026-11-28T02:45:50,341  INFO EqasimConfigurator:314 Identifying eqasim configurator ...
+2026-11-28T02:45:50,342  INFO EqasimConfigurator:332   Found as property: org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-28T02:45:50,455  INFO IOUtils:211 Resolved <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml to <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml
+2026-11-28T02:45:50,469  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/]
+2026-11-28T02:45:50,567  INFO Version:18 HV000001: Hibernate Validator 9.1.0.Final
+2026-11-28T02:45:50,761  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml ...
+2026-11-28T02:45:50,831  INFO ConfigReader:105 using config_v2-reader
+2026-11-28T02:45:50,831  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/config_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:51,518  WARN RoutingConfigGroup:444 The first mode routing (= teleported mode) params that are explicitly defined clear the default mode routing (= teleported mode) params.  If you want to avoid this 
+2026-11-28T02:45:51,519  WARN RoutingConfigGroup:445     warning, use clearTeleportedModeParams(true) in code, and "clearDefaultTeleportedModeParams"=true in xml config.
+2026-11-28T02:45:51,521  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml]
+2026-11-28T02:45:51,562  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.cache/network.xml.gz ...
+2026-11-28T02:45:51,666  INFO MatsimNetworkReader:122 using network_v2-reader.
+2026-11-28T02:45:51,667  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/network_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:45:51,707  INFO NetworkImpl:192  node # 1
+2026-11-28T02:45:51,708  INFO NetworkImpl:192  node # 4
+2026-11-28T02:45:51,710  INFO NetworkImpl:192  node # 16
+2026-11-28T02:45:51,717  INFO NetworkImpl:192  node # 64
+2026-11-28T02:45:51,730  INFO NetworkImpl:192  node # 256
+2026-11-28T02:45:51,745  INFO NetworkImpl:192  node # 1024
+2026-11-28T02:45:51,780  INFO NetworkImpl:192  node # 4096
+2026-11-28T02:45:51,864  INFO NetworkImpl:192  node # 16384
+2026-11-28T02:45:52,128  INFO NetworkImpl:192  node # 65536
+2026-11-28T02:45:53,026  INFO NetworkImpl:192  node # 262144
+2026-11-28T02:45:53,183  INFO NetworkImpl:152  link # 1
+2026-11-28T02:45:53,187  INFO NetworkImpl:152  link # 4
+2026-11-28T02:45:53,193  INFO NetworkImpl:152  link # 16
+2026-11-28T02:45:53,207  INFO NetworkImpl:152  link # 64
+2026-11-28T02:45:53,229  INFO NetworkImpl:152  link # 256
+2026-11-28T02:45:53,236  WARN LinkImpl:131 length=0.0 of link id 100305 may cause problems
+2026-11-28T02:45:53,236  WARN LinkImpl:133  Future occurences of this logging statement are suppressed.
+2026-11-28T02:45:53,282  INFO NetworkImpl:152  link # 1024
+2026-11-28T02:45:53,422  INFO NetworkImpl:152  link # 4096
+2026-11-28T02:45:53,762  INFO NetworkImpl:152  link # 16384
+2026-11-28T02:45:54,676  INFO NetworkImpl:152  link # 65536
+2026-11-28T02:45:57,499  INFO NetworkImpl:152  link # 262144
+2026-11-28T02:46:03,332  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/matsim.scenario.supply.processed__4dce13c683a6cc2017996fd709fa2c6e.cache/schedule.xml.gz ...
+2026-11-28T02:46:03,336  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/transitSchedule_v2.dtd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:46:07,033  INFO MatsimXmlParser:172 starting to parse xml from url file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.matsim.scenario.supply_gtfs__95dd6322478383df6b92adfae14af15e.cache/transit_vehicles.xml.gz ...
+2026-11-28T02:46:07,099  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:46:07,189  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/matsimCommon.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:46:07,226  INFO MatsimXmlParser:299 Trying to load http://www.matsim.org/files/dtd/vehicleDefinitionsEnumTypes.xsd. In some cases (e.g. network interface up but no connection), this may take a while.
+2026-11-28T02:46:07,281  INFO MatsimVehicleReader$VehicleReader:77 Found following schemaLocation in vehicle definition file: http://www.matsim.org/files/dtd http://www.matsim.org/files/dtd/vehicleDefinitions_v2.0.xsd
+2026-11-28T02:46:07,282  INFO VehicleReaderV2:24 Using org.matsim.vehicles.VehicleReaderV2
+2026-11-28T02:46:07,297  INFO Counter:71 [VehiclesImpl] added vehicle # 1
+2026-11-28T02:46:07,299  INFO Counter:71 [VehiclesImpl] added vehicle # 4
+2026-11-28T02:46:07,300  INFO Counter:71 [VehiclesImpl] added vehicle # 16
+2026-11-28T02:46:07,304  INFO Counter:71 [VehiclesImpl] added vehicle # 64
+2026-11-28T02:46:07,314  INFO Counter:71 [VehiclesImpl] added vehicle # 256
+2026-11-28T02:46:07,334  INFO Counter:71 [VehiclesImpl] added vehicle # 1024
+2026-11-28T02:46:07,371  INFO Counter:71 [VehiclesImpl] added vehicle # 4096
+2026-11-28T02:46:07,468  INFO Counter:71 [VehiclesImpl] added vehicle # 16384
+2026-11-28T02:46:07,680  INFO InjectorBuilder:59 Setting output directory to <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp/eqasim_standalone9728630927512797160
+2026-11-28T02:46:07,687  INFO ScoringConfigGroup$ScoringParameterSet:1630 NO OPENING OR CLOSING TIMES DEFINED!
+
+There is no activity type that has an opening *and* closing time (or opening time and late penalty) defined.
+This usually means that the activity chains can be shifted by an arbitrary
+number of hours without having an effect on the score of the plans, and thus
+resulting in wrong results / traffic patterns.
+If you are using MATSim without time adaptation, you can ignore this warning.
+
+
+2026-11-28T02:46:07,688  INFO VspConfigConsistencyCheckerImpl:62 NOT running vsp config consistency check because vsp defaults checking level is set to IGNORE
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:<run server home>/popsim100_20261120/cache/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+2026-11-28T02:46:09,885  INFO SimStepParallelEventsManagerImpl:83 number of threads=1
+2026-11-28T02:46:09,903  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:09,904  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:09,905  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkEnterEvent
+2026-11-28T02:46:09,905  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:46:09,905  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:46:09,906  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleLeavesTrafficEvent
+2026-11-28T02:46:09,906  INFO EventsManagerImpl:205     > org.matsim.core.api.experimental.events.VehicleArrivesAtFacilityEvent
+2026-11-28T02:46:09,906  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleAbortsEvent
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkEnterEvent
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:46:09,907  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleLeavesTrafficEvent
+2026-11-28T02:46:09,908  INFO EventsManagerImpl:205     > org.matsim.core.api.experimental.events.VehicleArrivesAtFacilityEvent
+2026-11-28T02:46:09,908  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleAbortsEvent
+2026-11-28T02:46:09,915  INFO StrategyManager:79 global innovation switch off after iteration: 2147483647
+2026-11-28T02:46:09,916  INFO GenericStrategyManagerImpl:370 setting PlanSelectorForRemoval to class org.matsim.core.replanning.selectors.WorstPlanForRemovalSelector
+2026-11-28T02:46:09,921  INFO Config:457 setting context to [file:<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/]
+2026-11-28T02:46:09,927  INFO NetworkImpl:192  node # 1
+2026-11-28T02:46:09,928  INFO NetworkImpl:192  node # 4
+2026-11-28T02:46:09,928  INFO NetworkImpl:192  node # 16
+2026-11-28T02:46:09,929  INFO NetworkImpl:192  node # 64
+2026-11-28T02:46:09,930  INFO NetworkImpl:192  node # 256
+2026-11-28T02:46:09,931  INFO NetworkImpl:192  node # 1024
+2026-11-28T02:46:09,933  INFO NetworkImpl:192  node # 4096
+2026-11-28T02:46:09,943  INFO NetworkImpl:192  node # 16384
+2026-11-28T02:46:09,965  INFO NetworkImpl:192  node # 65536
+2026-11-28T02:46:10,011  INFO NetworkImpl:192  node # 262144
+2026-11-28T02:46:10,017  INFO NetworkImpl:152  link # 1
+2026-11-28T02:46:10,018  INFO NetworkImpl:152  link # 4
+2026-11-28T02:46:10,018  INFO NetworkImpl:152  link # 16
+2026-11-28T02:46:10,019  INFO NetworkImpl:152  link # 64
+2026-11-28T02:46:10,024  INFO NetworkImpl:152  link # 256
+2026-11-28T02:46:10,029  INFO NetworkImpl:152  link # 1024
+2026-11-28T02:46:10,045  INFO NetworkImpl:152  link # 4096
+2026-11-28T02:46:10,075  INFO NetworkImpl:152  link # 16384
+2026-11-28T02:46:10,176  INFO NetworkImpl:152  link # 65536
+2026-11-28T02:46:10,520  INFO NetworkImpl:152  link # 262144
+2026-11-28T02:46:14,460  INFO CalcLinkStats:151  resetting `count' to zero.  This info is here since we want to check when this is happening during normal simulation runs.  kai, jan'11
+2026-11-28T02:46:14,953  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:14,953  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:14,953  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:46:14,954  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:46:14,954  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:14,954  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:14,954  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.LinkLeaveEvent
+2026-11-28T02:46:14,954  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
+2026-11-28T02:46:14,963  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:14,963  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:14,963  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.Event
+2026-11-28T02:46:14,964  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:14,964  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:14,964  INFO EventsManagerImpl:205     > org.matsim.api.core.v01.events.Event
+2026-11-28T02:46:15,019  INFO AbstractController:57 Used Controler-Class: org.matsim.core.controler.NewControler
+2026-11-28T02:46:15,020  INFO Config:417 ConfigConsistencyChecker with runtime type=class org.matsim.core.config.consistency.ConfigConsistencyCheckerImpl was already added; not adding it a second time
+2026-11-28T02:46:15,024  INFO Injector:86 === printInjector output skipped ===
+2026-11-28T02:46:15,024  INFO Injector:87 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or set log.setLogLevel(Level.DEBUG) in your run class.
+2026-11-28T02:46:15,215  WARN EqasimRaptorUtils:49 Setting 'other' routing cost for following modes: funicular, ferry
+2026-11-28T02:46:15,219  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:15,219  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:15,220  INFO EventsManagerImpl:205     > org.matsim.pt.router.TransitScheduleChangedEvent
+2026-11-28T02:46:15,220  INFO EventsManagerImpl:135 === Logging of event-handlers skipped ===
+2026-11-28T02:46:15,220  INFO EventsManagerImpl:136 To enable debug output, set an environment variable i.e. export LOG_LEVEL='debug', or use Configurator...Level.DEBUG) in your run class.
+2026-11-28T02:46:15,222  INFO EventsManagerImpl:205     > org.matsim.pt.router.TransitScheduleChangedEvent
+2026-11-28T02:46:15,224  INFO SwissRailRaptorData:106 Preparing data for SwissRailRaptor...
+2026-11-28T02:46:25,367  INFO SwissRailRaptorData:313 SwissRailRaptor data preparation done. Took 10 seconds.
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:314 SwissRailRaptor statistics:  #routes = 13849
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:315 SwissRailRaptor statistics:  #departures = 52466
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:316 SwissRailRaptor statistics:  #routeStops = 212576
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:317 SwissRailRaptor statistics:  #stopFacilities = 31022
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:318 SwissRailRaptor statistics:  #transfers (between routeStops) = 2566610
+2026-11-28T02:46:25,368  INFO SwissRailRaptorData:319 SwissRailRaptor statistics:  #chainedDepartures = 0
+2026-11-28T02:46:25,498  INFO NetworkImpl:411 building QuadTree for nodes: xrange(522929.8199825291,688122.3493168398); yrange(5676592.338708283,5901226.615464258)
+2026-11-28T02:46:25,860  INFO NetworkImpl:420 Building QuadTree took 0.457 seconds.
+2026-11-28T02:46:32,497  INFO ParallelProgress:140 Routing trips ... Done!
+2026-11-28T02:46:32,617  INFO InjectorBuilder:78 Deleting output directory <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp/eqasim_standalone9728630927512797160
+2026-11-28 02:46:33,113 INFO braunschweig.data.transit.connections: [pt-router] 299/861 task(s) (34.7%) have no trips row (the router found no route; examples ['c1001', 'c1003', 'c1005'])
+2026-11-28 02:46:33,120 INFO braunschweig.data.transit.router_cache: [pt-router cache] incommuter pt check: prefetch of 884 task(s), 861 distinct new, routed in 1 router call(s)
+2026-11-28 02:46:33,172 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 64/118 (54.2%): pt 64, plausible short walk 0; rejected: no_route 42, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 12
+2026-11-28 02:46:33,173 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 12/76 pt trip(s) (15.8%)
+2026-11-28 02:46:33,219 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 45/92 (48.9%): pt 45, plausible short walk 0; rejected: no_route 39, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 8
+2026-11-28 02:46:33,219 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 8/53 pt trip(s) (15.1%)
+2026-11-28 02:46:33,266 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 59/106 (55.7%): pt 59, plausible short walk 0; rejected: no_route 37, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 10
+2026-11-28 02:46:33,267 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 10/69 pt trip(s) (14.5%)
+2026-11-28 02:46:33,320 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 37/78 (47.4%): pt 37, plausible short walk 0; rejected: no_route 36, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 5
+2026-11-28 02:46:33,320 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 5/42 pt trip(s) (11.9%)
+2026-11-28 02:46:33,369 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 51/92 (55.4%): pt 51, plausible short walk 0; rejected: no_route 32, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 9
+2026-11-28 02:46:33,370 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 9/60 pt trip(s) (15.0%)
+2026-11-28 02:46:33,423 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 30/64 (46.9%): pt 30, plausible short walk 0; rejected: no_route 32, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 2
+2026-11-28 02:46:33,424 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 2/32 pt trip(s) (6.2%)
+2026-11-28 02:46:33,469 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 43/80 (53.8%): pt 43, plausible short walk 0; rejected: no_route 28, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 9
+2026-11-28 02:46:33,470 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 9/52 pt trip(s) (17.3%)
+2026-11-28 02:46:33,518 INFO braunschweig.data.transit.connections: [incommuter pt check] connections 26/56 (46.4%): pt 26, plausible short walk 0; rejected: no_route 28, is_only_walk_missing 0, only-walk too long 0, no_pt_legs 0, blank_stop_id 0, outside stop 0, walk distance 0, late arrival 2
+2026-11-28 02:46:33,518 INFO braunschweig.data.transit.connections: [incommuter pt check] latest-arrival bound 29:00:00: rejected 2/28 pt trip(s) (7.1%)
+2026-11-28 02:46:33,519 INFO braunschweig.data.transit.router_cache: [pt-router cache] incommuter pt check: loop asked 686 task(s): from the prefetch 686 (100.0%), fallback routed 0 in 0 router call(s); stage total so far 2 router call(s) (1 prefetch), 1853 distinct task(s) routed
+2026-11-28 02:46:33,520 WARNING braunschweig.synthesis.incommuter_pt_connections: [incommuters.pt_connections] 510 pt student in-commuter days: connection_found 451 (88.4%), day_shifted 23 (4.5%), station_redrawn 0 (0.0%), to_car 36 (7.1%), kept_no_connection 0 (0.0%); median shift 3600 s; 0 days tried other stations -- 7.1% of the days have no timetable connection within the shift window (warn share 5.0%): to_car 36 drive instead, kept_no_connection 0 are routed as walks
+2026-11-28 02:46:33,528 INFO braunschweig.data.cordon.plans: [incommuters] middle arrival (education): primary 827/827 (100.0%), fallback 0/827 (0.0%)
+2026-11-28 02:46:33,528 INFO braunschweig.data.cordon.plans: [incommuters] middle departure (education): primary 827/827 (100.0%), fallback 0/827 (0.0%)
+2026-11-28 02:46:33,528 INFO braunschweig.data.cordon.plans: [incommuters] home departure (education): primary 827/827 (100.0%), fallback 0/827 (0.0%)
+2026-11-28 02:46:33,528 INFO braunschweig.data.cordon.plans: [incommuters] home arrival (education): primary 827/827 (100.0%), fallback 0/827 (0.0%)
+2026-11-28 02:46:33,593 INFO braunschweig.synthesis.student_incommuters: [student_incommuters] pt_subscription_type: 827 in-commuter persons hard-coded to 'never_pt' (control-external source; the 14+ resident Kreis control does not see them -- see ADR-0099 for the rationale, issue #329)
+2026-11-28 02:46:33,603 INFO braunschweig.synthesis.student_incommuters: [student_incommuters:flows] injected 827 students at 6 sites: {'HS Braunschweig/Wolfenbüttel | 03102000': 64, 'HS Braunschweig/Wolfenbüttel | 03103000': 59, 'HS Braunschweig/Wolfenbüttel | 03158037': 148, 'Hochsch. f. Bildende Künste Braunschweig | 03101000': 27, 'TU Braunschweig | 03101000': 462, 'TU Clausthal | 03153018': 67}
+2026-11-28 02:46:33,643 INFO run_stages_readonly: executed braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4 in 115.3 s
+2026-11-28 02:46:34,017 INFO braunschweig.data.education.student_flows_inputs: [student flows inputs] student_level_table.csv: 8 Kreise, 28678.5 students (64 cells summed to 16 rows)
+2026-11-28 02:46:34,044 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] e 0.370566, f_eff 0.321799 (absence mode cells), sampling rate 1.0
+2026-11-28 02:46:34,045 INFO run_stages_readonly: Loading cache for braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:46:35,390 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41 ...
+2026-11-28 02:46:36,331 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.locations.home_cell__381029e3848c710762147f5018aa4852 ...
+2026-11-28 02:46:37,236 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.locations.education_gravity__33ce4abe99a5c5fc6fe5821620051dff ...
+2026-11-28 02:46:37,540 INFO run_stages_readonly: Loading cache for braunschweig.data.schools.university_facilities__cf6646133a078b7da8c64c5df93a4c27 ...
+2026-11-28 02:46:37,541 INFO run_stages_readonly: Loading cache for braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5 ...
+2026-11-28 02:46:46,905 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4 ...
+2026-11-28 02:46:46,911 INFO run_stages_readonly: Loading cache for braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700 ...
+2026-11-28 02:46:50,041 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] adult students whose home Kreis has no row of the level table (excluded from the population rows): 0
+2026-11-28 02:46:50,218 ERROR braunschweig.analysis.synthesis.student_flows: [student_flows] acceptance verdict FAIL: 39 row(s) judged (balance >= 200), 16 over 5.0%; the student flows are not used for results on a population that fails the population rows (16 population row(s) failing); first rows [{'section': 'students_population', 'key': '03101', 'deviation_share': -0.17445645610780156}, {'section': 'students_population', 'key': '03102', 'deviation_share': 0.25655615074267457}, {'section': 'students_population', 'key': '03103', 'deviation_share': 0.14832319855085666}, {'section': 'students_population', 'key': '03151', 'deviation_share': 0.40918296466772663}, {'section': 'students_population', 'key': '03153', 'deviation_share': -0.15250533957611778}]
+2026-11-28 02:46:53,279 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] SrV distance rows with at least 30 respondents (usable): ['03101', 'all']; reported only (too few respondents): ['03102', '03103', '03151', '03153', '03154', '03157', '03158']
+2026-11-28 02:46:53,280 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] skipped: no committed Mikrozensus table of the students' education distance: braunschweig/mikrozensus holds the commute distance and mode of the employed only
+2026-11-28 02:46:56,641 INFO braunschweig.synthesis.locations.university_assignment: [university assignment] observed education legs: 197698 persons with a home<->education leg, 834 of them without a length (they take the fallback of the plan rule); 802814 of 1000512 persons with trips have no such leg
+2026-11-28 02:46:56,914 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [student status (Task 5)] primary 199645/199645 (100.0%), fallback 0 (0.0%); persons with an education activity whose P_TAET is unreadable (design B1 fallback rule) (warn above 0)
+2026-11-28 02:46:56,914 WARNING braunschweig.analysis.synthesis.student_flows: [student_flows] [absence cells P_TAET (Task 6)] primary 941359/942846 (99.8%), fallback 1487 (0.2%); adults without a readable P_TAET, drawn at the age-band rate (warn above 0)
+2026-11-28 02:46:56,918 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [university plan rule, present (Task 9)] primary 8989/8989 (100.0%), fallback 0 (0.0%); present students without an observed education leg, placed by the university decay (warn above 0.25)
+2026-11-28 02:46:56,919 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [university plan rule, absent (Task 9)] primary 0/0 (100.0%), fallback 0 (0.0%); absent students, same fallback (warn above 0.25)
+2026-11-28 02:46:56,919 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [legacy decay, Kreis without a row of T (Task 10)] primary 8989/8989 (100.0%), fallback 0 (0.0%); students of a home Kreis without a row of T (must be 0) (warn above 0)
+2026-11-28 02:46:56,920 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [in-commuter commute length (Task 11)] primary 827/827 (100.0%), fallback 0 (0.0%); commute length on the distance of T's cell instead of a drawn commune (warn above 0.25)
+2026-11-28 02:46:56,920 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] [in-commuter home rule (Task 11)] primary 826/827 (99.9%), fallback 1 (0.1%); agents placed at the nearest cordon gate instead of a point in the ring (warn above 0.25)
+2026-11-28 02:47:02,850 INFO braunschweig.analysis.spatial: assign_geographies: 558179 homes; Kreis matched 558177 (100.00%), unmatched 2; Gemeinde unmatched 2
+2026-11-28 02:47:03,057 WARNING braunschweig.analysis.synthesis.student_flows: [student_flows] home Kreis by home zone vs VG250 join: 61 of 558179 households differ, 2 without a VG250 Kreis
+2026-11-28 02:47:03,136 INFO braunschweig.analysis.synthesis.student_flows: [student_flows] wrote the acceptance table (FAIL), 8 diagnostics files and the report to ../output/student_flows
+2026-11-28 02:47:03,225 INFO run_stages_readonly: executed braunschweig.analysis.synthesis.student_flows__73dbdf8c225eaeab735b201cad3862b4 in 29.6 s
+Found 0 occurences with negative duration
+  of which 0 can swap departure and arrival time without conflicts with previous or following trip
+  of which 0 are unlikely to cover midnight, so we swap arrival and departure time although there are conflicts
+  of which 0 seem to cover midnight, so we shift arrival time by 24h
+Shifting trips that should start after midnight
+  Shifted 1761 trips in round 1
+  Shifted 7 trips in round 2
+  No more occurences where current trip is after the next
+Found 1461 occurences where current trip ends after next trip starts
+  of which we're able to shorten 1333 to make it consistent
+Found 591 occurences where current trip is included in next trip
+Fixing 0 inconsistent activity types
+Trips with inconsistent activity types: 0
+[building-potential-attach:university] primary 267/311 (85.9%), fallback 44 (14.1%)
+WARNING: [building-potential-units:university] units on potentials 0/5 (0.0%), units on area x floors weights 5 (100.0%)
+[university_facilities] university buildings in a site commune 307/311 (98.7%), left out (no capacity) 4 (1.3%); local sites placed 6/6, surrounding facilities 13
+[university_facilities] surrounding institutions with a share: placed 13/15 (86.7%), left out (no student of the region, no share in T) 2 (13.3%): ['TiHo Hannover | 03241001', 'Uni Lüneburg | 03355022']; buildings of weight 0 left out 0
+[university_facilities] 508 facilities for 21 destinations of T; capacity sum local 27952 of enrollment 27952
+[schools.bbs_share] loaded age-resolved BBS shares from eqasim-data/data/braunschweig/schools/nds_bbs_share_by_age.csv: 16: 0.121, 17: 0.282, 18: 0.418, 19: 0.719
+[education:routing] persons per routed level {'adult_education': 21784, 'bbs_adult': 4187, 'grundschule': 39453, 'kindergarten': 43420, 'sekundar_1': 57617, 'university': 10432, 'upper_secondary': 22752}; students under 18 kept on their age band: 414; non-student adults (aged 20+) whom the switch-OFF rule would send to the university level or to the adult rule with university buildings: 25971 (to bbs_adult 4187, to adult_education 21784)
+[education:grundschule] slope: primary 39453/39453 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:grundschule] 39453 pupils, 221 schools: Furness residual row=0.0891 col=4.15e-12
+[education:grundschule] primary 39453/39453 (100.0%), nearest-school fallback 0 (0.0%)
+[education:sekundar_1] slope: primary 57617/57617 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:sekundar_1] 57617 pupils, 162 schools: Furness residual row=0.00661 col=2.21e-11
+[education:sekundar_1] primary 57617/57617 (100.0%), nearest-school fallback 0 (0.0%)
+[education:oberstufe] slope: primary 15796/15796 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:oberstufe] 15796 pupils, 60 schools: Furness residual row=0.192 col=4.09e-12
+[education:oberstufe] primary 15796/15796 (100.0%), nearest-school fallback 0 (0.0%)
+[education:bbs] slope: primary 6956/6956 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:bbs] 6956 pupils, 34 schools: Furness residual row=0.000886 col=2.16e-12
+[education:bbs] primary 6956/6956 (100.0%), nearest-school fallback 0 (0.0%)
+[education:kindergarten] slope: primary 43420/43420 (100.0%) per-RS7 override, scalar fallback 0 (0.0%)
+[education:kindergarten] 43420 pupils, 741 schools: Furness residual row=0.905 col=2.1e-12
+[education:kindergarten] primary 43328/43420 (99.8%), nearest-school fallback 92 (0.2%)
+[education:adult_education] primary 21784/21784 (100.0%), nearest-campus fallback 0 (0.0%)
+[education:adult_education] 21784 persons aged 20+ placed among 477 education facilities (schools and universities, uniform weights, slope -0.15 per km, radius 30 km): straight-line distance median 7.1 km, mean 8.9 km, p90 19.6 km; at a university 0 (0.0%)
+[education:bbs_adult] primary 4187/4187 (100.0%), nearest-campus fallback 0 (0.0%)
+Executing java: <run server home>/tools/jdk-25.0.3+9/bin/java -cp <run server home>/i140_flows/flows_final2/chain_home_distance/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar -Xmx83G -Djava.io.tmpdir=<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp -Dmatsim.useLocalDtds=true org.eqasim.core.tools.routing.RunBatchPublicTransportRouter --config-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml --input-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_tasks.csv --output-trips-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_trips.csv --output-legs-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_legs.csv --threads 56
+Hang watchdog armed for pid 1400692: terminate after 900.0 s without at least 1.0 CPU seconds of progress.
+Executing java: <run server home>/tools/jdk-25.0.3+9/bin/java -cp <run server home>/i140_flows/flows_final2/chain_home_distance/matsim.runtime.eqasim__1c974c0f10b34f4f9c03abe2720b742f.cache/eqasim-java/braunschweig/target/braunschweig-2.3.1.jar -Xmx83G -Djava.io.tmpdir=<run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/__java_temp -Dmatsim.useLocalDtds=true org.eqasim.core.tools.routing.RunBatchPublicTransportRouter --config-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router_config.xml --input-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_tasks.csv --output-trips-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_trips.csv --output-legs-path <run server home>/i140_flows/flows_final2/chain_home_distance/braunschweig.synthesis.student_incommuters__820851727e82e569a8ed1d3dfb2fdba4.cache/incommuter_pt_router/router_legs.csv --threads 56
+Hang watchdog armed for pid 1400909: terminate after 900.0 s without at least 1.0 CPU seconds of progress.
+Codeplan

@@ -1,0 +1,171 @@
+id: student-flows-popsim100-20261120-2026-11-28
+date: '2026-11-28'
+repository:
+  commit: 61677f92
+  branch: claude/i140-student-flows-fde844
+  notes: >-
+    Phase 4 of the student layer (issue #140). Branch HEAD at the time of writing is 61677f92. The runs did NOT execute
+    this HEAD; they executed the local run ref run/i140-student-flows (not pushed), which is the measurement ref
+    760bff86894de6e7a55e6910c6371a4b0f0f9e39 (local branch measure/i140-by-area; the run commit
+    1041849c243c71859c95275447a24363ee1aa358 of popsim100_20261120 plus the measurement modules, see
+    student-measurement-by-area-popsim100-20261120-20261127) plus the Phase 4 files copied by path from this branch
+    (list in docs/runs/artifacts/student-flows-checkpoint/run_ref_paths.txt). Checkpoint run (flows_ckpt): ref commit
+    3d24301d123de6036f1e41e8a3e2a0465e64d04c, bundle sha256 adb5ae9d5fc38fff857a58deeb449310435609f69b45e642a58ffdfb014766c2.
+    Final runs (flows_final2): ref commit 9921a2a018275305e565064f5ce195bcae899bab, bundle sha256
+    f9edd20200b9490dc5213a96a433f4aa5fd7de40cc55c8aa6e0a8110a20d82da (commits a95de113 and 9921a2a0 of this branch).
+    Java side: eqasim-java-bs cb7e81fa3851c1338cfd80921c9d55aaeef2e600 (run.json of both runs). The two runs in this
+    manifest did not contain commit 6b60008c (the fix of the fallback block, see the notes). Run directory, host and
+    user are not recorded in tracked files (placeholders RUN_DIR, <run server home>, <run server>).
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_100pct.yml (run list and paths replaced by the run overlay below)
+  - docs/runs/artifacts/student-flows-popsim100-20261120/run.yml (final run, braunschweig.students.kreis_matching_rule plan_length)
+  - docs/runs/artifacts/student-flows-popsim100-20261120/run_home_distance.yml (final run, same but home_distance)
+  - docs/runs/artifacts/student-flows-checkpoint/run.yml (checkpoint run of the day-absence step)
+  notes: >-
+    Production values of the run ref, unchanged; the overlays only replace the run list with the analysis stage
+    braunschweig.analysis.synthesis.student_flows (final) or set the matching rule, and set the run paths. The matching
+    rule is the only value that differs between the two final runs (the overlay sources run_overlay_flows_plan_length.yml
+    and run_overlay_flows_home_distance.yml are in docs/runs/artifacts/student-flows-checkpoint/). The checkpoint
+    run.yml is the older overlay of the Phase 3 measurement (run list students_vs_srv); the checkpoint chain executed
+    the day-absence stage directly (chain_absence.json). Detour factors of the distance comparison 1.3, 1.2, 1.4 and
+    the day-absence mode cells come from student_flows_report.json (parameters, day_factor).
+sampling:
+  rate: 1.0
+  scope: >-
+    the cached full population of run popsim100_20261120 (the full model area, ZGB-8; 1129395 persons, 558179
+    households in student_flows_report.json) plus the in-commuter agents of the student_incommuters stage (827).
+    No 1 % population exists for this code state, see pipeline.notes.
+  notes: >-
+    Counts are sample counts at sampling_rate 1.0. The cached population carries today's student level (a student
+    count per home Kreis that does not come from the new level table), so the population rows of the acceptance table
+    miss by construction (see the validation entry).
+pipeline:
+  targets:
+  - braunschweig.analysis.synthesis.student_flows
+  - braunschweig.synthesis.day_absence.absence_stage (checkpoint run only)
+  notes: >-
+    Why no cache copy: the run server had less free disk than the cache takes, so scripts/isolated_run.py setup ran
+    WITHOUT a cache copy (run.json: cache null), as in the Phase 3 measurement. scripts/explain_stale_stages.py ran
+    against the source cache (explain_readonly.log of each artifacts folder); the chain driver scripts/run_stages_readonly.py
+    (in docs/runs/artifacts/student-flows-checkpoint/scripts/) executed the stages in order, reading the dependency
+    pickles of the source cache through symlinks and writing results to its own work directory. The session reported that
+    afterwards no file of the source cache was newer than the start stamp, for both runs; no artifact file records that
+    check (run.json holds only the unchanged state of the two shared checkouts), so it is a report of the session, not
+    committed evidence. Logs are force-added although *.log is gitignored; the artifacts are scrubbed of host, user and paths.
+    EXPLAIN, final runs (explain_readonly.log, last line): 52 stages, 6 stale for their own reasons, 0 will recompute,
+    0 may recompute, 46 hits; PopulationSim stage braunschweig.popsim.stage HIT. Stale: the Phase 4 stages
+    braunschweig.analysis.synthesis.student_flows, braunschweig.data.schools.university_facilities,
+    braunschweig.synthesis.day_absence.absence_stage, braunschweig.synthesis.locations.education_gravity and
+    braunschweig.synthesis.student_incommuters, and braunschweig.data.hts.mid_donor (module hash and tokens changed).
+    DEVIATION: the cached mid_donor pickle came from an older code state and lacked seven donor columns that the
+    in-commuter stage requires, so the chain RECOMPUTED mid_donor (111.6 s in chain_home_distance.json, 112.3 s in
+    chain_plan_length.json) in its work directory, not in the source cache; the recomputed donor therefore differs in
+    code state from the donor under the cached population. The checkpoint explain (flows_ckpt, 41 stages) listed 7 stale stages
+    for own reasons (the target students_vs_srv, university_facilities, replacement_education_gravity, the two
+    commute_day stages, absence_stage, education_gravity) and no mid_donor. Chain stage times of the plan_length run
+    (chain_plan_length.json, seconds): mid_donor 112.3, university_facilities 0.3, absence_stage 25.1,
+    education_gravity 33.8, student_incommuters 118.9, student_flows 29.9; home_distance run: 111.6, 0.3, 23.3, 33.2,
+    115.3, 29.6. Checkpoint chain: absence_stage 34.2 s. NOT RUN: (a) no 1 % smoke, because a 1 % population at this
+    code state would need a PopulationSim recompute; the stage tests and this 100 % run replace it. (b) The
+    out-commuter reports (student_out_commuters) need the final-view trips of a new synthesis and run with the next full
+    run.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Classified smoke because the run-manifest schema has no measurement class: a measurement and a mechanism check on a
+    cached population, not a validation. No target value is stated; the SrV tables are a survey, not ground truth; the
+    destination totals T rest on the CHE origins and the owner's weights (ADR-0210). The acceptance rule (ASSUMPTION
+    A17 of the stage: balance of at least 200 persons and deviation above 5.0 %) is the one pass/fail check; its
+    verdict is FAIL (below). The checkpoint run only records what the day-absence step produced.
+validation:
+- metric: day-absence cells, realised share of persons absent (checkpoint run flows_ckpt, absence mode cells, 100 %)
+  reference: SrV 2023 absence rates per cell (srv2023_absence_by_age_band.csv and the student cell rates; a survey, not ground truth)
+  result: >-
+    Read from docs/runs/artifacts/student-flows-checkpoint/away_share_by_cell.csv (columns persons, away, share_away,
+    reference_rate) and chain_absence.log. Student cells: student:braunschweig 897 of 10180 absent, realised
+    0.0881139489194499 against 0.0869729022; student:surrounding 2481 of 14093, 0.17604484495849004 against
+    0.1729445122; student:wolfsburg 328 of 2940, 0.11156462585034013 against 0.1239264157 (difference -0.012361789850
+    in share, -1.24 pp in the log). The Wolfsburg student cell missed its region value by more than the configured guard
+    day_absence_max_band_deviation_pp=1.00 pp and the log carries the WARNING (chain_absence.log, line of
+    absence_stage). Adult cells realise their reference closely (adult:18-29 0.062347368593578416
+    against 0.06266962597, adult:30-44 0.04419408229042655 against 0.04415038849, adult:45-64 0.04895980646993962
+    against 0.04900494797, adult:65-74 0.05819280179839165 against 0.0588485102, adult:75+ 0.05808186807207375 against
+    0.05812049317). The small cells without the adult: prefix are 18-29 (n 29) 0.034482758620689655 against 0.08305189101 and 45-64 (n 523) 0.040152963671128104 against 0.04890702348, with n_eligible 27 and 225; the guard only fired for Wolfsburg. The
+    rates per age band are reported, not targeted, for the age bands (chain_absence.log, "cells path").
+    Adults with an unreadable P_TAET code: 1487 of 942846 (0.16 %) on the fallback (drawn in their band at the rate
+    of all persons), primary 941359 (99.84 %). The log of the checkpoint run holds no line on households without a
+    Kreis; the final run's report counts 2 of 558179 households without a VG250 Kreis and 61 whose home-zone Kreis
+    differs from the VG250 Kreis (student_flows_report.json, home_kreis_vs_vg250).
+- metric: acceptance table of the student flows against the committed enrollment balance (final runs, both matching rules)
+  reference: committed balance tables student_balance_by_site.csv, student_balance_in_commuters_by_origin.csv, student_balance_out_commuters.csv and the level table (owner weights, CHE origins; a balance, not observed data)
+  result: >-
+    Read from docs/runs/artifacts/student-flows-popsim100-20261120/{plan_length,home_distance}/student_acceptance_table.csv
+    (columns model, balance, deviation_share) and the acceptance block of student_flows_report.json. The two tables are
+    byte-identical (the matching rule changes who goes where, not the totals). VERDICT FAIL under both rules: rule
+    A17, 39 judged rows (balance of at least 200 persons), 16 failing, and every failing row is a population row: 8 of 9
+    students_population rows and 8 of 9 students_of_day rows (students_population total model 27213 against balance
+    28678.49158467, deviation_share -0.05110072056416568; students_of_day total 8989 against 9228.71283,
+    -0.02597467649 (within the bound); the failing students_of_day rows are 03101 -0.07601087896667587,
+    03102 0.2685526653626166, 03103 0.21996708359568706, 03151 0.5944082416320708, 03153 -0.35206023862916574,
+    03154 -0.4650758004298231, 03157 0.050490839284618096, 03158 -0.13289277186810233; failing students_population rows 03101
+    -0.17445645610780156, 03102 0.25655615074267457, 03103 0.14832319855085666, 03151 0.40918296466772663, 03153
+    -0.15250533957611778, 03154 -0.05921922699765521, 03158 -0.16771884742168464, total -0.05110072056416568). They miss
+    by construction: the cached population carries today's student level, not the level table; Phase 3's synthesis
+    bundle changes that with the next full run, and the rows are expected to be re-measured then. Every judged site,
+    in-commuter and out-commuter row is within the bound: 16 judged site rows (largest absolute deviation_share
+    0.02658992747), 2 judged in-commuter rows (0.0009350025948), 3 judged out-commuter rows (0.02668110443). Totals
+    (model against balance, deviation_share): all_local_sites total 8783 against 8994.928491, -0.02356088668
+    (residents of the day 7956 against 8168.701016, -0.02603853604; in-commuters 827 against 826.2274752,
+    0.0009350025948); out_commuters total 1033 against 1060.011814, -0.02548255976. Rows with a balance below 200
+    persons are not judged: seven of them lie beyond 5 % (in-commuter origins 03255 0.0666960663, 03256 0.317188296,
+    03257 0.1247267048, 03354 -0.06259766312, 03355 -1, 03358 -0.1022339524 with balances 2.8, 0.76, 4.4, 4.3, 0.37,
+    4.5, and the out-commuter row of HS Hildesheim/Holzminden/Goettingen 03255023 0.09273593714 with balance
+    2.745402524); at these counts the deviation says little. The students_30plus_report section is a report and is
+    not judged. Two destinations with a zero share were dropped (TiHo Hannover | 03241001, Uni Lueneburg | 03355022;
+    dropped_zero_share_destinations).
+- metric: matching-rule comparison against the SrV distance reference (final runs)
+  reference: SrV 2023 education-leg distance bands (a survey, not ground truth), rows 03101 and all (all is the SrV total row 03ZGB); noise floor emd_noise_95 of each row
+  result: >-
+    Read from student_distance_bands.csv (reference srv; EMD of the model distance bands against the SrV bands, with
+    emd_noise_95) and student_allotment_by_kreis.csv of each rule folder, and the allotment_diagnostics of
+    education_university_report.json. EMD, plan_length against home_distance (noise floor): row 03101 (n_model 3855,
+    n_reference 68, noise 0.06346545741): detour 1.2 0.07639311623 against 0.04636953211, detour 1.3 0.08848131337 against
+    0.05316590046, detour 1.4 0.09787171545 against 0.06177809242 (home_distance inside the noise floor at all three,
+    plan_length outside at all three). Row all (n_model 8989, n_reference 111, noise 0.0691843247): 1.2 0.1123234751
+    against 0.07928309245, 1.3 0.1314802223 against 0.09641514274, 1.4 0.1451191143 against 0.1135026942 (neither rule
+    inside the noise floor). The rule fixed before the run (plan_length unless home_distance is better by more than the
+    noise floor at 1.3 and lower at 1.2 and 1.4) gives plan_length: the EMD gain of home_distance at 1.3 is
+    0.03532 in row 03101 (noise floor 0.0635) and 0.03506 in row all (0.0692), both below the floor; home_distance is
+    lower at 1.2 and 1.4 in both rows. THE OWNER DECIDED on 2026-11-28 for home_distance on realism grounds (ADR-0213
+    Decision 3); this is a decision against the pre-fixed rule, not a result of it. Students living within 2 km of a local
+    site (allotment_diagnostics, present students): 1881 under both rules; of them sent to another site 480 under
+    plan_length and 62 under home_distance (row 03101 of student_allotment_by_kreis.csv: 1344 near a site, 316 against 0
+    sent elsewhere). Mean |plan leg - assigned distance| over students with an observed plan leg (n 8748):
+    8.57022468185295 km under plan_length against 13.835496394988448 km under home_distance; mean assigned
+    distance 16.168661243921033 km against 14.902990000357564 km. The plan rule used the observed plan leg of 8748
+    present students and the decay fallback for 241; home_distance uses neither. The comparison is to be repeated
+    after the next full population run, because the student level and the home areas change with it; the SrV
+    comparison rests on 68 and 111 respondents.
+issues:
+- '#140'
+decisions:
+- ADR-0213
+notes: >-
+  Smoke and measurement on a cached population, not a validation: no target value, the SrV tables are a survey and the
+  destination totals rest on the CHE origins and the owner's weights (ADR-0210). Known defect of the committed
+  analysis output: the fallback block "university plan rule, absent" in student_flows_report.json and the summary
+  reads n 0 (primary 0/0); it was fixed after the run in commit 6b60008c. The correct counts are in the location
+  stage's education_university_report.json of each rule folder: plan_length n_absent 1443 with plan_rule_absent
+  primary 1425, fallback 18 (fallback_share 0.012474012474012475); home_distance n_absent 1443, primary 1443, fallback 0.
+  The plan rule for present students: primary 8748, fallback 241 (n_present 8989, summary line "primary 8748/8989").
+  Other fallback rates of the final run (plan_length summary): student status 199645/199645 primary, absence cells
+  P_TAET 941359/942846 primary, in-commuter commute length 827/827, in-commuter home rule 826/827. Not run: no 1 %
+  smoke and no out-commuter reports (pipeline.notes).
+source: >-
+  braunschweig.analysis.synthesis.student_flows and braunschweig.synthesis.day_absence.absence_stage over the cached
+  population of popsim100_20261120 (docs/runs/popsim-full-rerun-20261120.yml); outputs committed under
+  docs/runs/artifacts/student-flows-checkpoint/ and docs/runs/artifacts/student-flows-popsim100-20261120/.

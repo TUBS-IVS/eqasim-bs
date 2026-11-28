@@ -1,0 +1,22 @@
+{
+  "chain": [
+    {
+      "dependencies": [
+        "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41",
+        "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5",
+        "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41"
+      ],
+      "seconds": 34.2,
+      "stage": "braunschweig.synthesis.day_absence.absence_stage__ad2e9d1cc001083054405b45aeaba700"
+    }
+  ],
+  "links": [
+    "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41.p",
+    "braunschweig.popsim.enriched_adapter__21c21a5505931989f689182991015f41.cache",
+    "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5.p",
+    "braunschweig.popsim.trips_stage__46e5255f09fb7a19d7ea5a879fdb5cb5.cache",
+    "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41.p",
+    "braunschweig.synthesis.spatial.home_zones__21c21a5505931989f689182991015f41.cache"
+  ],
+  "source_cache": "<source cache>"
+}
