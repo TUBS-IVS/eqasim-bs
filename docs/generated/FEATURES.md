@@ -83,6 +83,7 @@ may only name run manifests (no run, no claim).
 | [mode_choice](../registry/features/mode_choice.yml) | matsim | supported | off | i/i/i | 0 | -- | none | none | unvalidated | pending |
 | [no_answer_codes_excluded](../registry/features/no_answer_codes_excluded.yml) | secondary | active | ON | A/-/- | 5 | proven | marker | committed | unvalidated | pending |
 | [outside_tour_modes](../registry/features/outside_tour_modes.yml) | cordon | active | ON | A/-/- | 9 | proven | marker | committed | unvalidated (`i453-i443-ab-1pct-2026-10-16`) | pending |
+| [overnight_open_day_end](../registry/features/overnight_open_day_end.yml) | behavior | active | ON | A/-/- | 7 | proven | marker | committed | measured_vs_reference (`i694-overnight-open-end-smoke-1pct-2026-11-27`) | pending |
 | [ownership_grid_1km](../registry/features/ownership_grid_1km.yml) | population | active | ON | A/-/- | 6 | proven | marker | committed | unvalidated (`smoke-ownership-grid-03101-2026-08-19`, `100pct-allfeat-i240-2026-08-20`, `popsim-input-consistency-2026-11-18`, `popsim-ladder-inputs-a-2026-11-18`) | pending |
 | [parallel_chainsolvers](../registry/features/parallel_chainsolvers.yml) | infrastructure | active | ON | A/A/A | 5 | -- | marker | none | unvalidated | pending |
 | [parking_cost_zones](../registry/features/parking_cost_zones.yml) | matsim | experimental | ON | A/A/- | 36 | proven | marker | committed | unvalidated (`parking-zones-smoke-zgb-1pct-2026-09-30`, `parking-v3-arms-2026-10-15`) | pending |
