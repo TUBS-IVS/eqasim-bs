@@ -136,6 +136,7 @@ from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSC
 from braunschweig.popsim.diary_facts import compute_diary_facts
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES, _own_diary_reason
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
+from braunschweig.popsim.trips import rbw_leg_mask
 
 logger = logging.getLogger(__name__)
 
@@ -346,10 +347,12 @@ def _direct_legs(trips: pd.DataFrame, codes, extra_columns, *,
     legs = trips.loc[zweck.isin(sorted(codes)).values, required].copy()
     n_rbw = 0
     if exclude_rbw_legs:
-        rbw = pd.to_numeric(legs[RBW_COLUMN], errors="coerce").fillna(0)
-        direct = (rbw == 0).values
-        n_rbw = int((~direct).sum())
-        legs = legs[direct]
+        # The seed's single definition of an rbW leg (W_RBW == 1); any other code and a missing
+        # code are direct legs there, so they are here. Coerced like _seed_diary_reasons does.
+        rbw_leg = rbw_leg_mask(legs.assign(**{RBW_COLUMN: pd.to_numeric(legs[RBW_COLUMN],
+                                                                        errors="coerce")}))
+        n_rbw = int(rbw_leg.sum())
+        legs = legs[~rbw_leg.values]
     legs["pid"] = _person_ids(legs)
     return legs, {"n_legs_of_purpose": int(len(legs) + n_rbw), "n_legs_dropped_rbw": n_rbw}
 
@@ -604,6 +607,9 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
     replaced_counts = {}
     for group_name, group in (("students", students), ("non_students", non_students)):
         reason = seed_reasons.loc[group.index]
+        # One denominator for every reason: the persons with a diary before any seed replacement
+        # (the loop below empties trip_count, so reading it per reason would shrink the base).
+        n_with_diary = int(group["trip_count"].notna().sum())
         for seed_reason in SEED_REPLACED_REASONS:
             replaced = (group["trip_count"].notna() & (reason == seed_reason)).to_numpy()
             key = SEED_REPLACED_DIAGNOSTIC[seed_reason] % group_name
@@ -611,7 +617,7 @@ def build_behaviour_seed_table(persons: pd.DataFrame, trips: pd.DataFrame, *,
             _log_exclusion("diary the popsim seed keeps (not '%s': %s), adult %s"
                            % (seed_reason, SEED_REPLACED_DESCRIPTION[seed_reason],
                               group_name.replace("_", "-")),
-                           replaced_counts[key], int(group["trip_count"].notna().sum()))
+                           replaced_counts[key], n_with_diary)
             group.loc[replaced, "trip_count"] = np.nan
     student_has_diary = students["trip_count"].notna()
     non_student_has_diary = non_students["trip_count"].notna().to_numpy()

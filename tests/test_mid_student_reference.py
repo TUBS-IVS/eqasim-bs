@@ -255,6 +255,20 @@ def test_rbw_legs_do_not_count(mid_frames):
         == pytest.approx(3 / 6)
 
 
+@pytest.mark.parametrize("code", [2, np.nan])
+def test_rbw_code_other_than_one_is_a_direct_leg_like_in_the_seed(mid_frames, code):
+    """The seed drops a leg only when W_RBW == 1 (``popsim.trips.rbw_leg_mask``); another code
+    (2) and a missing code are NOT rbW legs there, so a's work leg with that code stays a leg of
+    the plan and counts (3 / 6, the same as with ``exclude_rbw_legs`` off)."""
+    persons, trips = mid_frames
+    trips["W_RBW"] = trips["W_RBW"].astype(float)
+    trips.loc[trips["W_RBW"] == 1, "W_RBW"] = code
+    table, diagnostics = M.build_behaviour_seed_table(persons, trips, exclude_rbw_legs=True)
+    assert diagnostics["n_work_legs_dropped_rbw"] == 0
+    assert _cell(table, "work_leg", UNIVERSE_STUDENTS, "student_work")["share"] \
+        == pytest.approx(3 / 6)
+
+
 def test_public_holiday_reporting_days_leave_every_day_table(mid_frames):
     """a (student, Tuesday, weight 1, education legs: 09:00 12 km pt first) reported on a public
     holiday (feiertag == 1). The regional survey's reference days exclude holidays, so a leaves
