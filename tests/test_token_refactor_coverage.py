@@ -34,7 +34,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 69 (+8 production stages that run declared stages as libraries, ADR-0194).
 #: 2026-11-26 on branch claude/i140-student-measurement-47cf6f: 70 (+1 braunschweig.analysis.synthesis.students_vs_srv, #140).
 #: 2026-11-28 on branch claude/i140-student-flows-fde844: 71 (+1 braunschweig.analysis.synthesis.student_flows, #140).
-EXPECTED_SOURCE_HASHING_STAGES = 71
+#: 2026-11-28 on branch claude/i140-student-flows-fde844: 72 (+1 braunschweig.analysis.synthesis.student_out_commuters, #140).
+EXPECTED_SOURCE_HASHING_STAGES = 72
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
