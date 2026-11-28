@@ -1173,12 +1173,60 @@ def test_on_without_answers_raises():
         trips_stage.run(persons, wege, random_seed=1, keep_overnight_open_ends=True)
 
 
-def test_trips_stage_configure_registers_the_overnight_open_end_key():
-    from braunschweig.popsim.stage.config_keys import (
-        DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS, KEY_KEEP_OVERNIGHT_OPEN_ENDS)
-    ctx = _RecordingConfigureContext()
-    trips_stage.configure(ctx)
-    assert ctx.calls[KEY_KEEP_OVERNIGHT_OPEN_ENDS] is DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS
+def test_seed_trip_class_equals_the_realised_trip_count_for_every_kind_of_overnight_donor():
+    """Spec section 7 gate: the trip_class seed and the trip build take ONE decision per donor.
+
+    Four MiD donors, each the plan source of one synthetic person, go through the seed path
+    (compute_diary_facts -> attach_plan_source_facts -> attach_src_keeps_open_end ->
+    derive_trip_class_seed) and through trips_stage.run. The seed class must be the class of the
+    realised trip count. Hand-computed: A leaves on a trip and ends away (kept open, 2 trips, class
+    1-2); B ends away without an overnight trip (closed, 2 + 1 = 3 trips, class 3-4); C is a middle
+    day of a trip (stays closed, 3 trips); D starts by arriving home, then ends away (kept open, the
+    leading leg is dropped, 2 trips). A one-sided +1 or a missed leading-leg drop changes a class.
+    Also stands in for the registration check of the overnight keys: the execute() test below reads
+    every key from the keys configure() declared.
+    """
+    from braunschweig.popsim import diary_facts, overnight_open_end
+    from braunschweig.popsim.mid import participation
+
+    def legs(h, zwecke, so1):
+        n = len(zwecke)
+        return pd.DataFrame({
+            "H_ID": h, "P_ID": 1, "W_ID": range(1, n + 1), "W_ZWECK": zwecke, "W_RBW": 0,
+            "W_SO1": so1, "hvm_imp": 4, "W_SZS": [8 + 2 * i for i in range(n)], "W_SZM": 0,
+            "W_AZS": [8 + 2 * i for i in range(n)], "W_AZM": 30, "wegkm_imp": 5.0,
+            "wegmin_imp1": 20.0, "W_GEW": 1.0})
+    wege = pd.concat([
+        legs(1, [1, 7], 1),        # A: work, leisure; day starts at home
+        legs(2, [1, 7], 1),        # B: same diary, no overnight trip
+        legs(3, [1, 7], 2),        # C: day starts away from home, first leg goes to work
+        legs(4, [8, 1, 7], 2),     # D: day starts by arriving home, then work, leisure
+    ], ignore_index=True)
+    streise = {1: 2, 2: 1, 3: 2, 4: 2}  # P_STREISE per donor household
+    answers = pd.DataFrame({"H_ID": list(streise), "P_ID": 1, "P_STREISE": list(streise.values())})
+    answers.attrs[overnight_open_end.MAX_NO_ANSWER_SHARE_ATTR] = 0.20
+    donors = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4], "P_ID": 1, "member_imputed": False,
+        "source_H_ID": [1, 2, 3, 4], "source_P_ID": 1, "anzwege1": [2, 2, 2, 3],
+        "alter_gr1": 3, "mobil": 1})
+
+    flags = overnight_open_end.overnight_trip_flags(answers)
+    facts = diary_facts.compute_diary_facts(wege)
+    seed_input = overnight_open_end.attach_src_keeps_open_end(
+        diary_facts.attach_plan_source_facts(donors, facts), flags)
+    seeded = participation.derive_trip_class_seed(
+        seed_input, rng=np.random.RandomState(0), counts_closure=True,
+        drop_leading_arrive_home_leg=True, keep_overnight_open_ends=True)
+
+    persons = pd.DataFrame({"person_id": [1, 2, 3, 4], "H_ID": [1, 2, 3, 4], "P_ID": 1})
+    table = trips_stage.run(persons, wege, random_seed=1, drop_leading_arrive_home_leg=True,
+                            keep_overnight_open_ends=True, overnight_answers=answers)
+    realised = table.groupby("person_id").size().reindex([1, 2, 3, 4])
+
+    def trip_class(n_trips):  # the documented classes: 0 / 1-2 / 3-4 / 5+
+        return 0 if n_trips == 0 else 1 if n_trips <= 2 else 2 if n_trips <= 4 else 3
+    assert realised.tolist() == [2, 3, 3, 2]
+    assert seeded["trip_class"].tolist() == [trip_class(n) for n in realised]
 
 
 def test_entd_source_rejects_keep_overnight_open_ends():
