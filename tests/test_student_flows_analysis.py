@@ -182,12 +182,17 @@ def test_a_group_without_model_persons_or_without_reference_shares_has_no_emd():
 
 
 def test_srv_rows_below_the_respondent_minimum_are_reported_only_and_the_threshold_is_configurable():
-    bands = pd.DataFrame({"group": ["all", "03101", "03157", "all"], "reference": ["srv", "srv", "srv", "mid"],
-                          "n_reference_low": [False, False, True, False]})
-    assert S.usable_distance_rows(bands) == {"usable": ["03101", "all"], "reported_only": ["03157"]}
+    bands = pd.DataFrame({"group": ["all", "03101", "03157", "03102", "all"],
+                          "reference": ["srv", "srv", "srv", "srv", "mid"],
+                          "n_reference_low": [False, False, True, False, False],
+                          "emd": [0.1, 0.2, 0.3, math.nan, 0.4]})
+    # 03102 has enough respondents but no EMD (no model persons): no comparison, so reported only
+    assert S.usable_distance_rows(bands) == {"usable": ["03101", "all"], "reported_only": ["03102", "03157"],
+                                             "total_row_code": "03ZGB"}
     # on the committed table: 03101 (68 respondents) and the total 03ZGB (111) reach 30, the other Kreise do not
     srv = pd.read_csv(REAL_DATA / "braunschweig" / "srv" / S.SRV_DISTANCE_TABLE, comment="#", dtype={"code": str})
-    committed = S.band_comparison({}, S.srv_band_references(srv), [1.3], S.DEFAULT_MIN_SRV_RESPONDENTS)
+    model_km = {"03101": np.array([1.0, 6.0, 12.0]), "all": np.array([2.0, 30.0])}
+    committed = S.band_comparison(model_km, S.srv_band_references(srv), [1.3], S.DEFAULT_MIN_SRV_RESPONDENTS)
     assert S.usable_distance_rows(committed)["usable"] == ["03101", "all"]
     recorder = _ConfigureRecorder()
     S.configure(recorder)
@@ -339,7 +344,8 @@ def _world():
     trips = pd.DataFrame({"person_id": [1, 3], "preceding_purpose": ["home", "education"],
                           "following_purpose": ["education", "home"], "euclidean_distance": [5000.0, 20000.0]})
     incommuters = pd.DataFrame({
-        "person_id": [10_000_001, 10_000_002], "orig_ars5": [origin, origin], "destination_id": [local, local], "home_branch": ["in_ring", "gate"],
+        "person_id": [10_000_001, 10_000_002], "orig_ars5": [origin, origin],
+        "destination_id": [local, local], "home_branch": ["in_ring", "gate"],
         "commute_length_km": [30.0, 40.0], "commute_length_source": ["commune_curve", "od_cell"]})
     return dict(local=local, far=far, origin=origin, stages={
         S.ENRICHED_STAGE: persons, S.HOME_ZONES_STAGE: zones, S.HOME_LOCATIONS_STAGE: homes, S.TRIPS_STAGE: trips,
@@ -473,6 +479,7 @@ def test_stage_fail_branch_logs_an_error_names_the_population_rows_and_says_so_i
     assert "**FAIL**" in summary and "not used for results on a population that fails the population rows" in summary
     # the SrV rows with enough respondents are named; the others are reported only
     assert report["srv_distance_rows"]["usable"] == ["03101", "all"]
+    assert report["srv_distance_rows"]["total_row_code"] == "03ZGB"
     assert "03157" in report["srv_distance_rows"]["reported_only"]
     assert "Usable" in summary and "Reported only" in summary
     bands = _csv(out, "distance_bands")

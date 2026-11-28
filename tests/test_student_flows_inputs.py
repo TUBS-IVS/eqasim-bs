@@ -92,7 +92,7 @@ def test_load_od_table_raises_on_a_null_scope_or_site_kreis(tmp_path, column):
     table.loc[table.index[0], column] = None
     path = tmp_path / "t.csv"
     table.to_csv(path, index=False, encoding="utf-8")
-    with pytest.raises(ValueError, match=column):
+    with pytest.raises(ValueError, match=rf"null value\(s\) in the key column\(s\) \['{column}'\]"):
         SFI.load_od_table(path)
 
 

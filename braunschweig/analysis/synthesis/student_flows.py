@@ -369,10 +369,17 @@ def check_incommuter_ids(incommuters: pd.DataFrame, resident_ids: pd.Series) -> 
 
 
 def usable_distance_rows(bands: pd.DataFrame) -> dict:
-    """The SrV distance rows (groups) with enough respondents and those reported only (``n_reference_low``)."""
+    """The SrV distance rows (groups) that can carry a verdict, and those reported only.
+
+    A row is usable when it holds enough respondents (``n_reference_low`` False) AND has a finite earth
+    mover's distance (``emd``; NaN without model persons or without a complete reference row, so no
+    comparison exists). ``total_row_code`` is the code of the SrV table's total row, reported as group
+    ``all``.
+    """
     srv = bands[bands["reference"] == "srv"].drop_duplicates("group")
-    return {"usable": sorted(srv.loc[~srv["n_reference_low"], "group"]),
-            "reported_only": sorted(srv.loc[srv["n_reference_low"], "group"])}
+    usable = ~srv["n_reference_low"].astype(bool) & srv["emd"].notna()
+    return {"usable": sorted(srv.loc[usable, "group"]), "reported_only": sorted(srv.loc[~usable, "group"]),
+            "total_row_code": SRV_TOTAL_CODE}
 
 
 # =================================================================================== diagnostics
@@ -776,9 +783,10 @@ def summary_markdown(report: dict, acceptance: pd.DataFrame, failing: pd.DataFra
                   for r in failing.itertuples()]
     rows = report["srv_distance_rows"]
     lines += ["", "## SrV distance rows", "",
-              f"- Usable (at least {rows['min_respondents']} respondents, ASSUMPTION A14): "
-              f"{', '.join(rows['usable']) or 'none'} (`all` is the SrV total row {SRV_TOTAL_CODE})",
-              f"- Reported only (fewer respondents, a difference there says little): "
+              f"- Usable (at least {rows['min_respondents']} respondents, ASSUMPTION A14, and a comparison "
+              f"with a finite EMD): {', '.join(rows['usable']) or 'none'} "
+              f"(`all` is the SrV total row {rows['total_row_code']})",
+              f"- Reported only (fewer respondents or no comparison, a difference there says little): "
               f"{', '.join(rows['reported_only']) or 'none'}"]
     lines += ["", "## Fallback rates", ""]
     lines += [f"- {e['tag']}: primary {e['primary']}/{e['n']}, fallback {e['fallback']} ({e['fallback_share']:.1%})"

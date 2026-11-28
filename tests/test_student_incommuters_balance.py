@@ -242,6 +242,19 @@ def test_on_path_injects_the_balance_with_sites_buildings_and_the_length_t_impli
     assert (out / "student_commute_distance.csv").is_file()
 
 
+def test_a_commune_inside_the_ring_gives_the_in_ring_home_branch(monkeypatch, tmp_path):
+    """The mocked commune moved 28 km from the site (inside the 45 km ring of the fixture): its agents take the
+    population-weighted in-ring home point, not the gate (the gate case is the test above)."""
+    ctx = _flows_ctx(monkeypatch, tmp_path)
+    near = ctx._stages["_fake_gemeinden"].copy()
+    near.geometry = [Point(20_000.0, 20_000.0)]
+    ctx._stages["_fake_gemeinden"] = near
+    _patch_mocked_geodata(monkeypatch, ctx)
+    persons = si.execute(ctx)["persons"]
+    assert len(persons) > 0
+    assert (persons["home_branch"] == si.HOME_BRANCH_IN_RING).all()
+
+
 def test_validate_requires_the_flows_tables_only_when_the_stage_injects(tmp_path):
     archive = tmp_path / "germany" / "vg250.zip"
     os.makedirs(archive.parent)
@@ -254,6 +267,27 @@ def test_validate_requires_the_flows_tables_only_when_the_stage_injects(tmp_path
     assert list(si.validate(_Ctx(values))["files"]) == ["vg250_ew"]   # the injection is skipped: no table needed
     with pytest.raises(RuntimeError, match=si.KEY_OD_TABLE_PATH):
         si.validate(_Ctx({**values, "education_gravity_enabled": True}))
+
+
+def test_validate_names_a_missing_destination_points_file(tmp_path):
+    """Every other table of the ON path exists; only the destination-points file is absent: the run stops at DAG time
+    and the message names that file."""
+    archive = tmp_path / "germany" / "vg250.zip"
+    os.makedirs(archive.parent)
+    archive.write_bytes(b"placeholder")
+    for relative in (si.DEFAULT_OD_TABLE_PATH, si.DEFAULT_LEVEL_TABLE_PATH,
+                     os.path.join("braunschweig", "srv", flows_inputs.PARAMETERS_TABLE),
+                     os.path.join("braunschweig", "srv", flows_inputs.PARAMETERS_BY_AREA_TABLE),
+                     os.path.join("braunschweig", "mid", "mid2023_student_education_distance_mode.csv")):
+        os.makedirs(tmp_path / os.path.dirname(relative), exist_ok=True)
+        shutil.copyfile(os.path.join(DATA, relative), tmp_path / relative)
+    values = {"data_path": str(tmp_path), "germany.population_path": "germany/vg250.zip", "cordon_enabled": True,
+              "cordon_student_incommuters_enabled": None, "education_gravity_enabled": True,
+              flows_inputs.KEY_FLOWS_ENABLED: True, si.KEY_OD_TABLE_PATH: si.DEFAULT_OD_TABLE_PATH,
+              si.KEY_DESTINATION_POINTS_PATH: si.DEFAULT_DESTINATION_POINTS_PATH,
+              si.KEY_LEVEL_TABLE_PATH: si.DEFAULT_LEVEL_TABLE_PATH}
+    with pytest.raises(RuntimeError, match=si.KEY_DESTINATION_POINTS_PATH):
+        si.validate(_Ctx(values))
 
 
 def test_off_path_output_is_frame_equal_to_the_pre_change_output(monkeypatch):

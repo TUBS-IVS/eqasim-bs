@@ -31,7 +31,8 @@ def _trips():
         "following_purpose": ["education", "home", "outside", "home", "education", "home", "outside", "leisure",
                               "home"],
         "mode": ["car", "car", "pt", "pt", "pt", "pt", "car", "bike", "bike"],
-        "portal_leg": [False, False, True, True, False, False, True, False, False]})
+        "portal_leg": [False, False, True, True, False, False, True, False, False],
+        "euclidean_distance": [20000.0] * 9})
 
 
 def _students():
@@ -61,7 +62,10 @@ def _trips_with_leisure_gate_before_education():
         "following_purpose": ["outside", "home", "education", "home", "outside", "home", "outside", "home",
                               "education", "home", "education", "home"],
         "mode": ["car", "car", "bike", "bike", "pt", "pt", "pt", "pt", "car", "car", "car", "car"],
-        "portal_leg": [True, True, False, False, True, True, True, True, False, False, False, False]})
+        "portal_leg": [True, True, False, False, True, True, True, True, False, False, False, False],
+        "euclidean_distance": [50000.0, 50000.0, 3000.0, 3000.0, 50000.0, 50000.0, 50000.0, 50000.0,
+                               20000.0, 20000.0, 20000.0, 20000.0]})
+_STRAIGHT_KM = pd.Series({7: 50.0, 8: 50.0, 9: 20.0, 10: 20.0})
 
 
 def test_a_gate_stay_before_the_education_leg_does_not_hide_it_and_is_counted():
@@ -70,11 +74,27 @@ def test_a_gate_stay_before_the_education_leg_does_not_hide_it_and_is_counted():
     # person 7 keeps the bike education leg, not the leisure gate stay; person 8 only has gate legs
     assert legs["mode"].to_dict() == {7: "bike", 8: "pt", 9: "car"}
     assert legs["gated"].to_dict() == {7: False, 8: True, 9: False}
-    diagnostics = S.leg_diagnostics(trips, [7, 8, 9, 10]).set_index("person_id")
+    diagnostics = S.leg_diagnostics(trips, [7, 8, 9, 10], _STRAIGHT_KM).set_index("person_id")
     assert diagnostics["n_gate_stays"].to_dict() == {7: 1, 8: 2, 9: 0, 10: 0}
     assert diagnostics["n_education_legs"].to_dict() == {7: 1, 8: 0, 9: 2, 10: 0}
     assert diagnostics["gate_before_education"].to_dict() == {7: True, 8: False, 9: False, 10: False}
     assert diagnostics["gate_without_education"].to_dict() == {7: False, 8: True, 9: False, 10: False}
+
+
+def test_a_gate_stay_followed_by_a_shorter_education_leg_is_counted_as_uncertain():
+    """Person 7: a gate stay, then an education leg of 3 km against a 50 km straight line to the destination (the
+    stay may have swallowed the real commute). Person 11 has the same plan but a longer education leg (60 km on a
+    50 km straight line); person 9 has no gate stay at all; person 10 has no trips."""
+    extra = pd.DataFrame({
+        "person_id": [11, 11], "trip_index": [0, 1], "preceding_purpose": ["home", "outside"],
+        "following_purpose": ["outside", "education"], "mode": ["car", "car"], "portal_leg": [True, False],
+        "euclidean_distance": [50000.0, 60000.0]})
+    trips = pd.concat([_trips_with_leisure_gate_before_education(), extra], ignore_index=True)
+    km = pd.Series({7: 50.0, 8: 50.0, 9: 20.0, 10: 20.0, 11: 50.0})
+    diagnostics = S.leg_diagnostics(trips, [7, 8, 9, 10, 11], km).set_index("person_id")
+    assert diagnostics["gate_then_shorter_education_leg"].to_dict() == {7: True, 8: False, 9: False, 10: False,
+                                                                       11: False}
+    assert diagnostics["gate_before_education"].to_dict()[11]      # a longer leg is still a gate stay before it
 
 
 def test_a_trip_table_without_the_gate_column_is_refused():
@@ -127,6 +147,16 @@ def test_gated_leg_table_counts_beyond_the_routable_distance_only_by_home_and_de
     assert rows["n_not_gated_without_leg"].sum() == 0
     assert rows["dest_in_region"].to_dict() == {("03101", "Hildesheim"): False, ("03102", "Hannover"): False,
                                                 ("03151", "Goettingen"): False}
+
+
+def test_a_student_beyond_the_distance_without_an_education_leg_is_counted_as_not_gated_without_leg():
+    students = _students()
+    students["straight_km"] = [20.0, 50.0, 46.0, 80.0, 1.0, 60.0]      # person 6 (no leg at all) is now beyond
+    table = S.gated_leg_table(students, S.outbound_education_legs(_trips(), range(1, 7)), LIMIT_M)
+    rows = table.set_index(["home_kreis", "destination_id"])
+    assert rows.loc[("03101", "Hannover"), ["n_beyond", "n_gated", "n_not_gated", "n_not_gated_without_leg",
+                                            "n_not_gated_with_leg"]].tolist() == [1, 0, 1, 1, 0]
+    assert rows["n_not_gated_without_leg"].sum() == 1 and rows["n_not_gated_with_leg"].sum() == 1
 
 
 def test_a_leg_between_two_kreise_of_the_region_beyond_the_distance_is_flagged():
@@ -214,7 +244,8 @@ def _world():
         "person_id": [1, 1, 2, 2], "trip_index": [0, 1, 0, 1],
         "preceding_purpose": ["home", "education", "home", "outside"],
         "following_purpose": ["education", "home", "outside", "home"],
-        "mode": ["car", "car", "pt", "pt"], "portal_leg": [False, False, True, True]})
+        "mode": ["car", "car", "pt", "pt"], "portal_leg": [False, False, True, True],
+        "euclidean_distance": [5000.0, 5000.0, 60000.0, 60000.0]})
     return {"synthesis.population.enriched": persons, "synthesis.population.spatial.home.zones": zones,
             "synthesis.population.spatial.home.locations": homes,
             "braunschweig.synthesis.locations.education_gravity": gravity,
@@ -253,8 +284,9 @@ def test_stage_writes_both_reports_on_a_toy_population(tmp_path):
     assert report["counts"]["n_gate_before_education"] == 0 and report["counts"]["n_beyond_not_gated_with_leg"] == 0
     assert report["counts"]["n_gate_without_education"] == 1   # person 2: the leg is the gate stay itself
     assert "pooled_reference_bands" in report and report["pipeline_commit"] is not None
+    assert report["counts"]["n_gate_then_shorter_education_leg"] == 0
     assert set(report["columns_relied_on"]) == {"person_id", "trip_index", "mode", "preceding_purpose",
-                                                "following_purpose", "portal_leg"}
+                                                "following_purpose", "portal_leg", "euclidean_distance"}
     assert result["report"]["status"] == S.STATUS
 
 

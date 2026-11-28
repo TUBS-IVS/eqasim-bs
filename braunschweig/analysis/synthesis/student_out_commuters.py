@@ -18,8 +18,8 @@ in parallel); this stage only reports what those mechanisms did to the students.
   ``student_flows`` but does not arrive there in the simulation.
 
 Code state: the tables measure the SYNTHESIS of the code state the stage runs on (the commit is written to the
-report as ``pipeline_commit``). PR 695 is merged; on ``main`` it changes ``portal_trips/stage.py`` and
-``outside_tour_modes/stage.py`` only in their helper lists (the lead's review of this task), so no column used here
+report as ``pipeline_commit``). PR 695 (TUBS-IVS/eqasim-bs) is merged, merge commit 14181730; on ``main`` it changes
+``portal_trips/stage.py`` and ``outside_tour_modes/stage.py`` only in their helper lists, so no column used here
 changes. The mode choice that issue #678 adds happens in the simulation (Java side) and is NOT measured by this
 stage; ``rule_state`` in the report says so.
 
@@ -36,8 +36,12 @@ education leg of a student is chosen by :func:`outbound_education_legs`: the fir
 and is no gate leg; if there is none, the first outbound gate leg (an education leg that was itself rewritten). A
 gate stay for another purpose before the education leg therefore does not hide it. Counted and reported, because
 they make the choice uncertain (:func:`leg_diagnostics`): students with a gate stay before their education leg,
-with more than one gate stay, with further education legs after the first, and students with a gate stay and no
-education leg left (the leg may have been swallowed by the legs a stay removes). The stage relies only on the trip
+with more than one gate stay, with further education legs after the first, students with a gate stay and no
+education leg left (the leg may have been swallowed by the legs a stay removes), and students with a gate stay
+followed by a LATER education leg whose straight line is shorter than the home to destination straight line (the
+gate stay may have swallowed the real commute, and the later leg is a different, shorter one). These legs are a
+known blind spot of the stage: it cannot tell a swallowed commute from a genuine short education leg, so it counts
+them and does not correct the tables. The stage relies only on the trip
 columns :data:`COLUMNS_RELIED_ON`. With ``braunschweig.portal.enabled`` off there is no gate and the stage refuses at
 DAG time.
 
@@ -99,7 +103,8 @@ EDUCATION_PURPOSE = "education"
 ABSENT_PATH_PREFIX = "absent_"                     # education_gravity.ABSENT_PATH_PREFIX
 SCOPE_SURROUNDING = "surrounding"
 DETOUR_FACTOR = _constants.ROUTED_DETOUR_FACTOR
-COLUMNS_RELIED_ON = ("person_id", "trip_index", "mode", "preceding_purpose", "following_purpose", GATE_LEG_COLUMN)
+COLUMNS_RELIED_ON = ("person_id", "trip_index", "mode", "preceding_purpose", "following_purpose", GATE_LEG_COLUMN,
+                     "euclidean_distance")
 
 REPORT_FILE = "student_out_commuters_report.json"
 OUTPUT_FILES = {"modes": "student_out_commuter_modes.csv", "gated": "student_gated_education_legs.csv",
@@ -148,12 +153,17 @@ def outbound_education_legs(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
     return chosen[["person_id", "mode", "gated"]].reset_index(drop=True)
 
 
-def leg_diagnostics(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
+def leg_diagnostics(trips: pd.DataFrame, person_ids, straight_km: pd.Series) -> pd.DataFrame:
     """Per person of ``person_ids`` (one row each): what makes the choice of the education leg uncertain.
+
+    ``straight_km``: ``person_id -> home to destination straight line in km`` (the students' frame).
 
     Columns ``person_id, n_gate_stays`` (outbound gate legs), ``n_education_legs`` (legs following education that
     are no gate leg), ``gate_before_education`` (a gate stay precedes the first education leg),
-    ``gate_without_education`` (a gate stay and no education leg left). A person without trips has zeros.
+    ``gate_without_education`` (a gate stay and no education leg left), ``gate_then_shorter_education_leg`` (an
+    education leg with a larger ``trip_index`` than the first gate stay whose ``euclidean_distance`` is below
+    ``straight_km``: the gate stay may have swallowed the real commute; a known blind spot, module docstring).
+    A person without trips has zeros and False.
     """
     legs = _leg_flags(trips, person_ids)
     grouped = legs.groupby("person_id")
@@ -167,6 +177,11 @@ def leg_diagnostics(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
     education_at = first_education.reindex(result.index)
     result["gate_before_education"] = (gate_at < education_at).to_numpy()
     result["gate_without_education"] = ((result["n_gate_stays"] > 0) & (result["n_education_legs"] == 0)).to_numpy()
+    # an education leg after the first gate stay that is shorter than the straight line to the destination
+    km = legs["person_id"].map(straight_km)
+    later = legs["is_education"] & (legs["trip_index"] > legs["person_id"].map(first_gate))         & (legs["euclidean_distance"] / 1000.0 < km)
+    suspect = set(legs.loc[later, "person_id"])
+    result["gate_then_shorter_education_leg"] = result.index.isin(suspect)
     return result.reset_index()
 
 
@@ -340,6 +355,8 @@ def summary_markdown(report: dict, modes: pd.DataFrame, gated: pd.DataFrame) -> 
              f"- a gate stay before the education leg: {counts['n_gate_before_education']}",
              f"- more than one gate stay: {counts['n_multiple_gate_stays']}",
              f"- further education legs after the first: {counts['n_further_education_legs']}",
+             f"- a gate stay and a later education leg shorter than the straight line (a known blind spot, the gate "
+             f"stay may have swallowed the real commute): {counts['n_gate_then_shorter_education_leg']}",
              f"- a gate stay and no education leg left: {counts['n_gate_without_education']} "
              f"({counts['n_gate_without_education_within_distance']} within the routable distance, where the "
              f"leg may have been swallowed by a stay)",
@@ -366,7 +383,7 @@ def execute(context):
         context.stage(HOME_LOCATIONS_STAGE), context.stage(GRAVITY_STAGE), context.stage(FACILITIES_STAGE))
     trips = context.stage(TRIPS_STAGE)
     legs = outbound_education_legs(trips, frame["person_id"])
-    diagnostics = leg_diagnostics(trips, frame["person_id"])
+    diagnostics = leg_diagnostics(trips, frame["person_id"], frame.set_index("person_id")["straight_km"])
     modes = out_commuter_mode_table(frame, legs, DETOUR_FACTOR, reference, pooled)
     gated = gated_leg_table(frame, legs, max_m)
 
@@ -391,6 +408,7 @@ def execute(context):
         "n_multiple_gate_stays": int((by_person["n_gate_stays"] > 1).sum()),
         "n_further_education_legs": int((by_person["n_education_legs"] > 1).sum()),
         "n_gate_without_education": int(by_person["gate_without_education"].sum()),
+        "n_gate_then_shorter_education_leg": int(by_person["gate_then_shorter_education_leg"].sum()),
         # within the routable distance the education leg is no gate stay: a gate stay and no education leg there
         # points at a leg swallowed by the legs another stay removes
         "n_gate_without_education_within_distance": int(

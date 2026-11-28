@@ -212,9 +212,10 @@ def load_od_table(path) -> pd.DataFrame:
         raise ValueError(f"{_LOG_TAG} {path.name}: home_in_region must be True/False, got dtype "
                          f"{table['home_in_region'].dtype}")
     keys = table[["home_ars5", "destination_id", "cell_kind", "scope", "site_kreis_ars5"]]
-    if keys.isna().any().any():
-        raise ValueError(f"{_LOG_TAG} {path.name}: a row without home_ars5, destination_id, cell_kind, scope or "
-                         f"site_kreis_ars5")
+    null_columns = [column for column in keys.columns if keys[column].isna().any()]
+    if null_columns:
+        raise ValueError(f"{_LOG_TAG} {path.name}: null value(s) in the key column(s) {null_columns} "
+                         f"(home_ars5, destination_id, cell_kind, scope and site_kreis_ars5 must be filled)")
     students = table["students_persons"]
     if not (np.isfinite(students) & (students >= 0)).all():
         raise ValueError(f"{_LOG_TAG} {path.name}: non-finite or negative students_persons")
@@ -377,9 +378,9 @@ def _single_away_share(table: pd.DataFrame, path: Path, **keys: str) -> float:
 def away_share_by_area(srv_dir) -> dict[str, float]:
     """``{area: share of the students away from home all day}``.
 
-    The surveyed areas (the keys of :func:`default_home_area_kreise`) come from the row ``(day, away_all_day, students_all, yes)`` of
-    ``srv2023_student_parameters_by_area.csv``; ``AREA_WOLFSBURG`` takes the same row of
-    ``srv2023_student_parameters.csv`` (the region; ADR-0205).
+    The surveyed areas (the keys of :func:`default_home_area_kreise`) come from the row
+    ``(day, away_all_day, students_all, yes)`` of ``srv2023_student_parameters_by_area.csv``;
+    ``AREA_WOLFSBURG`` takes the same row of ``srv2023_student_parameters.csv`` (the region; ADR-0205).
     """
     by_area_path = Path(srv_dir) / PARAMETERS_BY_AREA_TABLE
     by_area = pd.read_csv(by_area_path, comment="#", encoding="utf-8")
