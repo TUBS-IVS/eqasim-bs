@@ -172,7 +172,9 @@ def commute_length_km(orig_ars5, destination_point, gemeinden, weights, rng, *, 
 
     Args:
         orig_ars5: the 5-digit origin Kreis.
-        destination_point: ``(x, y)`` in EPSG:25832 (the agent's education building).
+        destination_point: ``(x, y)`` in EPSG:25832: the SITE POINT T was built with (``x``, ``y`` of
+            ``schools/student_destination_points.csv``), not the agent's education building, so the commune weights
+            and distances are those of T's construction.
         gemeinden: ``[ars5, ewz, geometry]`` (EPSG:25832) or None.
         weights: ``{short, middle, long, max_commute_km}``.
         rng: a seeded ``numpy.random.Generator`` (one draw per call on the primary branch, none on the fallback).

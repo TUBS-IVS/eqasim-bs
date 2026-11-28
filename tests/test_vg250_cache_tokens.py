@@ -110,6 +110,7 @@ def _student_incommuters_inputs(data_path):
     class _Defaults:
         def config(self, key):
             return {"data_path": data_path, student_incommuters.KEY_OD_TABLE_PATH: student_incommuters.DEFAULT_OD_TABLE_PATH,
+                    student_incommuters.KEY_DESTINATION_POINTS_PATH: student_incommuters.DEFAULT_DESTINATION_POINTS_PATH,
                     student_incommuters.KEY_LEVEL_TABLE_PATH: student_incommuters.DEFAULT_LEVEL_TABLE_PATH}[key]
 
     return [os.path.relpath(path, data_path)
@@ -135,7 +136,9 @@ READERS = (
            off=({"cordon_enabled": False},
                 {"cordon_enabled": True, "cordon_incommuter_real_origin": False}),
            hashes_source=True),
-    Reader("braunschweig.synthesis.student_incommuters", _CORDON_ON, off=({"cordon_enabled": False},),
+    # With the parent feature on, so the injection is active and validate digests the flows tables too.
+    Reader("braunschweig.synthesis.student_incommuters", {**_CORDON_ON, "education_gravity_enabled": True},
+           off=({"cordon_enabled": False},),
            hashes_source=True, input_files=_student_incommuters_inputs),
     Reader("braunschweig.analysis.synthesis.commute_distance_by_kreis", hashes_source=True, repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.work_participation_by_kreis", hashes_source=True,

@@ -150,12 +150,15 @@ def test_repeated_keys_match_their_owners():
 
     assert (si.KEY_OD_TABLE_PATH, si.DEFAULT_OD_TABLE_PATH) == (
         university_facilities.KEY_OD_TABLE_PATH, university_facilities.DEFAULT_OD_TABLE_PATH)
+    assert (si.KEY_DESTINATION_POINTS_PATH, si.DEFAULT_DESTINATION_POINTS_PATH) == (
+        university_facilities.KEY_DESTINATION_POINTS_PATH, university_facilities.DEFAULT_DESTINATION_POINTS_PATH)
     assert (si.KEY_DAY_ABSENCE_ENABLED, si.DEFAULT_DAY_ABSENCE_ENABLED) == (
         absence_stage.KEY_ENABLED, absence_stage.DEFAULT_ENABLED)
     assert (si.KEY_DAY_ABSENCE_STUDENT_CELLS, si.DEFAULT_DAY_ABSENCE_STUDENT_CELLS) == (
         absence_stage.KEY_STUDENT_CELLS, absence_stage.DEFAULT_STUDENT_CELLS)
 
 
+_SITE_POINT = (10_000.0, 500.0)
 _TOY_T_HEADER = (
     "# Toy table T for the in-commuter stage test.\n"
     "# Weight rule: weight_rule=commune_curve, max_commute_km=100\n"
@@ -183,6 +186,9 @@ def _flows_ctx(monkeypatch, tmp_path):
     with open(tmp_path / si.DEFAULT_OD_TABLE_PATH, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(_TOY_T_HEADER)
         t.to_csv(handle, index=False)
+    # The site point of T lies 9.5 km east of the buildings, so a length measured to a building differs from it.
+    pd.DataFrame({"destination_id": [TU], "x": [_SITE_POINT[0]], "y": [_SITE_POINT[1]]}).to_csv(
+        tmp_path / si.DEFAULT_DESTINATION_POINTS_PATH, index=False, encoding="utf-8")
     ctx = _mocked_full_ctx()
     _patch_mocked_geodata(monkeypatch, ctx)
     del ctx._stages["synthesis.population.spatial.primary.locations"]
@@ -190,7 +196,9 @@ def _flows_ctx(monkeypatch, tmp_path):
         {"location_id": ["uni_tu_0", "uni_tu_1"], "capacity": [900.0, 300.0], "destination_id": [TU, TU]},
         geometry=[Point(500, 500), Point(700, 500)], crs="EPSG:25832")
     ctx._cfg.update({"data_path": str(tmp_path), flows_inputs.KEY_FLOWS_ENABLED: True,
-                     si.KEY_OD_TABLE_PATH: si.DEFAULT_OD_TABLE_PATH, si.KEY_LEVEL_TABLE_PATH: si.DEFAULT_LEVEL_TABLE_PATH,
+                     si.KEY_OD_TABLE_PATH: si.DEFAULT_OD_TABLE_PATH,
+                     si.KEY_DESTINATION_POINTS_PATH: si.DEFAULT_DESTINATION_POINTS_PATH,
+                     si.KEY_LEVEL_TABLE_PATH: si.DEFAULT_LEVEL_TABLE_PATH,
                      flows_inputs.KEY_HOME_AREA_KREISE: flows_inputs.default_home_area_kreise(),
                      si.KEY_DAY_ABSENCE_ENABLED: True, si.KEY_DAY_ABSENCE_STUDENT_CELLS: True,
                      si.KEY_MODE_BAND_MIN_PERSONS: si.DEFAULT_MODE_BAND_MIN_PERSONS,
@@ -218,7 +226,10 @@ def test_on_path_injects_the_balance_with_sites_buildings_and_the_length_t_impli
     home = locations[locations["activity_index"] == 0].set_index("person_id").geometry
     home_km = np.hypot(home.x.to_numpy() - campus.x.to_numpy(), home.y.to_numpy() - campus.y.to_numpy()) / 1000.0
     assert (persons["commute_length_source"] == sic.COMMUTE_COMMUNE_CURVE).all()
-    assert (persons["commute_length_km"].to_numpy() > 50.0 * ROUTED_DETOUR_FACTOR).all()
+    assert (persons["home_branch"] == si.HOME_BRANCH_GATE).all()
+    # Measured from the only commune (50 km, 50 km) to T's site point, not to the building: 40 km east, 49.5 km north.
+    site_km = np.hypot(50_000.0 - _SITE_POINT[0], 50_000.0 - _SITE_POINT[1]) / 1000.0
+    np.testing.assert_allclose(persons["commute_length_km"].to_numpy(), site_km * ROUTED_DETOUR_FACTOR)
     assert (persons["commute_length_km"].to_numpy() > 10 * home_km * ROUTED_DETOUR_FACTOR).all()
     assert set(persons["car_availability"]) <= {"all", "none"}
     assert "gate fallback" in caplog.text and "03402" in caplog.text
@@ -229,6 +240,20 @@ def test_on_path_injects_the_balance_with_sites_buildings_and_the_length_t_impli
     od = pd.read_csv(out / "student_commuter_od.csv", dtype={"from_ars5": str, "to_commune": str})
     assert od.to_dict("records") == [{"from_ars5": "03402", "to_commune": "03101", "value": len(persons)}]
     assert (out / "student_commute_distance.csv").is_file()
+
+
+def test_validate_requires_the_flows_tables_only_when_the_stage_injects(tmp_path):
+    archive = tmp_path / "germany" / "vg250.zip"
+    os.makedirs(archive.parent)
+    archive.write_bytes(b"placeholder")
+    values = {"data_path": str(tmp_path), "germany.population_path": "germany/vg250.zip", "cordon_enabled": True,
+              "cordon_student_incommuters_enabled": None, "education_gravity_enabled": False,
+              flows_inputs.KEY_FLOWS_ENABLED: True, si.KEY_OD_TABLE_PATH: si.DEFAULT_OD_TABLE_PATH,
+              si.KEY_DESTINATION_POINTS_PATH: si.DEFAULT_DESTINATION_POINTS_PATH,
+              si.KEY_LEVEL_TABLE_PATH: si.DEFAULT_LEVEL_TABLE_PATH}
+    assert list(si.validate(_Ctx(values))["files"]) == ["vg250_ew"]   # the injection is skipped: no table needed
+    with pytest.raises(RuntimeError, match=si.KEY_OD_TABLE_PATH):
+        si.validate(_Ctx({**values, "education_gravity_enabled": True}))
 
 
 def test_off_path_output_is_frame_equal_to_the_pre_change_output(monkeypatch):

@@ -6,9 +6,11 @@ that keeps walk or bike, and a table whose header changed under the loader.
 """
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 
+import pandas as pd
 import pytest
 
 from braunschweig.data.education import student_mode_reference as smr
@@ -28,8 +30,11 @@ def test_the_bands_cover_zero_to_infinity_left_inclusive():
             smr.student_mode_band(bad)
 
 
-def test_the_committed_table_loads_restricted_to_car_and_pt_with_the_thin_last_band_pooled():
-    reference = smr.load_student_education_mode_by_distance(DATA)
+def test_the_committed_table_loads_restricted_to_car_and_pt_with_the_thin_last_band_pooled(caplog):
+    with caplog.at_level(logging.INFO, logger=smr.__name__):
+        reference = smr.load_student_education_mode_by_distance(DATA)
+    # The log shows what pooling did: 100_plus's own car share 0.7150, pooled 0.4095 (hand-computed below).
+    assert "100_plus" in caplog.text and "0.7150" in caplog.text and "0.4095" in caplog.text
     assert list(reference) == list(smr.BAND_LABELS)
     for band, distribution in reference.items():
         assert set(distribution) == {"car", "pt"}, band
@@ -56,3 +61,25 @@ def test_a_header_with_other_band_edges_is_refused(tmp_path):
     target.write_text(text, encoding="utf-8")
     with pytest.raises(ValueError, match="band edges"):
         smr.load_student_education_mode_by_distance(tmp_path)
+
+
+def _counts(*persons):
+    """A synthetic table: per band, ``persons`` car legs and as many pt legs (car+pt = 2 x persons)."""
+    rows = []
+    for label, n in zip(smr.BAND_LABELS, persons):
+        rows += [{"distance_band": label, "mode": "car", "n_unweighted": n},
+                 {"distance_band": label, "mode": "pt", "n_unweighted": n},
+                 {"distance_band": label, "mode": "walk", "n_unweighted": 100}]
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize("persons, minimum, expected", [
+    # A thin FIRST band merges upward (walk legs do not count).
+    ((2, 20, 20, 20, 20, 20), 30, [("0_5", "5_10"), ("10_25",), ("25_50",), ("50_100",), ("100_plus",)]),
+    # A cascade: 50_100 merges down into 25_50, then the still thin 100_plus into that group.
+    ((20, 20, 20, 20, 5, 2), 30, [("0_5",), ("5_10",), ("10_25",), ("25_50", "50_100", "100_plus")]),
+    # Without a minimum a thin first band stays on its own.
+    ((2, 20, 20, 20, 20, 20), 0, [(label,) for label in smr.BAND_LABELS]),
+])
+def test_thin_bands_pool_with_their_neighbour(persons, minimum, expected):
+    assert smr.pool_thin_bands(_counts(*persons), minimum) == expected

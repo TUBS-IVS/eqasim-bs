@@ -103,6 +103,10 @@ DONOR_DISTANCE_COLUMN = "education_distance_km"
 #: of Phase 4 and pinned by ``tests/test_student_incommuters_balance.py``.
 KEY_OD_TABLE_PATH = "braunschweig.students.od_table_path"
 DEFAULT_OD_TABLE_PATH = "braunschweig/schools/student_od_table.csv"
+#: The point of every destination of T (the site point T's distances and weights were computed to), relative to
+#: ``data_path``; key and default of ``university_facilities`` (KEY_DESTINATION_POINTS_PATH), repeated and pinned.
+KEY_DESTINATION_POINTS_PATH = "braunschweig.students.destination_points_path"
+DEFAULT_DESTINATION_POINTS_PATH = "braunschweig/schools/student_destination_points.csv"
 #: The level table (students per home Kreis and age range, Phase 3 A2) relative to ``data_path``: the weights of the
 #: effective day factor (design 5a).
 KEY_LEVEL_TABLE_PATH = "braunschweig.students.level_table_path"
@@ -125,6 +129,9 @@ DEFAULT_MODE_BAND_MIN_PERSONS = 30   # ASSUMPTION: not from a table; the MiD tab
 KEY_COMMUTE_FALLBACK_WARN_SHARE = "braunschweig.student_incommuters.commute_length_fallback_warn_share"
 DEFAULT_COMMUTE_FALLBACK_WARN_SHARE = 0.05   # ASSUMPTION: T names only Kreise with a commune in reach, so ~0 expected
 _FLOWS_TAG = "[student_incommuters:flows]"
+#: ``home_branch`` of an ON agent: a home point in a commune of the ring around the region, or the nearest gate.
+HOME_BRANCH_IN_RING = "in_ring"
+HOME_BRANCH_GATE = "gate"
 
 
 def check_flow_settings(day_absence_enabled, day_absence_student_cells_enabled) -> None:
@@ -328,7 +335,7 @@ def validate(context):
     injection switched off caches an empty frame, so the wider condition costs nothing. With the
     cordon off the archive is not touched (it may be absent) and the digest is ``None``.
 
-    With the student flows on (and the cordon on) ``files`` also holds the CRLF-neutral digests of the committed
+    With the student flows on and the injection active (:func:`_injects`) ``files`` also holds the CRLF-neutral digests of the committed
     tables the ON path reads (T, the level table, the two SrV tables of the day factor, the students' mode table), so
     a rebuilt table devalidates the stage; a missing table stops the run at DAG time.
     """
@@ -340,7 +347,7 @@ def validate(context):
     token["files"] = {"vg250_ew": (synpp_tokens.input_file_sha256(
         os.path.join(context.config("data_path"), context.config("germany.population_path")),
         "VG250 archive") if context.config("cordon_enabled") else None)}
-    if context.config("cordon_enabled") and context.config(KEY_FLOWS_ENABLED):
+    if _injects(context) and context.config(KEY_FLOWS_ENABLED):
         for name, path in _flows_table_paths(context).items():
             if not os.path.isfile(path):
                 raise RuntimeError(f"{_FLOWS_TAG} {name} not found: {path}")
@@ -356,6 +363,7 @@ def _flows_table_paths(context) -> dict:
     data_path = str(context.config("data_path"))
     srv_dir = os.path.join(data_path, *SRV_SUBDIR)
     return {KEY_OD_TABLE_PATH: os.path.join(data_path, context.config(KEY_OD_TABLE_PATH)),
+            KEY_DESTINATION_POINTS_PATH: os.path.join(data_path, context.config(KEY_DESTINATION_POINTS_PATH)),
             KEY_LEVEL_TABLE_PATH: os.path.join(data_path, context.config(KEY_LEVEL_TABLE_PATH)),
             flows_inputs.PARAMETERS_TABLE: os.path.join(srv_dir, flows_inputs.PARAMETERS_TABLE),
             flows_inputs.PARAMETERS_BY_AREA_TABLE: os.path.join(srv_dir, flows_inputs.PARAMETERS_BY_AREA_TABLE),
@@ -363,13 +371,18 @@ def _flows_table_paths(context) -> dict:
 
 
 def configure(context):
+    from braunschweig.data.education.student_flows_inputs import KEY_FLOWS_ENABLED
+
     context.config("cordon_enabled")
     context.config("braunschweig.political_prefix")
     context.config("cordon_student_incommuters_enabled", None)
     context.config("education_gravity_enabled", False)
     context.config("student_incommuter_age_band", [18, 29])
-    context.config("education_university_slope", -0.1415)
-    context.config("education_university_max_radius_km", 150.0)
+    flows_enabled = context.config(KEY_FLOWS_ENABLED, True)
+    if not flows_enabled:
+        # The reverse decay of the OFF path; the ON path takes its origins from T.
+        context.config("education_university_slope", -0.1415)
+        context.config("education_university_max_radius_km", 150.0)
     context.config("sampling_rate")
     context.config("random_seed")
     context.config("cordon_network_source_buffer_m")
@@ -398,9 +411,6 @@ def configure(context):
     context.config(
         "germany.population_source",
         "vg250-ew_12-31.utm32s.gpkg.ebenen/vg250-ew_ebenen_1231/DE_VG250.gpkg")
-    from braunschweig.data.education.student_flows_inputs import KEY_FLOWS_ENABLED
-
-    flows_enabled = context.config(KEY_FLOWS_ENABLED, True)
     context.stage("braunschweig.data.schools.university_facilities")
     if flows_enabled:
         _configure_flows(context)
@@ -414,6 +424,13 @@ def configure(context):
     context.stage("braunschweig.synthesis.cordon_gates")
     context.stage("synthesis.population.enriched")
     context.stage("braunschweig.data.inkar.household_income")   # origin-Kreis income level (ADR-0191)
+
+
+def _injects(context) -> bool:
+    """Whether :func:`_inject` runs, decided quietly (no warning, no refusal; :func:`_active` does both at execute)."""
+    return (bool(context.config("cordon_enabled"))
+            and context.config("cordon_student_incommuters_enabled") is not False
+            and bool(context.config("education_gravity_enabled")))
 
 
 def _active(context):
@@ -443,6 +460,7 @@ def _configure_flows(context):
     from braunschweig.data.education import student_flows_inputs as flows_inputs
 
     context.config(KEY_OD_TABLE_PATH, DEFAULT_OD_TABLE_PATH)
+    context.config(KEY_DESTINATION_POINTS_PATH, DEFAULT_DESTINATION_POINTS_PATH)
     context.config(KEY_LEVEL_TABLE_PATH, DEFAULT_LEVEL_TABLE_PATH)
     context.config(flows_inputs.KEY_HOME_AREA_KREISE, flows_inputs.default_home_area_kreise())
     min_persons = context.config(KEY_MODE_BAND_MIN_PERSONS, DEFAULT_MODE_BAND_MIN_PERSONS)
@@ -722,7 +740,16 @@ def _agents_of_balance(balance, od, known_kreise) -> pd.DataFrame:
     })
 
 
-def _flows_commute_lengths(origins, dest_x, dest_y, gemeinden, weights, rng, detour_factor, warn_share):
+def _site_points(path) -> dict:
+    """``{destination_id: (x, y)}`` of the destination points table (EPSG:25832), the points T was built with."""
+    points = pd.read_csv(path, comment="#", encoding="utf-8")
+    missing = [column for column in ("destination_id", "x", "y") if column not in points.columns]
+    if missing or points["destination_id"].duplicated().any():
+        raise ValueError(f"{_FLOWS_TAG} {path}: needs unique destination_id and x, y; missing {missing}")
+    return dict(zip(points["destination_id"], zip(points["x"].astype(float), points["y"].astype(float))))
+
+
+def _flows_commute_lengths(origins, site_x, site_y, gemeinden, weights, rng, detour_factor, warn_share):
     """Routed commute length (km) and its branch per agent (``student_incommuter_counts.commute_length_km``).
 
     The ``od_cell`` fallback is counted and logged as a primary/fallback rate, overall and per origin Kreis; a share
@@ -737,7 +764,7 @@ def _flows_commute_lengths(origins, dest_x, dest_y, gemeinden, weights, rng, det
     sources = np.empty(n, dtype=object)
     for i, (kreis, cell_km) in enumerate(zip(origins["orig_ars5"], origins["od_distance_km"])):
         lengths[i], sources[i] = sic.commute_length_km(
-            kreis, (dest_x[i], dest_y[i]), by_kreis.get(str(kreis)), weights, rng,
+            kreis, (site_x[i], site_y[i]), by_kreis.get(str(kreis)), weights, rng,
             od_distance_km=cell_km, detour_factor=detour_factor)
     fallback = sources == sic.COMMUTE_OD_CELL
     n_fallback = int(fallback.sum())
@@ -777,8 +804,6 @@ def _inject(context):
         _time_bound_s, assemble_incommuter_core_frames)
 
     sampling_rate = float(context.config("sampling_rate"))
-    slope = float(context.config("education_university_slope"))
-    max_radius_km = float(context.config("education_university_max_radius_km"))
     age_lower, age_upper = context.config("student_incommuter_age_band")
     rng = np.random.default_rng(int(context.config("random_seed")) + _RNG_OFFSET)
     gate_speed_kmh = float(context.config("cordon_gate_speed_kmh"))
@@ -821,6 +846,7 @@ def _inject(context):
         od_path = os.path.join(data_path, context.config(KEY_OD_TABLE_PATH))
         od = flows_inputs.load_od_table(od_path)
         od_weights = flows_inputs.od_weights(od_path)
+        site_xy = _site_points(os.path.join(data_path, context.config(KEY_DESTINATION_POINTS_PATH)))
         f_eff, _absence_mode = effective_day_factor_of_run(context)
         balance = sic.balance_incommuter_counts(flows_inputs.outside_seed(od), f_eff, sampling_rate, rng)
         balance = balance[balance["n"] > 0].reset_index(drop=True)
@@ -865,6 +891,8 @@ def _inject(context):
         # the site's Kreis as ``dest_commune`` (the key the OD analysis reads, as on the OFF path).
         origins = _agents_of_balance(balance, od, set(kreis_xy["ars5"]))
     else:
+        slope = float(context.config("education_university_slope"))
+        max_radius_km = float(context.config("education_university_max_radius_km"))
         kreis_pop = so.student_age_pop_by_kreis(
             data_path, kreis_xy["ars5"].tolist(), age_lower, age_upper)
 
@@ -952,10 +980,17 @@ def _inject(context):
     # decisions 3 to 5), as for the worker in-commuters. The sampler logs its own primary/fallback rates; only the
     # agent distance fallback is logged here.
     if flows_enabled:
-        # 8 (ON). The commute length T implies (a commune of the origin Kreis drawn by population x T's weight curve),
-        # not the one of the home point: it sets the donor window AND the mode band. The home point stays.
+        # 8 (ON). The commute length T implies (a commune of the origin Kreis drawn by population x T's weight curve,
+        # measured to the site point T was built with), not the one of the home point: it sets the donor window AND
+        # the mode band. The home point and the education building stay.
+        missing_sites = sorted(set(origins["destination_id"]) - set(site_xy))
+        if missing_sites:
+            raise ValueError(f"{_FLOWS_TAG} sites of T without a point in {KEY_DESTINATION_POINTS_PATH}: "
+                             f"{missing_sites}")
+        site_x = np.array([site_xy[d][0] for d in origins["destination_id"]], dtype=float)
+        site_y = np.array([site_xy[d][1] for d in origins["destination_id"]], dtype=float)
         commute_km, commute_source = _flows_commute_lengths(
-            origins, dest_x, dest_y, gem, od_weights, rng, ROUTED_DETOUR_FACTOR,
+            origins, site_x, site_y, gem, od_weights, rng, ROUTED_DETOUR_FACTOR,
             float(context.config(KEY_COMMUTE_FALLBACK_WARN_SHARE)))
     else:
         commute_km, n_commute_fallback = incommuters._agent_commute_km(
@@ -1097,6 +1132,8 @@ def _inject(context):
         persons["education_building_id"] = building_ids
         persons["commute_length_km"] = commute_km
         persons["commute_length_source"] = commute_source
+        # The home rule's branch per agent: a population-weighted point in the ring, or the nearest cordon gate.
+        persons["home_branch"] = np.where(is_in_ring, HOME_BRANCH_IN_RING, HOME_BRANCH_GATE).astype(object)
 
     # 10b. Vehicles (2026-07-18 Task 5 review fix). Every in-commuter -- resident,
     # SvB, or student -- must own a "car_passenger" vehicle: it is a network-routed

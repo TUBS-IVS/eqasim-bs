@@ -145,4 +145,16 @@ def load_student_education_mode_by_distance(data_path, min_band_persons: int = D
     pooled = [group for group in groups if len(group) > 1]
     logger.info("%s %s: %d bands, pooled %s (fewer than %d car/pt persons each)", _LOG_TAG,
                 os.path.basename(path), len(BAND_LABELS), pooled or "none", min_band_persons)
+    for group in pooled:
+        pooled_car = _car_share(reference[group[0]])
+        for label in group:
+            own = table[table["distance_band"] == label].groupby("mode")["share_of_all"].sum().to_dict()
+            logger.info("%s band %s: car share of car and pt %.4f on its own, %.4f pooled with %s", _LOG_TAG, label,
+                        _car_share(own), pooled_car, [other for other in group if other != label])
     return restrict_to_modes(reference, allowed=ALLOWED_MODES)
+
+
+def _car_share(distribution: dict) -> float:
+    """Car over car plus pt of a ``{mode: mass}`` mapping (NaN without either mode)."""
+    car, pt = float(distribution.get("car", 0.0)), float(distribution.get("pt", 0.0))
+    return car / (car + pt) if car + pt > 0 else float("nan")
