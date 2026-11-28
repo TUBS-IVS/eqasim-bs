@@ -1,0 +1,8 @@
+    470  fixed_vehicle | fixed_border | car->car_passenger | stamp False->False | unfit None->None | 
+     70  fixed_vehicle | fixed_border | car->pt | stamp False->False | unfit None->None | 
+     43  fixed_vehicle | fixed_border | car->walk | stamp False->False | unfit None->None | 
+      7  fixed_vehicle | fixed_border | bicycle->car_passenger | stamp False->False | unfit None->None | 
+      4  fixed_vehicle | fixed_border | car->walk | stamp False->False | unfit None->walk | legs walk+car+walk -> walk
+      2  fixed_vehicle | fixed_border | bicycle->walk | stamp False->False | unfit None->None | 
+      1  fixed_vehicle | fixed_border | bicycle->pt | stamp False->False | unfit None->None | 
+      1  fixed_vehicle | fixed_border | bicycle->walk | stamp False->False | unfit None->walk | legs bicycle -> walk

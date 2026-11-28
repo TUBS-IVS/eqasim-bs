@@ -1,0 +1,32 @@
+{
+  "batch_check_worst_deviation": 3.637978807091713e-12,
+  "controls_on_only": [
+    "student_education_18_29_student_edu_KREIS_target",
+    "student_education_18_29_student_noedu_KREIS_target",
+    "student_education_18_29_other_edu_KREIS_target",
+    "student_education_18_29_other_noedu_KREIS_target",
+    "student_education_30plus_student_KREIS_target",
+    "student_education_30plus_other_edu_KREIS_target",
+    "student_education_30plus_other_noedu_KREIS_target",
+    "student_work_leg_student_work_KREIS_target",
+    "student_work_leg_student_nowork_KREIS_target",
+    "student_work_leg_not_student_KREIS_target",
+    "student_season_ticket_student_flatrate_KREIS_target",
+    "student_season_ticket_student_no_flatrate_KREIS_target",
+    "student_season_ticket_not_student_KREIS_target"
+  ],
+  "controls_prod_only": [
+    "education_18plus_edu_KREIS_target",
+    "education_18plus_noedu_KREIS_target"
+  ],
+  "hard_controls": 49,
+  "hard_controls_losing_fit": [],
+  "hard_controls_on_both_sides": 40,
+  "n_expanded_households_part_on": 22561,
+  "n_expanded_households_part_prod": 22561,
+  "rule": {
+    "hard_min_importance": 2000.0,
+    "min_wape_difference_pp": 2.0,
+    "min_wape_percent": 5.0
+  }
+}

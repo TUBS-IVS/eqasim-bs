@@ -1,0 +1,54 @@
+{
+  "loops": {
+    "by_origin": {
+      "education": 7,
+      "home": 593,
+      "secondary": 126,
+      "work": 20
+    },
+    "collapsed": 746,
+    "collapsed_loops_of_persons_with_escort_link": 39,
+    "collapsed_loops_of_persons_with_passive_joint_link": 5,
+    "collapsed_loops_of_persons_with_portal_stay": 15,
+    "draws_from_marginal_share": {
+      "bicycle": 0.010309278350515464,
+      "walk": 0.0
+    },
+    "enabled": true,
+    "flags": {
+      "by_draw": {
+        "bicycle": 9,
+        "walk": 302
+      },
+      "by_label": {
+        "bicycle": 16,
+        "walk": 420
+      },
+      "draws": {
+        "bicycle": 194,
+        "walk": 629
+      },
+      "draws_from_marginal": {
+        "bicycle": 2,
+        "walk": 0
+      },
+      "in_scope": {
+        "bicycle": 475,
+        "walk": 1432
+      },
+      "missing_detail_code": {
+        "bicycle": 0,
+        "walk": 0
+      }
+    },
+    "kept_after_outside": 0,
+    "kept_after_outside_rate": 0.0,
+    "kept_loop_is_linked_activity": 1,
+    "kept_loop_is_linked_activity_rate": 0.0013386880856760374,
+    "kept_total": 1,
+    "kept_total_rate": 0.0013386880856760374,
+    "loops": 747,
+    "persons_collapsed": 625,
+    "persons_without_secondary_activity": 232
+  }
+}

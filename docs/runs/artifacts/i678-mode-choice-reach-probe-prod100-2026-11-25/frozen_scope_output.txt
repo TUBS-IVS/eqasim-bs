@@ -1,0 +1,202 @@
+ERROR 1: PROJ: proj_create_from_database: Open of /home/<user>/miniforge3/envs/eqasim/share/proj failed
+/home/<user>/scratch_longwalk/frozen_scope_probe.py:124: DeprecationWarning: The 'unary_union' attribute is deprecated, use the 'union_all()' method instead.
+  extent = gpd.read_file(EXTENT).geometry.unary_union
+pass 1: uncut persons 1205226 in 207 s; kinds {'resident': 1130422, 'incommuter': 74804}
+pass 2: 200000 persons, 248 s
+pass 2: 400000 persons, 288 s
+pass 2: 600000 persons, 327 s
+pass 2: 800000 persons, 368 s
+pass 2: 1000000 persons, 408 s
+pass 2: prepared persons 1261590 in 450 s
+=== stats
+     56364  freight | free | tours
+     56364  freight | free | trips
+     56364  freight | persons
+     56364  freight | tours
+     56364  freight | trips
+        15  incommuter | free | pt_as_walk | <=20km
+        32  incommuter | free | pt_as_walk | >20km
+      4907  incommuter | free | tours
+      9814  incommuter | free | trips
+         1  incommuter | frozen | cut_only | inside_pt_as_walk | <=20km
+        34  incommuter | frozen | cut_only | inside_pt_as_walk | >20km
+       320  incommuter | frozen | cut_only | inside_trips
+        77  incommuter | frozen | cut_only | inside_trips_by_mode | car
+       208  incommuter | frozen | cut_only | inside_trips_by_mode | pt
+        35  incommuter | frozen | cut_only | inside_trips_by_mode | pt_as_walk
+     10991  incommuter | frozen | cut_only | tours
+       320  incommuter | frozen | cut_only | tours_with_inside_trips
+     76220  incommuter | frozen | cut_only | trips_touching_outside
+     58906  incommuter | frozen | destination_outside_extent | tours
+    135346  incommuter | frozen | destination_outside_extent | trips_touching_outside
+     74804  incommuter | persons
+     69897  incommuter | persons_frozen
+     74804  incommuter | tours
+    221700  incommuter | trips
+    372492  resident | free | bicycle | <=10km
+     27857  resident | free | bicycle | <=20km
+      9582  resident | free | bicycle | <=30km
+      1693  resident | free | bicycle | >30km
+      6345  resident | free | pt_as_walk | <=10km
+      2871  resident | free | pt_as_walk | <=20km
+     59763  resident | free | pt_as_walk | <=2km
+     14575  resident | free | pt_as_walk | <=5km
+       601  resident | free | pt_as_walk | >20km
+   1355669  resident | free | tours
+   3160049  resident | free | trips
+     55887  resident | free | walk | <=10km
+     23068  resident | free | walk | <=20km
+    543633  resident | free | walk | <=2km
+    190104  resident | free | walk | <=5km
+      9157  resident | free | walk | >20km
+      4453  resident | free_long_tour | bicycle | <=10km
+       114  resident | free_long_tour | bicycle | <=20km
+        38  resident | free_long_tour | bicycle | <=30km
+         9  resident | free_long_tour | bicycle | >30km
+       165  resident | free_long_tour | pt_as_walk | <=10km
+        45  resident | free_long_tour | pt_as_walk | <=20km
+       800  resident | free_long_tour | pt_as_walk | <=2km
+       400  resident | free_long_tour | pt_as_walk | <=5km
+         3  resident | free_long_tour | pt_as_walk | >20km
+      6554  resident | free_long_tour | tours
+     51521  resident | free_long_tour | trips
+       741  resident | free_long_tour | walk | <=10km
+       259  resident | free_long_tour | walk | <=20km
+      5355  resident | free_long_tour | walk | <=2km
+      1966  resident | free_long_tour | walk | <=5km
+       122  resident | free_long_tour | walk | >20km
+        43  resident | frozen | cut_only | inside_bicycle | <=10km
+        21  resident | frozen | cut_only | inside_bicycle | <=20km
+         8  resident | frozen | cut_only | inside_bicycle | <=30km
+         3  resident | frozen | cut_only | inside_bicycle | >30km
+        92  resident | frozen | cut_only | inside_pt_as_walk | <=10km
+       150  resident | frozen | cut_only | inside_pt_as_walk | <=20km
+        81  resident | frozen | cut_only | inside_pt_as_walk | <=2km
+        36  resident | frozen | cut_only | inside_pt_as_walk | <=5km
+        65  resident | frozen | cut_only | inside_pt_as_walk | >20km
+      4158  resident | frozen | cut_only | inside_trips
+        75  resident | frozen | cut_only | inside_trips_by_mode | bicycle
+      1563  resident | frozen | cut_only | inside_trips_by_mode | car
+       631  resident | frozen | cut_only | inside_trips_by_mode | car_passenger
+       872  resident | frozen | cut_only | inside_trips_by_mode | pt
+       424  resident | frozen | cut_only | inside_trips_by_mode | pt_as_walk
+       593  resident | frozen | cut_only | inside_trips_by_mode | walk
+       153  resident | frozen | cut_only | inside_walk | <=10km
+        99  resident | frozen | cut_only | inside_walk | <=20km
+       196  resident | frozen | cut_only | inside_walk | <=2km
+       112  resident | frozen | cut_only | inside_walk | <=5km
+        33  resident | frozen | cut_only | inside_walk | >20km
+      3155  resident | frozen | cut_only | tours
+      2218  resident | frozen | cut_only | tours_with_inside_trips
+     14841  resident | frozen | cut_only | trips_touching_outside
+       249  resident | frozen | destination_outside_extent | inside_bicycle | <=10km
+        64  resident | frozen | destination_outside_extent | inside_bicycle | <=20km
+         2  resident | frozen | destination_outside_extent | inside_bicycle | <=30km
+         8  resident | frozen | destination_outside_extent | inside_pt_as_walk | <=10km
+        11  resident | frozen | destination_outside_extent | inside_pt_as_walk | <=20km
+         6  resident | frozen | destination_outside_extent | inside_pt_as_walk | <=2km
+         2  resident | frozen | destination_outside_extent | inside_pt_as_walk | <=5km
+         1  resident | frozen | destination_outside_extent | inside_pt_as_walk | >20km
+     13500  resident | frozen | destination_outside_extent | inside_trips
+       315  resident | frozen | destination_outside_extent | inside_trips_by_mode | bicycle
+      8556  resident | frozen | destination_outside_extent | inside_trips_by_mode | car
+      2907  resident | frozen | destination_outside_extent | inside_trips_by_mode | car_passenger
+       548  resident | frozen | destination_outside_extent | inside_trips_by_mode | pt
+        28  resident | frozen | destination_outside_extent | inside_trips_by_mode | pt_as_walk
+      1146  resident | frozen | destination_outside_extent | inside_trips_by_mode | walk
+       353  resident | frozen | destination_outside_extent | inside_walk | <=10km
+       438  resident | frozen | destination_outside_extent | inside_walk | <=2km
+       355  resident | frozen | destination_outside_extent | inside_walk | <=5km
+     27036  resident | frozen | destination_outside_extent | tours
+      7616  resident | frozen | destination_outside_extent | tours_with_inside_trips
+     91359  resident | frozen | destination_outside_extent | trips_touching_outside
+       146  resident | frozen | portal | inside_bicycle | <=10km
+       134  resident | frozen | portal | inside_bicycle | <=20km
+        55  resident | frozen | portal | inside_pt_as_walk | <=10km
+        79  resident | frozen | portal | inside_pt_as_walk | <=20km
+        61  resident | frozen | portal | inside_pt_as_walk | <=2km
+        30  resident | frozen | portal | inside_pt_as_walk | <=5km
+        77  resident | frozen | portal | inside_pt_as_walk | >20km
+     24052  resident | frozen | portal | inside_trips
+       280  resident | frozen | portal | inside_trips_by_mode | bicycle
+     14958  resident | frozen | portal | inside_trips_by_mode | car
+      5512  resident | frozen | portal | inside_trips_by_mode | car_passenger
+       791  resident | frozen | portal | inside_trips_by_mode | pt
+       302  resident | frozen | portal | inside_trips_by_mode | pt_as_walk
+      2209  resident | frozen | portal | inside_trips_by_mode | walk
+       795  resident | frozen | portal | inside_walk | <=10km
+       755  resident | frozen | portal | inside_walk | <=2km
+       659  resident | frozen | portal | inside_walk | <=5km
+     53018  resident | frozen | portal | tours
+     16281  resident | frozen | portal | tours_with_inside_trips
+    338414  resident | frozen | portal | trips_touching_outside
+   1130422  resident | persons
+     81507  resident | persons_frozen
+    183533  resident | persons_without_trips
+   1445432  resident | tours
+   3697894  resident | trips
+=== cut_modes
+     48909  incommuter | destination_outside_extent | car
+     36567  resident | portal | car+walk
+     17437  resident | destination_outside_extent | car
+     10564  resident | portal | car_passenger+walk
+      8980  incommuter | destination_outside_extent | pt
+      8670  incommuter | cut_only | car+walk
+      5023  resident | destination_outside_extent | car_passenger
+      3624  resident | portal | pt
+      2498  resident | destination_outside_extent | pt
+      1469  incommuter | cut_only | car
+      1408  resident | portal | car
+      1375  resident | cut_only | car
+       924  resident | cut_only | pt
+       808  incommuter | destination_outside_extent | pt+walk
+       692  incommuter | cut_only | pt+walk
+       495  resident | destination_outside_extent | pt+walk
+       444  resident | destination_outside_extent | car+car_passenger
+       371  resident | cut_only | car_passenger
+       359  resident | cut_only | pt+walk
+       344  resident | portal | pt+walk
+       309  resident | destination_outside_extent | bicycle
+       302  resident | portal | car_passenger
+       276  resident | destination_outside_extent | car+pt
+       216  resident | destination_outside_extent | car_passenger+pt
+       209  incommuter | destination_outside_extent | walk
+       170  resident | portal | car+car_passenger+walk
+       152  incommuter | cut_only | pt
+       102  resident | destination_outside_extent | bicycle+car
+        88  resident | destination_outside_extent | car_passenger+walk
+        76  resident | destination_outside_extent | car+walk
+        45  resident | cut_only | car+walk
+        43  resident | destination_outside_extent | walk
+        20  resident | portal | car+pt+walk
+        17  resident | cut_only | car+pt
+        15  resident | cut_only | car_passenger+walk
+        14  resident | cut_only | walk
+        11  resident | cut_only | car+pt+walk
+        10  resident | cut_only | car+car_passenger
+        10  resident | portal | car_passenger+pt+walk
+         8  resident | cut_only | car_passenger+pt+walk
+         8  incommuter | cut_only | walk
+         7  resident | destination_outside_extent | car+pt+walk
+         7  resident | destination_outside_extent | bicycle+car_passenger
+         5  resident | destination_outside_extent | car_passenger+pt+walk
+         5  resident | destination_outside_extent | bicycle+walk
+         4  resident | cut_only | car+car_passenger+walk
+         4  resident | destination_outside_extent | bicycle+pt
+         4  resident | portal | walk
+         2  resident | cut_only | car_passenger+pt
+         2  resident | portal | car+pt
+         1  resident | portal | car_passenger+pt
+         1  resident | portal | bicycle+car+walk
+         1  resident | portal | bicycle+car
+         1  resident | destination_outside_extent | car+car_passenger+walk
+=== person_causes
+     58906  incommuter | destination_outside_extent
+     51926  resident | portal
+     26098  resident | destination_outside_extent
+     10991  incommuter | cut_only
+      3007  resident | cut_only
+       356  resident | destination_outside_extent+portal
+        73  resident | cut_only+destination_outside_extent
+        46  resident | cut_only+portal
+         1  resident | cut_only+destination_outside_extent+portal

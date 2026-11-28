@@ -44,6 +44,27 @@ def require_positive(key: str, value):
     return value
 
 
+def require_loop_free_estimate_prerequisites(*, leisure_subtype_split: bool,
+                                             loop_zero_displacement: bool, stage_tag: str) -> None:
+    """The configure-time guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS (issue #679).
+
+    Called by both stages that declare that key, only when it is on: the loop-free estimates
+    change the leisure subtype layers and decider (which exist only with
+    ``secondary_leisure_subtype_split``) and leave out the loops that
+    KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT takes out of the chain (with that switch off the loops
+    are placed as destination trips and must stay in the estimates). Raises ``ValueError`` naming
+    the missing key(s), so synpp fails the DAG before any stage runs.
+    """
+    missing = [key for key, on in (("secondary_leisure_subtype_split", leisure_subtype_split),
+                                   (KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT, loop_zero_displacement))
+               if not on]
+    if missing:
+        raise ValueError(
+            f"{stage_tag} {KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}: true requires "
+            f"{' and '.join(f'{key}: true' for key in missing)}; set them or disable "
+            f"{KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS}.")
+
+
 # Config keys.
 KEY_CELLS = "braunschweig.population.popsim.cells_100m_path"
 KEY_MID = "braunschweig.population.popsim.mid_raw_path"
@@ -548,10 +569,11 @@ KEY_DONOR_MATCH_STUDENT_STATUS = "braunschweig.population.popsim.donor_match_stu
 DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
 # Share of student targets relaxed to a non-student donor, per match path, above which the build logs a
 # WARNING. None = report only (no bound is set and the log says so): the bound comes from the one-batch smoke
-# of ADR-0211, never from a guess. Read ONLY by braunschweig.popsim.completed_donor. It is declared by that stage
-# (synpp needs every key an execute reads), so it enters the stage hash: set it together with another planned
-# rebuild of completed_donor, never on its own (ADR-0211). Whatever the bound, a path where no student target
-# got a student donor always logs a WARNING.
+# of ADR-0211, never from a guess. Valid range: null or a share in [0, 1] (checked at DAG build by
+# completed_donor.validate_student_fallback_warn_share). Read ONLY by braunschweig.popsim.completed_donor, which
+# declares it volatile: it only sets a log level, so a changed bound rebuilds neither the donor nor
+# PopulationSim and takes effect the next time the stage executes. Whatever the bound, a path where no student
+# target got a student donor always logs a WARNING.
 KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
 DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # A2 of the student design (ADR-0211): the employed target of the employment-grid groups 16_29 and
@@ -559,23 +581,20 @@ DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
 # committed student level table (braunschweig.popsim.student_level; its rules: ADR-0210, Decision 5).
 # The KREIS control "employed" and the KREIS employment families follow the lowered grid through
 # kreis_controls_follow_grids and the employment-level bridge. true/false, default true (on); false is
-# byte-identical to the stage before A2. With it on: the stage refuses to run when
-# kreis_controls_follow_grids is false or the level table is missing; with the employment grid off the
-# concept has no entry point, which is logged as a WARNING and recorded in the stage report.
+# byte-identical to the stage before A2. With it on, the refusals and warnings are listed in the
+# docstring of braunschweig.popsim.stage._read_student_employment_config.
 KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
 DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
 # The student KREIS entries of A3 (ADR-0211; kreis_attribute_control.STUDENT_ENTRY_NAMES), "on" / "off",
 # each default "on"; all "off" is byte-identical in the entry set and the stage tables to the stage
 # before A3. Their targets are counts built once per run from the student level table
-# (braunschweig.popsim.student_targets); refusals: source_resolution.active_kreis_entries and
-# KreisConsistencySettings.require_run_support (the split by the population share is refused).
+# (braunschweig.popsim.student_targets). The refusals are listed in the docstring of
+# braunschweig.popsim.stage.source_resolution._apply_student_entry_rules.
 #   student_education_kreis_control: the two hard entries (education leg by student status, ages 18 to
-#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name); refused when the
-#       education-by-age family is off or education_participation is on. A2 also reads it, to warn when
-#       A2 is on and the entries are off (the places A2 frees then go to whoever fits).
-#   student_work_leg_kreis_control: the soft work-leg entry; refused without work_by_employment.
-#   student_season_ticket_kreis_control: the soft season-ticket entry; refused without pt_ticket_group4.
-# Every student entry is refused without employment_status (its seed derivation checks it).
+#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name). A2 also reads it
+#       (see KEY_STUDENT_EMPLOYMENT_CONCEPT).
+#   student_work_leg_kreis_control: the soft work-leg entry.
+#   student_season_ticket_kreis_control: the soft season-ticket entry.
 KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
 DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
 KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"
@@ -775,6 +794,30 @@ DEFAULT_LEISURE_UNSPECIFIED_SUBTYPE = True
 # the ENTD distance CDFs and never estimates on MiD, so the key is inert there).
 KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY = "secondary_mid_weekday_legs_only"
 DEFAULT_SECONDARY_MID_WEEKDAY_LEGS_ONLY = True
+
+# secondary_loop_zero_displacement (issue #679, ADR-0207): the secondary location stage places a
+# stroll or dog walk on foot or by bicycle at the place of the activity it starts from
+# (braunschweig.synthesis.locations.secondary_chainsolvers.loops, whose KEY_ENABLED is this
+# constant). Its home is here because braunschweig.popsim.distance_distributions reads it too (the
+# guard of KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS below) and cannot import the loop module,
+# which imports it. Code default False (the byte-identical OFF path); production true in
+# configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT = "secondary_loop_zero_displacement"
+DEFAULT_SECONDARY_LOOP_ZERO_DISPLACEMENT = False
+
+# secondary_leisure_estimates_without_loops (issue #679, ADR-0207): with the loop placement on,
+# the loop legs (purpose_subtype.drop_loop_legs: the strolls that are no out-and-back stroll) leave
+# the chain, so ON leaves them out of the two leisure estimates the remaining legs use: the leisure
+# subtype distance layers (braunschweig.popsim.distance_distributions.run, Step 8) and the leisure
+# subtype decider's P(group | mode, tt_band)
+# (secondary_chainsolvers.deciders._build_leisure_subtype_decider). Both stages declare it with
+# these constants and must resolve the same value, or a leg labelled from a loop-free mix would
+# draw its distance from a pool with loops (or the reverse). Requires
+# secondary_leisure_subtype_split and KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT (both configure()
+# calls raise otherwise). Code default False = today's estimates (byte-identical); production true
+# in configs/base_bs.yml. Not a trip-build key -> not in ENTD_REJECTED_KEYS.
+KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = "secondary_leisure_estimates_without_loops"
+DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS = False
 # Departure-time (start-time) model of the trip build and of the commute-day plan replacement
 # (issue #123, ADR-0114): which of the three models in
 # braunschweig.popsim.departure_time_model.MODELS shapes a person's FIRST departure --

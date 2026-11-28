@@ -29,6 +29,7 @@ features:
 - secondary_mid_weekday_universe
 - w_zwd_codeplan_sentinels
 - portal_trips
+- secondary_loop_zero_displacement
 decisions:
 - ADR-0026
 - ADR-0057
@@ -39,6 +40,7 @@ decisions:
 - ADR-0116
 - ADR-0117
 - ADR-0141
+- ADR-0207
 notes: >-
   PURPOSE CORRECTNESS (issues #373 / #372 / #242; ADR-0111 / ADR-0112 / ADR-0113 / ADR-0115): the
   production implementation braunschweig.popsim.distance_distributions declares and reads six keys
@@ -164,3 +166,20 @@ notes: >-
   tests/test_distance_distributions_portal_filter.py::test_no_bound_is_identical_to_the_default_call).
   The distance CDFs therefore change with the flag, and this stage and everything downstream
   recompute once.
+
+  LOOP-FREE LEISURE SUBTYPE LAYERS (issue #679, ADR-0207, feature record
+  secondary_loop_zero_displacement): this stage declares secondary_leisure_estimates_without_loops
+  (key and default constants from braunschweig.popsim.stage.config_keys, KEY_SECONDARY_LEISURE_ESTIMATES_
+  WITHOUT_LOOPS, whose comment and configs/base_bs.yml own the default and production value; shared with
+  braunschweig.synthesis.locations.secondary_chainsolvers, whose leisure subtype decider leaves out the
+  same legs) and forwards it into run() as leisure_estimates_without_loops. With it on, Step 8 builds the
+  leisure subtype layers from the leisure legs minus the loop legs (purpose_subtype.drop_loop_legs, defined
+  in docs/codebase/notes/leisure-loops.md); only the layer of the group holding the loop codes changes, and
+  a loop mode that loses all its legs there raises ValueError.
+  The aggregate leisure layer, the leisure_unspecified layer and the other purposes keep every leg.
+  configure() declares the key unconditionally and, only when it is on, declares
+  secondary_loop_zero_displacement and calls config_keys.require_loop_free_estimate_prerequisites (the
+  same guard as the chainsolver stage), which raises ValueError unless secondary_leisure_subtype_split and
+  secondary_loop_zero_displacement are on. Report file (only with the key on, so the stage folder is
+  unchanged otherwise): distance_distributions_report.json, with leisure_subtype_legs_left_out and
+  leisure_subtype_layer_legs; its keys and the rule are in docs/codebase/notes/leisure-loops.md.

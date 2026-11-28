@@ -26,7 +26,7 @@ sampling:
   rate: 1.0
   scope: >-
     the cached full population of run popsim100_20261120 (the full model area, ZGB-8). The SrV side covers the seven
-    surveyed Kreise; the home areas are braunschweig (03101, 03102), surrounding (the other surveyed Kreise) and
+    surveyed Kreise; the home areas are braunschweig (03101 only), surrounding (the six other surveyed Kreise, 03102 included) and
     wolfsburg (03103, not surveyed by SrV, model-only with empty SrV columns).
   notes: >-
     Universes as in student-measurement-popsim100-20261120-20261126: shares of attributes over present adult students,

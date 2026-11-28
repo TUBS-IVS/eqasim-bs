@@ -1,0 +1,56 @@
+{
+  "archive": "/home/felix/prod100_20260925/output/matsim_output",
+  "event_lines": 447197784,
+  "total_vehicle_km": 31627802.932817116,
+  "car_vehicle_km": 28476855.275994945,
+  "default_car_share_of_car_vehicle_km": 0.13901539176246316,
+  "default_car_share_of_car_vehicles": 0.41476173197871313,
+  "convention": "full link length per 'entered link' event; sample values, unscaled",
+  "rows": [
+    {
+      "group": "default_car",
+      "vehicles": 493812,
+      "vehicles_with_link_entry": 103927,
+      "departures": 331012,
+      "link_entries": 27357703,
+      "vehicle_km": 3958721.192355403,
+      "share_of_all_vehicle_km": 0.12516586121281983
+    },
+    {
+      "group": "default_car_passenger",
+      "vehicles": 1201383,
+      "vehicles_with_link_entry": 0,
+      "departures": 0,
+      "link_entries": 0,
+      "vehicle_km": 0.0,
+      "share_of_all_vehicle_km": 0.0
+    },
+    {
+      "group": "fleet_typed_car",
+      "vehicles": 696780,
+      "vehicles_with_link_entry": 500504,
+      "departures": 1588334,
+      "link_entries": 155194047,
+      "vehicle_km": 24518134.08363954,
+      "share_of_all_vehicle_km": 0.7752082601412519
+    },
+    {
+      "group": "heavy_truck",
+      "vehicles": 56364,
+      "vehicles_with_link_entry": 49280,
+      "departures": 49452,
+      "link_entries": 13301134,
+      "vehicle_km": 3150947.6568221697,
+      "share_of_all_vehicle_km": 0.09962587864592819
+    },
+    {
+      "group": "transit",
+      "vehicles": 14923,
+      "vehicles_with_link_entry": 0,
+      "departures": 0,
+      "link_entries": 0,
+      "vehicle_km": 0.0,
+      "share_of_all_vehicle_km": 0.0
+    }
+  ]
+}

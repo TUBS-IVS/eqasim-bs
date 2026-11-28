@@ -23,6 +23,8 @@ code:
 - braunschweig/popsim/employment_level.py
 - braunschweig/popsim/minor_child_targets.py
 - braunschweig/popsim/household_less_cells.py
+- braunschweig/popsim/student_level.py
+- braunschweig/popsim/student_targets.py
 pipelines:
   popsim_mid: active
   popsim_open: active
@@ -40,6 +42,8 @@ inputs:
 - mid2023_cars_by_rs7_haustyp
 - mid2023_bikes_by_rs7_haustyp
 - zensus2022_employed_by_age_kreis
+- student_level_table
+- srv2023_student_reference
 features:
 - mid_passenger_availability
 - age_aware_composition
@@ -81,6 +85,7 @@ decisions:
 - ADR-0202
 - ADR-0203
 - ADR-0204
+- ADR-0211
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.
@@ -148,7 +153,9 @@ notes: >-
   more toggles are declared and read here --
   braunschweig.population.popsim.work_by_employment_kreis_control (default "on") with
   .work_participation_kreis_control (now "off"), and .education_by_age_kreis_control (default "on",
-  ONE toggle for the three age-range entries education_0_5 / education_6_17 / education_18plus)
+  ONE toggle for the three age-range entries education_0_5 / education_6_17 / education_18plus;
+  with the student education switch on, the two student education entries replace education_18plus
+  by name, ADR-0211)
   with .education_participation_kreis_control (now "off"). Enabling a replacement together with its
   predecessor, or a replacement while .employment_status_kreis_control is off, RAISES at config
   time in source_resolution.active_kreis_entries and names both keys in full. Two further keys the

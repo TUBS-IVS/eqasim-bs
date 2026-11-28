@@ -1,0 +1,52 @@
+=== part 1: MiD donor trips Monday-Friday with a valid wegkm_imp: 836178
+--- walk: 202811 trips, path > 6.5 km (about 5 km straight line): 6477 trips = 2.94 % of trips, 22.5 % of walk km
+                                       group     n  share_of_trips  share_of_km  km_p50  km_p90  min_p50  n_long  share_of_long
+                   no detail: other purposes 67101            0.39         0.29    0.49    1.96    10.00    1005           0.26
+no detail: leisure/other (PAPI, child, k.A.) 29790            0.13         0.19    1.96    4.90    30.00    1759           0.25
+             no detail: W_ZWECK 8 nach Hause 50638            0.25         0.21    0.98    2.63    10.00     607           0.11
+                710 Spaziergang/Spazierfahrt  6419            0.03         0.06    2.94    6.86    50.00     745           0.10
+                             704 Sport aktiv  3647            0.01         0.04    3.43    8.82    35.00     813           0.10
+                       shop or errand detail 21829            0.10         0.09    0.98    2.94    10.00     422           0.06
+                        other leisure detail  7771            0.03         0.04    0.98    4.90    15.00     455           0.05
+                         711 Hund ausfuehren  6828            0.03         0.05    2.45    4.90    35.00     296           0.03
+      708/709/722 Ausflug, Urlaub, Kurzreise   588            0.00         0.01    4.90   14.70    95.00     215           0.02
+               no detail: W_ZWECK 9 Rueckweg  5068            0.02         0.02    0.88    2.06    10.00      71           0.01
+                                  701 Besuch  2297            0.01         0.01    0.98    3.43    10.00      67           0.01
+                       716 Begleitung Kinder   835            0.00         0.00    0.98    3.92    20.00      22           0.00
+walk home -> home trips: 4347 (2.31 % of trips), path km p50 0.98, p90 2.94, long 106
+walk trips of 60 min or more with a path speed below 2 km/h: 6545 (3.02 % of trips); groups {'no detail: leisure/other (PAPI, child, k.A.)': 1967, 'no detail: other purposes': 1137, 'shop or errand detail': 1113, 'other leisure detail': 609, '710 Spaziergang/Spazierfahrt': 503}
+--- bicycle: 109001 trips, path > 26.0 km (about 20 km straight line): 1565 trips = 1.14 % of trips, 13.8 % of bicycle km
+                                       group     n  share_of_trips  share_of_km  km_p50  km_p90  min_p50  n_long  share_of_long
+no detail: leisure/other (PAPI, child, k.A.)  9972            0.09         0.12    2.65   13.72    15.00     402           0.23
+                             704 Sport aktiv  3521            0.03         0.06    2.94   24.50    15.00     332           0.21
+      708/709/722 Ausflug, Urlaub, Kurzreise   442            0.00         0.03   22.54   58.80   125.00     189           0.15
+                   no detail: other purposes 37078            0.38         0.33    2.35    7.84    15.00     150           0.13
+             no detail: W_ZWECK 8 nach Hause 40325            0.36         0.32    2.35    7.84    15.00     195           0.12
+                        other leisure detail  3689            0.03         0.04    2.94   11.76    15.00     123           0.07
+                710 Spaziergang/Spazierfahrt   698            0.01         0.02   11.76   31.36    60.00     103           0.04
+                                  701 Besuch  1717            0.02         0.02    2.94    9.80    15.00      21           0.02
+               no detail: W_ZWECK 9 Rueckweg  1522            0.01         0.01    2.35    7.84    15.00      17           0.01
+                       shop or errand detail  9597            0.07         0.05    1.96    5.88    10.00      30           0.01
+                         711 Hund ausfuehren   173            0.00         0.00    3.92    9.80    35.00       3           0.00
+                       716 Begleitung Kinder   267            0.00         0.00    1.96    4.90    15.00       0           0.00
+bicycle home -> home trips: 2471 (2.43 % of trips), path km p50 2.94, p90 7.84, long 26
+bicycle trips of 60 min or more with a path speed below 6 km/h: 2163 (2.10 % of trips); groups {'no detail: leisure/other (PAPI, child, k.A.)': 554, 'no detail: other purposes': 407, 'shop or errand detail': 404, 'no detail: W_ZWECK 8 nach Hause': 256, 'other leisure detail': 146}
+=== part 2: realised straight line longer than the path the own diary trip reports
+--- trips with a secondary end
+                     trips  over_path  over_2x
+mode                                          
+bicycle         227,049.00       0.47     0.21
+car             826,526.00       0.43     0.19
+car_passenger   275,205.00       0.44     0.20
+pt              129,031.00       0.50     0.25
+walk            561,911.00       0.50     0.27
+all           2,019,722.00       0.46     0.22
+--- trips between home, work and education
+                     trips  over_path  over_2x
+mode                                          
+bicycle         169,225.00       0.41     0.27
+car             456,149.00       0.25     0.09
+car_passenger   125,040.00       0.30     0.16
+pt              176,006.00       0.25     0.12
+walk            181,833.00       0.55     0.44
+all           1,108,253.00       0.33     0.19

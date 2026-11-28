@@ -1,0 +1,67 @@
+## Run overlay of i679_c, written by scripts/isolated_run.py overlay on 2026-11-25T23:29:00+01:00.
+## Source: ~/i679_c7/i679_c_ff83decf_source.yml (sha256 479d2362eecd7cccaf57d36dd210acf974181e6298a4304f1a09bd6a983e638b).
+## Paths are relative to RUN_DIR/eqasim-bs, the launch directory, so every isolated run carries the
+## same strings: output_path enters synthesis stage hashes, analysis_working_directory the analysis suite's.
+## `launch` compares this file with its gate record: edit it only before `gate --write`.
+## Launcher gate list (40 stages) written by `gate --write` on 2026-11-25T23:30:11+01:00 from logs/explain_20261125T232948.log.
+working_directory: ../cache
+run:
+- synthesis.output
+- braunschweig.matsim.scenario.facilities
+- matsim.output
+config:
+  sampling_rate: 0.01
+  output_path: ../output
+  analysis_working_directory: ../cache
+  output_prefix: braunschweig_1pct_i679_
+  matsim_last_iteration: 5
+  braunschweig.population.popsim.work_dir: ../popsim_work
+  braunschweig.population.popsim.max_cells: 750
+  braunschweig.population.popsim.num_workers: 4
+  braunschweig.chainsolvers.processes: 8
+  cache_share_enabled: false
+  cache_share_export: false
+  cache_share_recompute: []
+  secondary_loop_zero_displacement: true
+  secondary_leisure_estimates_without_loops: true
+  synpp_expected_stale_stages:
+  - braunschweig.data.hts.mid_donor
+  - braunschweig.gravity.model
+  - braunschweig.locations.synthesis.replacement_education_gravity
+  - braunschweig.matsim.scenario.facilities
+  - braunschweig.matsim.scenario.households
+  - braunschweig.matsim.scenario.population
+  - braunschweig.matsim.scenario.vehicles
+  - braunschweig.matsim.simulation.prepare
+  - braunschweig.popsim.commute_distance
+  - braunschweig.popsim.completed_donor
+  - braunschweig.popsim.distance_distributions
+  - braunschweig.popsim.enriched_adapter
+  - braunschweig.popsim.stage
+  - braunschweig.popsim.trips_stage
+  - braunschweig.synthesis.commute_day.activities_day_stage
+  - braunschweig.synthesis.commute_day.home_office_donors_stage
+  - braunschweig.synthesis.commute_day.output_day
+  - braunschweig.synthesis.commute_day.spatial_locations_day
+  - braunschweig.synthesis.commute_day.state_stage
+  - braunschweig.synthesis.commute_day.trips_day_stage
+  - braunschweig.synthesis.day_absence.absence_stage
+  - braunschweig.synthesis.incommuters
+  - braunschweig.synthesis.locations.education_gravity
+  - braunschweig.synthesis.locations.home_cell
+  - braunschweig.synthesis.locations.secondary_chainsolvers
+  - braunschweig.synthesis.outside_tour_modes.activities_stage
+  - braunschweig.synthesis.outside_tour_modes.stage
+  - braunschweig.synthesis.portal_trips.anchors
+  - braunschweig.synthesis.portal_trips.stage
+  - braunschweig.synthesis.portal_trips.trips_final
+  - braunschweig.synthesis.spatial.home_zones
+  - braunschweig.synthesis.student_incommuters
+  - braunschweig.synthesis.vehicles.cars.household
+  - matsim.output
+  - matsim.simulation.run
+  - synthesis.population.activities
+  - synthesis.population.sampled
+  - synthesis.population.spatial.primary.candidates
+  - synthesis.vehicles.passengers.default
+  - synthesis.vehicles.vehicles

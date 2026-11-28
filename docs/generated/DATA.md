@@ -31,6 +31,11 @@ Restricted datasets are never committed or redistributed.
 | [genesis_svb_workplace](../registry/data/genesis_svb_workplace.yml) | control | manual_download | `data/braunschweig/13111-01-03-5.xlsx` | r/-/r | no |
 | [german_wide_freight_v3](../registry/data/german_wide_freight_v3.yml) | supply_input, network, assumption_basis | auto_script (`scripts/download_german_wide_freight.py`) | `data/braunschweig/freight/german-wide-freight-v3/` | -/r/r | no |
 | [gtfs_feed](../registry/data/gtfs_feed.yml) | supply_input | manual_download | `data/gtfs_cordon/de_full_2026-06-02.zip` | -/r/r | no |
+| [hbefa_emission_factors](../registry/data/hbefa_emission_factors.yml) | reference_table | restricted_delivery | `No fixed path. The four files are named by the config keys hbefa_cold_average_path,
+hbefa_warm_average_path, hbefa_cold_detailed_path and hbefa_warm_detailed_path, which have no default
+(stage braunschweig.data.hbefa). Keep the files outside the repository or under the gitignored
+; never commit them.
+` | -/-/o | YES |
 | [hsn_tsn_lookup](../registry/data/hsn_tsn_lookup.yml) | derived_input | scrape (`scripts/scrape_hsn_tsn.py`) | `data/braunschweig/kba/hsn_tsn_lookup.csv` | o/-/r | no |
 | [inkar_household_income](../registry/data/inkar_household_income.yml) | control, reference_table | manual_download | `data/braunschweig/E_Haushaltseinkommen.xls` | r/-/r | no |
 | [inkar_indicators](../registry/data/inkar_indicators.yml) | reference_table | manual_download | `data/braunschweig/E_*.xls` | o/-/o | no |
@@ -70,6 +75,7 @@ variables.
 | [mid2023_reference_tables](../registry/data/mid2023_reference_tables.yml) | reference_table, validation_reference, calibration_target | committed | `data/braunschweig/mid/mid2023_*.csv` | r/-/r | no |
 | [mid2023_regional_report](../registry/data/mid2023_regional_report.yml) | validation_reference, calibration_target | restricted_delivery (`scripts/extract_mid_tables.py`) | `data/braunschweig/mid/ (source PDFs local-only)` | o/-/o | YES |
 | [mid2023_w_zwd_group_reference](../registry/data/mid2023_w_zwd_group_reference.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zwd_groups.py`) | `data/braunschweig/mid/mid2023_w_zwd_group_reference.csv` | -/-/- | no |
+| [mid2023_w_zwd_group_reference_without_loops](../registry/data/mid2023_w_zwd_group_reference_without_loops.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zwd_groups.py`) | `data/braunschweig/mid/mid2023_w_zwd_group_reference_without_loops.csv` | -/-/- | no |
 | [mid2023_w_zweck_by_hwzweck1](../registry/data/mid2023_w_zweck_by_hwzweck1.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_w_zweck_hwzweck1.py`) | `data/braunschweig/mid/mid2023_w_zweck_by_hwzweck1.csv` | -/-/- | no |
 | [mid2023_workday_location](../registry/data/mid2023_workday_location.yml) | validation_reference, reference_table | committed (`scripts/extract_mid_workday_location.py`) | `data/braunschweig/mid/mid2023_workday_location_by_commute_distance.csv` | r/-/r | no |
 | [mikrozensus_pendler_modes](../registry/data/mikrozensus_pendler_modes.yml) | validation_reference, calibration_target | auto_script (`scripts/download_mikrozensus_pendler.py`) | `data/braunschweig/mikrozensus/mikrozensus2024_*.csv` | o/-/r | no |

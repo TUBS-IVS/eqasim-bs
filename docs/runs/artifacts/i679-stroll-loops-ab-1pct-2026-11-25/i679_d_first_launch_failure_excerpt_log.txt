@@ -1,0 +1,23 @@
+Traceback (most recent call last):
+  File "~/i679_d/eqasim-bs/scripts/run_synpp.py", line 325, in <module>
+    raise SystemExit(main())
+  File "~/i679_d/eqasim-bs/scripts/run_synpp.py", line 315, in main
+    synpp.run_from_yaml(config_path, None, [], {})
+  File "~/miniforge3/envs/eqasim/lib/python3.10/site-packages/synpp/pipeline.py", line 926, in run_from_yaml
+    Synpp.build_from_yml(path, working_directory, run, overrides).run_pipeline()
+  File "~/miniforge3/envs/eqasim/lib/python3.10/site-packages/synpp/pipeline.py", line 983, in run_pipeline
+    return run(definitions, self.config, self.working_directory, flowchart_path=flowchart_path,
+  File "~/i679_d/eqasim-bs/braunschweig/synpp_fork/pipeline.py", line 371, in run
+    result = stage["wrapper"].execute(context)
+  File "~/miniforge3/envs/eqasim/lib/python3.10/site-packages/synpp/pipeline.py", line 88, in execute
+    return self.instance.execute(context)
+  File "~/i679_d/eqasim-bs/braunschweig/matsim/simulation/prepare.py", line 453, in execute
+    _select_loop_mode_rule(context, result)
+  File "~/i679_d/eqasim-bs/braunschweig/matsim/simulation/prepare.py", line 497, in _select_loop_mode_rule
+    changed = loop_mode_rule.apply(config_path)
+  File "~/i679_d/eqasim-bs/braunschweig/matsim/simulation/loop_mode_rule.py", line 64, in apply
+    module = config_modules.read_module(path, DMC_MODULE)
+  File "~/i679_d/eqasim-bs/braunschweig/matsim/config_modules.py", line 64, in read_module
+    raise ValueError(f"{config_path}: module {name!r} has parameter sets (<{child.tag}>); only flat "
+ValueError: ~/i679_d/cache/braunschweig.matsim.simulation.prepare__c238a95114636946382737f84d53dde0.cache/braunschweig_1pct_i679_config.xml: module 'DiscreteModeChoice' has parameter sets (<parameterset>); only flat modules can be compared
+[isolated-run] run=i679_d eqasim-bs=5b212d4788bcac25f15c93f66651533fb8d05a89 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed exit=1 end=2026-11-26T09:11:19+01:00

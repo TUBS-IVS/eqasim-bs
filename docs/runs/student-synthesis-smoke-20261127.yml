@@ -1,0 +1,295 @@
+id: student-synthesis-smoke-20261127
+date: '2026-11-27'
+repository:
+  commit: 7c6edc8fd7d121ff497a5dc7e0d27e99624b0e37
+  branch: claude/i140-student-synthesis-2ddca2
+  notes: >-
+    Task 10 of docs/superpowers/plans/2026-11-27-student-layer-phase3-synthesis.md. Code state 7c6edc8f (attempt 3 and the
+    PopulationSim run; delivered to the run server as a git bundle, ref smoke/i140-synthesis, bundle sha256 7a6d73a376d74c50b832aefb03b575353d568ab92a9baa4c2925682ef5a3c8e7).
+    Attempts 1 and 2 ran the same code at 553058ff (run.json records that commit, written at setup; the later fix 7c6edc8f
+    changed the seed contract for the education age band group, see pipeline.notes). The Java side is eqasim-java-bs cb7e81fa3851c1338cfd80921c9d55aaeef2e600.
+    PopulationSim: 0.10.0+bs.3 (tool.json). The run directory, host and user are not recorded in tracked files.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_100pct.yml (run list and paths replaced by the run overlay below)
+  - docs/runs/artifacts/student-synthesis-smoke-20261127/run.yml
+  notes: >-
+    Production values of the branch head with the bundle keys at their defaults (explain_readonly.log: student_education_kreis_control
+    'on', student_work_leg_kreis_control 'on', student_season_ticket_kreis_control 'on', student_employment_concept true,
+    donor_match_student_status true, student_home_area_kreise braunschweig ['03101'] and surrounding ['03102','03151','03153','03154','03157','03158']).
+    The overlay (run.yml, from run_overlay_smoke.yml in the same directory) is the popsim100_20261120 source overlay with
+    the run list replaced by braunschweig.popsim.stage and braunschweig.population.popsim.assemble_batches_only true (the
+    stage writes all 60 batch folders, the consistency table and the report, then stops before PopulationSim); max_cells
+    750. The PopulationSim settings of the batch carry max_expansion_factor 100 (settings of the batch folder). In this
+    run the A1 fallback warn bound (donor_match_student_fallback_warn_share) was unset (report only), as the log lines show;
+    configs/base_bs.yml sets it from the entry 'A1 at one code state' of validation.
+sampling:
+  rate: 1.0
+  scope: >-
+    ONE batch of the 60 of the production popsim work directory, batch_030 (cells of the Kreise 03101, 03154, 03157, 03158;
+    25649 expanded households in both runs; the Braunschweig part 03101 has 22561 of them). PROD = the same batch of the
+    production run popsim100_20261120 (docs/runs/popsim-full-rerun-20261120.yml); the geo cross-walk of both is byte-identical
+    (sha256 29c1116c89b263c555bd1f45bd213a71cae6db37c19a3954dbc559a6972fa0a8).
+  notes: >-
+    The batch was picked by scripts/pick_batch.py as the one with the highest share of persons aged 18 to 29 among the adults
+    of its 03101 part: batch_030, 9880 of 33237 persons 18+ in 429 cells, share 0.2972590787 (batch_pick_03101.csv; 19 batches
+    have a 03101 part). This is a deliberately student-heavy selection, so the household composition of its students is
+    NOT the one of all Braunschweig students. Model counts are unweighted synthetic counts; every model person carries weight
+    1; SrV shares are weighted (GEWICHT_P_ZENSUS), the SrV standard errors are SrV ones only and do not include the model's
+    sampling error. The model side here is the PopulationSim output (seed households with their members), before the day-absence
+    draw: it covers ALL adult students (P_TAET 10, age 18+) of the part, while the SrV cells cover students present on the
+    reporting day.
+pipeline:
+  targets:
+  - braunschweig.popsim.stage (up to the written batch folders)
+  - PopulationSim 0.10.0+bs.3 on batch_030 for ON; PROD = the production output of popsim100_20261120, built with 0.10.0+bs.2 (docs/runs/popsim-full-rerun-20261120.yml); identity evidence that bs.3 reproduces the bs.2 population is in docs/runs/popsim-bs3-release-2026-11-25.yml
+  - braunschweig.analysis.popsim_batch_diagnostics (ON with --misfit, PROD without)
+  notes: >-
+    Upstream caches reused unchanged: the two HIT stages (regiostar, inkar household_income) came from the source cache of
+    popsim100_20261120 (run commit 1041849c); `git log 1041849c..HEAD -- braunschweig/data/bbsr braunschweig/data/inkar` is empty,
+    so their code did not change between that run commit and the code state of this smoke. The smoke ran on the
+    PopulationSim environment as it was before PR #697 (the uv lock change on main).
+    How it ran. scripts/isolated_run.py setup WITHOUT a cache copy (55 GB free on the run server, less than the 64 GB cache):
+    worktrees, symlink farm, run.json (the 51 unrelated server entries excluded from the farm are a count only, symlink_farm.excluded_count).
+    The overlay is run.yml. explain on the source cache (explain_readonly.log): 4 stages, 2 HIT (braunschweig.data.bbsr.regiostar,
+    braunschweig.data.inkar.household_income), 2 STALE for their own reasons (completed_donor: donor_match_student_status
+    None -> True; the popsim stage: the new keys, assemble_batches_only and populationsim_version '0.10.0+bs.2' -> '0.10.0+bs.3').
+    The committed driver scripts/run_stages_readonly.py executed completed_donor and then the popsim stage through synpp's
+    ExecuteContext in a view directory of symlinks to the source cache (readonly_stages.json), so the source cache stays
+    untouched. Attempt 1 failed because the PopulationSim environment of the worktree was not synced (uv sync --frozen in
+    environments/populationsim fixed it; run_readonly_attempt1_populationsim_env_missing.log). Attempt 2 failed at the seed
+    contract (the education_band group did not cover the adults once education_18plus was replaced by the student entries;
+    fixed with a test in 7c6edc8f; run_readonly_attempt2_seed_contract.log). Attempt 3 (run_readonly.log) wrote all 60 batch
+    folders. PopulationSim on batch_030 through docs/runs/artifacts/popsim-ladder-arm3-2026-11-18/scripts/run_arm.sh: exit
+    0, wall time 6:54.81, maximum resident set 3392424 kB (batch_030.time). Diagnostics: braunschweig.analysis.popsim_batch_diagnostics.run
+    (diag_on with --misfit; diag_prod without, its pipeline store is deleted). All logs are force-added although *.log is
+    gitignored. Artifacts were copied to docs/runs/artifacts/student-synthesis-smoke-20261127/ with run directory, host
+    and user replaced by the placeholders RUN_DIR, <run server home> and <run server>; the seed, synthetic persons and pipeline
+    stores are not copied (controls_on.csv and populationsim_on.log / populationsim_prod.log are). The measurement script
+    is scripts/smoke_measurements.py (run locally on the copies of the batch folders; the PROD control specification is
+    rebuilt, see its docstring; its recomputed batch sums agree with the batch diagnostics to 3.637978807091713e-12, fit_batch_check.csv).
+    Output sha256 (line endings normalised to LF): fit_03101.csv e8ca05be353a660bc6be2e08cf593aea465635a6de0fec63836d103e699bed89,
+    fit_batch_check.csv d9a78822c311f444f5a8cad01fd112ae438f8d4f145cf0257e17cdc76f62d4da, tier_wape_03101.csv 10a6989465e862c86d01012421e8945189c92e08e27d2914b50b182c6ca9e123,
+    tier_wape_batch.csv 0a5e03ef3f88e5340bdffa8c7caac5be2099d80f38cf80cafe48f142b81c8d6d, new_entries_03101.csv c3f0833a7c2e763590f3a981229ae187890f73182b57eb28fc6e9206ffb75b70,
+    student_donors_weights.csv 4f3609017f48def44ca6fb6d77298ff1ed8a5d09a99c507d4a9925f7f1417831, students_household_type_03101.csv
+    5cd32b108dca4aa185fd1d36989f55b21591a26c9d40773776da1b80c4cf830e, smoke_measurements_summary.json 71866d1f7aac8b764a8b23a4946d95fe2116ae730d44a0a294370d3f97ebab86.
+    Inputs of the batch (sha256, LF normalised): seed_households.csv 6d73f600774b568b2910eb4555d2fdfa99d383304ea53204530ab4e0f513fbdb
+    (identical in ON and PROD), seed_persons.csv ON 9b0c497ecb61a4b6561f47edecc4405106910c08aa32cfce0d6a30574f1da8f3 and
+    PROD f802c65b7939117da55b3943db3ec4b5272714156d89a4412918b70667ddc9af, control_totals_KREIS.csv ON 90c1e46d6e6f1f6be603bf8befd1969c8b9cc122b3948899d3e935d75e107e9f
+    and PROD 2ba8eb96d8e8122552b0344188b7868aefc06380ad9740ee894c8c7b47a71497, control_totals_ZENSUS100m.csv ON bbf05b2820460e723d086a942aa6d611c7ffe24d7ebf013f4a4119f328b88b8e
+    and PROD 2b63a71918ff0d7a173275e9a1da59fb449e1f97a171937cb9f66364e7d20415, control_totals_ZENSUS1km.csv ON fc612ab2b04493ce62454cf71f18b2f1740f522d3aff157be910f5cb5cf977c6
+    and PROD 765254491a1abecbf664b622d5a6a45487c350399660c14f7e7ff619042c2b41, controls.csv ON 0df08db90e9f4d51131ec3011e1db26bc1170190a4ea9a92cbc93241592c3afa,
+    settings.yaml ON 1c28ff4b6ea6a4af52a3fc4327a04afba86fb166efe038405a6a73b9a54a9787; outputs final_expanded_household_ids.csv
+    ON 79257f075494b7def784ff9e0ba5e2ccfcd909d4e3d68c2ad79dadc228241195 and PROD c533196050a0cd077cfe4e7ad47579c54529dbfab8b4c876a040cd38e60d6db7,
+    synthetic_households.csv ON d0555217a033e64bc1ea4955ffa1391dc40c27dd3c198559496d6a450d1450cb and PROD a9403986056936fbf81326ea70484f21085428d3a7fc7bac34400803c93e3ca3,
+    synthetic_persons.csv ON 91a173387559db031db2fbde302127962dab2bf7ec8abdfc68c1d40f098d4e00 and PROD 57518418aa3e205b1f0639c3cdaaf4f7a757ba940284bbb47609b88eddaf9b4e.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    A smoke, not a validation. One batch, two runs (ON = the bundle, PROD = the production run), no reference value is compared
+    and the SrV tables are a survey, not ground truth. The run records how the control fit, the donors and the household
+    composition of the students behave in one student-heavy batch and how far the model lies from SrV in SrV standard errors.
+    It says nothing about the model matching reality.
+validation:
+- metric: >-
+    fit of every hard control (importance >= 2000) in the Braunschweig part 03101 of batch_030, ON against PROD
+  reference: >-
+    production run popsim100_20261120, same batch (a comparison run, not ground truth). Caveat: ON and PROD differ in the
+    bundle AND in everything main changed since the run commit 1041849c (the branch head contains main's later changes), and in
+    the PopulationSim release (bs.3 against bs.2; identity evidence in docs/runs/popsim-bs3-release-2026-11-25.yml), so a
+    difference of the fit is not attributable to the bundle alone.
+  result: >-
+    RULE (the author's statement that it was fixed before the numbers were read; no commit evidence exists; ASSUMPTION of the designer, the owner may tighten it): a hard control loses
+    its fit when its WAPE in the 03101 part is more than 2.0 percentage points above PROD AND above 5.0 %. Hard tiers =
+    importance >= 2000 (control_spec IMPORTANCE_PROFILES: anchor 1e9, son 20000, six / employed / kreis_hard 2000). WAPE
+    of a KREIS control = |synthetic - target| / target on the 03101 row of the batch's (apportioned) KREIS totals; of a
+    100 m or 1 km control = sum over the cells of the 03101 part of |synthetic - target| / sum of targets (the cells of
+    the crosswalk in 03101 plus the used cells, as control_fit counts). RESULT from docs/runs/artifacts/student-synthesis-smoke-20261127/fit_03101.csv:
+    49 hard controls in the union, 40 on both sides, 7 only in ON (the student_education entries) and 2 only in PROD (education_18plus_edu
+    and _noedu, which the student entries replace). Controls losing the fit under the rule: 0. Of the 40 hard controls on
+    both sides 18 have a higher WAPE in ON than in PROD, 16 a lower one, 6 the same. Largest increase of a hard control:
+    EMPLOYED_F_60plus_agg_ZENSUS100m_target: WAPE ON 0.051047120418848166, PROD 0.03926701570680628 (difference 1.1780104712041883
+    pp); the next ones: EMPLOYED_F_40_49_agg_ZENSUS100m_target: WAPE ON 0.031097560975609756, PROD 0.021341463414634148
+    (difference 0.9756097560975608 pp); EMPLOYED_F_30_39_agg_ZENSUS100m_target: WAPE ON 0.034585824081981215, PROD 0.027684563758389263
+    (difference 0.6901260323591951 pp). Hard controls above 5 % WAPE in ON: 6_Personen_und_mehr_Groesse_des_privaten_Haushalts_100m_Gitter_ZENSUS100m_target,
+    EMPLOYED_F_60plus_agg_ZENSUS100m_target (each below the 2 pp difference or lower than PROD, so none is a loss by the
+    rule): EMPLOYED_F_60plus_agg_ZENSUS100m_target: WAPE ON 0.051047120418848166, PROD 0.03926701570680628 (difference 1.1780104712041883
+    pp); 6-person households 100 m: WAPE ON 0.30357142857142855, PROD 0.35714285714285715 (difference -5.35714285714286
+    pp) (target sum 168, small counts); building_type_sonstiges (importance 20000) is below 5 %: WAPE ON 0.04744787922358016,
+    PROD 0.04960460100647016 (difference -0.21567217828900032 pp). Caveat: the employed controls (KREIS employed and the
+    four EMPLOYED grid entries of ages 16 to 39) carry LOWER targets in ON (the student employment concept), so their WAPE
+    is measured against a different target than in PROD; 15 controls have different batch targets (employed, the six employment_status,
+    the four work_by_employment and the four grid entries; fit_batch_check.csv and diag_*/control_fit.csv). Outside the
+    rule (soft tier, importance 200, so no hard control): the largest WAPE increase of any control on both sides is F_AGE_18_19_agg_ZENSUS100m_target:
+    WAPE ON 0.4261168384879725, PROD 0.36082474226804123 (difference 6.529209621993126 pp); F_AGE_20_29 and M_AGE_20_29
+    also rise (fit_03101.csv). Batch-level WAPE per importance tier (diag_on and diag_prod control_fit.csv, all controls
+    of each side): importance 200.0 (24 controls ON, 24 PROD): WAPE ON 0.1429960888189889, PROD 0.14055418744697143; importance
+    500.0 (14 controls ON, 14 PROD): WAPE ON 0.019639017397536977, PROD 0.019730240437870594; importance 1000.0 (34 controls
+    ON, 28 PROD): WAPE ON 0.005769310391570707, PROD 0.005055646867831482; importance 2000.0 (44 controls ON, 39 PROD):
+    WAPE ON 0.00423726720753595, PROD 0.0038081769189282997; importance 20000.0 (1 controls ON, 1 PROD): WAPE ON 0.05326231691078562,
+    PROD 0.05659121171770972; importance 1000000000.0 (2 controls ON, 2 PROD): WAPE ON 0.0, PROD 0.0. The same on the controls
+    present on both sides: importance 200.0 (24 controls ON, 24 PROD): WAPE ON 0.1429960888189889, PROD 0.14055418744697143;
+    importance 500.0 (14 controls ON, 14 PROD): WAPE ON 0.019639017397536977, PROD 0.019730240437870594; importance 1000.0
+    (28 controls ON, 28 PROD): WAPE ON 0.0059494252685734095, PROD 0.005055646867831482; importance 2000.0 (37 controls
+    ON, 37 PROD): WAPE ON 0.004441043657801686, PROD 0.004213962503614948; importance 20000.0 (1 controls ON, 1 PROD): WAPE
+    ON 0.05326231691078562, PROD 0.05659121171770972; importance 1000000000.0 (2 controls ON, 2 PROD): WAPE ON 0.0, PROD
+    0.0. In the 03101 part (all controls of each side): importance 200.0 (24 controls ON, 24 PROD): WAPE ON 0.11865069665118554,
+    PROD 0.1151796626741628; importance 500.0 (14 controls ON, 14 PROD): WAPE ON 0.014160865057028588, PROD 0.014797807732187824;
+    importance 1000.0 (34 controls ON, 28 PROD): WAPE ON 0.0038771500548811094, PROD 0.0036712205645670127; importance 2000.0
+    (44 controls ON, 39 PROD): WAPE ON 0.0029661502147235227, PROD 0.0028769398827650236; importance 20000.0 (1 controls
+    ON, 1 PROD): WAPE ON 0.04744787922358016, PROD 0.04960460100647016; importance 1000000000.0 (2 controls ON, 2 PROD):
+    WAPE ON 0.0, PROD 0.0. In the 03101 part on the controls present on both sides: importance 200.0 (24 controls ON, 24
+    PROD): WAPE ON 0.11865069665118554, PROD 0.1151796626741628; importance 500.0 (14 controls ON, 14 PROD): WAPE ON 0.014160865057028588,
+    PROD 0.014797807732187824; importance 1000.0 (28 controls ON, 28 PROD): WAPE ON 0.004017221908615119, PROD 0.0036712205645670127;
+    importance 2000.0 (37 controls ON, 37 PROD): WAPE ON 0.0032086600003879313, PROD 0.0032182198047606067; importance 20000.0
+    (1 controls ON, 1 PROD): WAPE ON 0.04744787922358016, PROD 0.04960460100647016; importance 1000000000.0 (2 controls
+    ON, 2 PROD): WAPE ON 0.0, PROD 0.0.
+- metric: >-
+    fit of the four new student entries in the Braunschweig part 03101 (target against synthetic count per label)
+  reference: >-
+    the batch's apportioned KREIS totals of the 03101 row (the stage's student entries; a model target, not an observation)
+  result: >-
+    Read from docs/runs/artifacts/student-synthesis-smoke-20261127/new_entries_03101.csv (thirteen controls; target_sum_on
+    is the target of the part inside this batch; the columns kreis_target_persons_03101 and kreis_universe_persons_03101
+    of the file give the whole-Kreis table of the stage for context). student_education_18_29 / student_edu (importance
+    2000.0): target 1003.3194159721328, synthetic 1001.0, bias -0.002311742337693601, WAPE 0.002311742337693592; student_education_18_29
+    / student_noedu (importance 2000.0): target 1704.25571290509, synthetic 1703.0, bias -0.0007368101486070477, WAPE 0.0007368101486069965;
+    student_education_18_29 / other_edu (importance 2000.0): target 1053.1679550361337, synthetic 1048.0, bias -0.0049070568577604945,
+    WAPE 0.004907056857760501; student_education_18_29 / other_noedu (importance 2000.0): target 6118.437900869666, synthetic
+    6106.0, bias -0.002032855619552465, WAPE 0.0020328556195525174; student_education_30plus / student (importance 2000.0):
+    target 114.78411085897012, synthetic 114.0, bias -0.006831179447245317, WAPE 0.0068311794472453065; student_education_30plus
+    / other_edu (importance 2000.0): target 229.83766798756224, synthetic 230.0, bias 0.0007062898516989602, WAPE 0.0007062898516989095;
+    student_education_30plus / other_noedu (importance 2000.0): target 23010.98087198805, synthetic 23030.0, bias 0.0008265240025080445,
+    WAPE 0.0008265240025080035; student_work_leg / student_work (importance 1000.0): target 481.5556981277075, synthetic
+    481.0, bias -0.0011539643905534858, WAPE 0.0011539643905534914; student_work_leg / student_nowork (importance 1000.0):
+    target 2226.019430749515, synthetic 2223.0, bias -0.0013564260526235383, WAPE 0.0013564260526235418; student_work_leg
+    / not_student (importance 1000.0): target 7171.6058559058, synthetic 7154.0, bias -0.002454939139091339, WAPE 0.0024549391390913857;
+    student_season_ticket / student_flatrate (importance 1000.0): target 2526.286338224653, synthetic 2521.0, bias -0.0020925332748970016,
+    WAPE 0.0020925332748970103; student_season_ticket / student_no_flatrate (importance 1000.0): target 181.2887906525696,
+    synthetic 183.0, bias 0.00943913488126169, WAPE 0.009439134881261656; student_season_ticket / not_student (importance
+    1000.0): target 7171.6058559058, synthetic 7154.0, bias -0.002454939139091339, WAPE 0.0024549391390913857.
+- metric: >-
+    the stage report sections student_employment, student_kreis_targets and the consistency guard with the new pairs (all
+    60 batches)
+  reference: census_filtered_report.json and popsim_input_consistency.csv of the run (the stage's own checks)
+  result: >-
+    Read from census_filtered_report.json. Guard: batches 60, rows 3880, rows_above_bound 0, age_tolerance 0.05, min_persons
+    1000.0, max_relative_difference_guarded 0.016756300795536097, age_pairs_enforced True, grid_pairs_enforced True, skipped
+    []. Student bounds: guarded ['students_work_within_nonemployed_work'], reported ['students_flatrate_within_flatrate'],
+    kreis totals above bound {"students_flatrate_within_flatrate": [], "students_work_within_nonemployed_work": []}, rows_above_bound_reported
+    0; in popsim_input_consistency.csv the share of both student pairs (students_work_within_nonemployed_work, students_flatrate_within_flatrate)
+    is 0.0 in every row. student_employment: active True, omega 0.5348793385, subtracted_persons_total 15384.080363200002,
+    smallest employed target {"KREIS": "03154", "employed_target_persons": 2781.246136642396, "grid_age_group": "16_29",
+    "sex": "F"}. student_kreis_targets: kreise 8, students_count 28763, region_value_cells 16, region_value_rate 0.125,
+    region_value_substitutions 2 (the key names are the stage's). The consistency table popsim_input_consistency.csv (3880
+    rows) is committed whole; its non-student pairs carry their own shares there and are not restated.
+- metric: >-
+    A1: student donor key, primary (student donor) against fallback (non-student donor) per match path, whole seed
+  reference: run_readonly.log of attempt 3 (the completed_donor stage on the whole seed)
+  result: >-
+    Read from run_readonly.log. weekend_plan_match.student_donor.household_pairs: primary 3128/4455 (70.2%), fallback 1327
+    (29.8%) (fallback share 1327/4455 = 0.2978675645342312); diary_plan_match.student_donor: primary 2334/2334 (100.0%),
+    fallback 0; weekend_plan_match.student_donor.person_fallback and .mixed_person_sweep: 0 targets each. Student household
+    match levels of the weekend pass {0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2}. All paths logged 'warn bound not set'.
+    The member pairing then demanded the same sex and age band for a student pair; the final branch review found that every
+    student household had a donor household with a student (no household reached the level where the student key is given
+    up), so this fallback was a pairing limit, not a pool limit. Fixed in 2b1c9047 (student tiers relaxed to the age band,
+    then to any free student); re-measured in the entry 'A1 at one code state' below, where the bound is set.
+- metric: >-
+    plan sources of the completed-donor step against production (share of seed persons whose source differs)
+  reference: completed_donor of popsim100_20261120 (693b5a0a...) against the ON stage of this run
+  result: >-
+    Read from plan_source_change.json (scripts/compare_plan_sources.py): persons compared 485709; students (P_TAET 10, every
+    age): 15607, changed 5685 (share 0.36425962709040816); other persons: 470102, changed 76924 (share 0.16363257335642054).
+    NOT attributed to the student key: the two results also differ by the code changes of main since 2026-11-20, and the
+    draws on the shared stream shift (open point 1 of the plan); the figure bounds the change, it is not an OFF/ON comparison
+    of one code state.
+- metric: >-
+    A1 at one code state: completed_donor with the student donor key OFF and ON (branch 2b1c9047), primary against fallback
+    per path, and the share of seed persons whose plan source differs between OFF and ON
+  reference: the same stage at the same code state with the key off (run_overlay_a1_off.yml against run_overlay_a1_on.yml)
+  result: >-
+    Read from a1_on.log, a1_off.log and a1_plan_source_change_on_vs_off.json (scripts/run_stages_readonly.py, then
+    scripts/compare_plan_sources.py OFF -> ON; upstream pickles of popsim100_20261120 read-only, as above). ON:
+    weekend_plan_match.student_donor.household_pairs primary 4015/4455 (90.1%), fallback 440 (9.9%);
+    diary_plan_match.student_donor primary 2340/2340 (100.0%); person_fallback and mixed_person_sweep 0 targets. Student
+    household match levels {0: 3610, 1: 181, 4: 6, 2: 37, 3: 20, 5: 2}. OFF against ON: persons compared 485709; students
+    (P_TAET 10, every age) 15607, changed 5818 (share 0.37278144422374576); other persons 470102, changed 77104 (share
+    0.16401546898332703). Every changed non-student is a person with a re-drawn plan whose draw on the shared random stream
+    moved (open point 1 of the plan, ADR-0211 Decision 4): a different draw from the same candidate set, not a different
+    rule. BOUND SET HERE (ASSUMPTION, the owner may tighten it):
+    braunschweig.population.popsim.donor_match_student_fallback_warn_share = 0.2 = the largest observed fallback share of
+    any path at this code state (440/4455 of the household-pair path) plus a margin of 0.1; volatile, so it rebuilds
+    nothing. A warning bound from one seed, not a validated limit.
+- metric: >-
+    donors, weight dispersion and the maximum expansion factor of households with a student, ON against PROD (batch_030)
+  reference: production run popsim100_20261120, same batch (a comparison run)
+  result: >-
+    Read from docs/runs/artifacts/student-synthesis-smoke-20261127/student_donors_weights.csv. Student household = a seed
+    household with a member P_TAET 10 and age 18+. Expansion weight = the number of copies of a seed household in final_expanded_household_ids.csv
+    (integer weights). MAX EXPANSION: PopulationSim applies max_expansion_factor 100 inside its balancer to float weights
+    that this batch folder does not write (no pipeline store), so its own hit count is not observable. Closest observable
+    used: the inflation ratio = copies / (N_scope x H_GEW / sum of H_GEW over the whole seed), N_scope = expanded households
+    of the scope; 'households at ratio >= 100' is a PROXY, not PopulationSim's own count, and it is above 0 in PROD as well,
+    so it serves only the ON against PROD comparison. ON part_03101: 22561 expanded households; households with an adult
+    student: 1268 distinct seed households, copies mean 1.7578864353312302, population std 2.3318314270413643, coefficient
+    of variation 1.3264971958225438, max 44.0, max/mean 25.030058322117544, inflation ratio max 388.939759708505 and median
+    12.70321712254762, households at ratio >= 10: 766.0, >= 50: 83.0, >= 100: 18.0; all households: 13814 distinct, coefficient
+    of variation 1.4149162030228402, max 80.0, max/mean 48.983644342006116, inflation ratio max 488.19163874095375, >= 100:
+    106.0; expanded adult students 2818.0. PROD part_03101: 22561 expanded households; households with an adult student:
+    1189 distinct seed households, copies mean 1.7140454163162322, population std 2.7992512878514253, coefficient of variation
+    1.6331255060134173, max 48.0, max/mean 28.003925417075564, inflation ratio max 159.84501717215267 and median 11.922795344914187,
+    households at ratio >= 10: 669.0, >= 50: 75.0, >= 100: 10.0; all households: 14012 distinct, coefficient of variation
+    1.348011431509475, max 69.0, max/mean 42.85395150924161, inflation ratio max 406.88638886239806, >= 100: 94.0; expanded
+    adult students 2517.0. ON batch: 25649 expanded households; households with an adult student: 1376 distinct seed households,
+    copies mean 1.7013081395348837, population std 2.2484228395733625, coefficient of variation 1.3215847190315877, max
+    44.0, max/mean 25.86245194361384, inflation ratio max 342.1135295248774 and median 10.879940996366425, households at
+    ratio >= 10: 740.0, >= 50: 71.0, >= 100: 12.0; all households: 16717 distinct, coefficient of variation 1.3838147478977203,
+    max 80.0, max/mean 52.14082420367266, inflation ratio max 429.41602252074773, >= 100: 75.0; expanded adult students
+    2938.0. PROD batch: 25649 expanded households; households with an adult student: 1280 distinct seed households, copies
+    mean 1.671875, population std 2.7085206265367447, coefficient of variation 1.6200497205453426, max 48.0, max/mean 28.710280373831775,
+    inflation ratio max 205.42489131191925 and median 10.423954525064318, households at ratio >= 10: 663.0, >= 50: 67.0,
+    >= 100: 9.0; all households: 16914 distinct, coefficient of variation 1.3178475687324862, max 69.0, max/mean 45.50142305742914,
+    inflation ratio max 381.91517218204365, >= 100: 89.0; expanded adult students 2624.0.
+- metric: >-
+    adult students of the part 03101 by household type and living with a person at least 18 years older, ON against PROD
+    against SrV Braunschweig
+  reference: >-
+    SrV 2023 aggregates of this branch, srv2023_student_parameters_by_area.csv area braunschweig (a survey, not ground truth)
+  result: >-
+    Read from docs/runs/artifacts/student-synthesis-smoke-20261127/students_household_type_03101.csv, definitions of braunschweig/analysis/student_measurement._household_labels
+    (alone = one member; with_children = a member younger than 18; else several_adults; older = a member at least 18 years
+    older than the student). Universe difference: the SrV rows are students present on the reporting day (base students_present,
+    GEWICHT_P_ZENSUS-weighted), the model rows are ALL adult students of the 03101 part of this ONE student-heavy batch
+    (no day-absence draw, unweighted); the SrV standard error excludes the model's sampling error. household_type / alone:
+    model ON 949 of 2818 (share 0.336763662171753, difference -1.3091265838698165 SrV standard errors), PROD 930 of 2517
+    (share 0.3694874851013111, difference -0.6626439836114325), SrV Braunschweig n 43, share 0.4030293691, standard error
+    0.05061825781; household_type / several_adults: model ON 1680 of 2818 (share 0.596167494677076, difference 0.4884706729522358
+    SrV standard errors), PROD 1403 of 2517 (share 0.55740961462058, difference -0.2704191709053949), SrV Braunschweig n
+    173, share 0.5712204119, standard error 0.05107181282; household_type / with_children: model ON 189 of 2818 (share 0.06706884315117104,
+    difference 2.5278882201900172 SrV standard errors), PROD 184 of 2517 (share 0.07310290027810885, difference 2.897053996049531),
+    SrV Braunschweig n 6, share 0.02575021903, standard error 0.01634511518; lives_with_person_18_years_older / yes: model
+    ON 424 of 2818 (share 0.15046132008516677, difference -0.5498747311836165 SrV standard errors), PROD 450 of 2517 (share
+    0.17878426698450536, difference 0.17761610736587372), SrV Braunschweig n 44, share 0.1718692499, standard error 0.03893237605;
+    lives_with_person_18_years_older / no: model ON 2394 of 2818 (share 0.8495386799148332, difference 0.5498747311836159
+    SrV standard errors), PROD 2067 of 2517 (share 0.8212157330154947, difference -0.17761610736587372), SrV Braunschweig
+    n 178, share 0.8281307501, standard error 0.03893237605. The with_children SrV cell has n 6, below the 30 respondents
+    of rule 1 in docs/runs/student-measurement-by-area-popsim100-20261120-20261127.yml. That manifest's whole-Braunschweig
+    production figures (lives_with_person_18_years_older yes 0.262542517, household_type alone 0.3238732993, present students
+    of 03101 only, the home area braunschweig) are a different universe and not comparable with this batch part.
+issues:
+- '#140'
+decisions:
+- ADR-0211
+notes: >-
+  A smoke of one batch, not a validation; the SrV aggregates are a survey, not ground truth and no target value is stated
+  here. Values named ASSUMPTION are designer-set measurement rules, not sourced thresholds. The stop rule of Task 10 (a
+  hard control loses its fit against the production run of the same batch) did not fire under the rule above; that is one
+  batch and one rule. Not measured: the batches other than batch_030, the day-absence draw, the plan fit of the students.
+source: >-
+  braunschweig.popsim.stage (assemble_batches_only), PopulationSim 0.10.0+bs.3 and braunschweig.analysis.popsim_batch_diagnostics
+  over the inputs under pipeline.notes, measured by docs/runs/artifacts/student-synthesis-smoke-20261127/scripts/smoke_measurements.py;
+  outputs committed under docs/runs/artifacts/student-synthesis-smoke-20261127/.

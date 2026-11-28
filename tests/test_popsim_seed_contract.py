@@ -35,6 +35,46 @@ def test_coverage_passes_on_resolved_seed(caplog):
     assert any("coverage" in r.message and r.levelno == logging.INFO for r in caplog.records)
 
 
+def test_production_education_entries_keep_the_seed_contract():
+    """The production entry set (student education entries on, education_18plus dropped, A3,
+    ADR-0211): the education-by-age bands and the two student education entries together cover
+    every person exactly once, and the soft student entries every person aged 18 to 29.
+
+    The run-server smoke stopped here: the bands 0-5 and 6-17 alone left every adult uncovered.
+    """
+    from braunschweig.popsim.stage import active_kreis_entries
+    from tests.stage_context import KreisToggleContext
+    active = active_kreis_entries(KreisToggleContext(), "mid")
+    education = [entry for entry in active
+                 if entry.name in kac.EDUCATION_BY_AGE_ENTRY_NAMES or entry.name in kac.STUDENT_ENTRY_NAMES]
+    assert "education_18plus" not in {entry.name for entry in education}
+    rendered = cs.render_catalog_csv(
+        cs.controls_for_seed(cs.attribute_kreis_controls(education), "mid"), "mid")
+    spec = pd.concat([SPEC, rendered], ignore_index=True)
+    households, persons = _resolved()
+    # ages 22 (a student), 40, 8, 70, 50 and 3: every band and both student age ranges
+    persons = persons.assign(
+        HP_ALTER=[22, 40, 8, 70, 50, 3],
+        education_flag=["edu", "noedu", "edu", "noedu", "edu", "edu"],
+        student_education_18_29=["student_edu", "other_noedu", "other_edu", "other_noedu",
+                                 "other_edu", "other_edu"],
+        student_education_30plus=["student", "other_noedu", "other_edu", "other_noedu",
+                                  "other_edu", "other_edu"],
+        student_work_leg=["student_nowork"] + ["not_student"] * 5,
+        student_season_ticket=["student_flatrate"] + ["not_student"] * 5)
+    table = check_seed_coverage(households, persons, spec, TOTAL).set_index("group")
+    assert table[["n_uncovered", "n_multi_hit"]].to_numpy().sum() == 0
+    assert table.loc["education_band", "n_universe"] == 6
+    assert table.loc[["student_work_leg", "student_season_ticket"], "n_universe"].tolist() == [1, 1]
+    # A student education entry next to education_18plus counts the adults twice: refused.
+    adult_band = [entry for entry in kac.REGISTRY if entry.name == "education_18plus"]
+    both = pd.concat([spec, cs.render_catalog_csv(
+        cs.controls_for_seed(cs.attribute_kreis_controls(adult_band), "mid"), "mid")],
+        ignore_index=True)
+    with pytest.raises(ValueError, match=r"education_band.*match several"):
+        check_seed_coverage(households, persons, both, TOTAL)
+
+
 def test_coverage_raises_on_unresolved_sex():
     households, persons = _resolved()
     persons["HP_SEX"] = SEED_PERSONS["HP_SEX"]       # one person with sex 3

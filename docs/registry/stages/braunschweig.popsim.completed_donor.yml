@@ -50,8 +50,9 @@ decisions:
 notes: >-
   STUDENT DONOR KEY (ADR-0211, issue #140): since A1 the stage also reads
   braunschweig.population.popsim.donor_match_student_status (default on) and
-  .donor_match_student_fallback_warn_share (default unset); both are declared here only, so both enter this
-  stage's hash and the donor rebuilds once. The key makes the weekend plan match (all three paths) and the
+  .donor_match_student_fallback_warn_share (default unset; production value in configs/base_bs.yml); both are
+  declared here only. The switch enters this stage's hash (the donor rebuilds once); the warn bound is declared
+  volatile, so changing it rebuilds nothing. The key makes the weekend plan match (all three paths) and the
   diary plan match prefer a student donor for student targets; the per-path primary/fallback counts are
   logged and published as run info (completed_donor.student_run_info). Rules and the byte-identical OFF path:
   feature record diary_plan_match (its notes).

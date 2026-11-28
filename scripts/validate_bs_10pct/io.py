@@ -15,6 +15,12 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from braunschweig.analysis.loop_trip_distances import (
+    METRIC_KIND_CROW_FLY,
+    apply_loop_trip_distances,
+    read_loop_trips,
+)
+
 from .config import EPSG, OUTPUT_DIR, PREFIX, SPATIAL_DIR, ZGB8
 
 LOG = logging.getLogger(__name__)
@@ -197,7 +203,12 @@ def load_trip_modes() -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def trips_full() -> pd.DataFrame:
-    """Trips with mode (from MATSim XML) + home Kreis attached."""
+    """Trips with mode (from MATSim XML) + home Kreis attached.
+
+    ``distance_km`` is the crow-fly length of the trip's gpkg line, except for loop trips (zero length in the model),
+    which carry their survey diary length divided by ``ROUTED_DETOUR_FACTOR`` (rule and contract:
+    ``braunschweig/analysis/loop_trip_distances.py``).
+    """
     trips = load_trips()
     modes = load_trip_modes()
     full = trips.merge(modes, on=["person_id", "trip_index"], how="left")
@@ -208,6 +219,11 @@ def trips_full() -> pd.DataFrame:
     # Join geometry-distance from gpkg.
     geom = load_trips_gdf()[["person_id", "trip_index", "distance_km"]]
     full = full.merge(geom, on=["person_id", "trip_index"], how="left")
+    # Loop trips (strolls, #679) are zero-length in the model: every distance consumer of this package reads
+    # ``distance_km`` from here, so the survey diary length replaces their 0 m once, at this point.
+    full, _ = apply_loop_trip_distances(
+        full, read_loop_trips(_csv("trips")), key_columns=("person_id", "trip_index"), distance_column="distance_km",
+        distance_unit="km", metric_kind=METRIC_KIND_CROW_FLY, crow_fly_column="distance_km", crow_fly_unit="km")
     return full
 
 

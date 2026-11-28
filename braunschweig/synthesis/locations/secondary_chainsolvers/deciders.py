@@ -94,6 +94,11 @@ class _CountedDecider:
         self._decide = decide
         self.n_legs = 0
         self.n_marginal_fallback = 0
+        #: Per loop mode, the leisure legs the estimate left out (``purpose_subtype.drop_loop_legs``
+        #: counts) when the leisure decider was estimated without the loop legs (issue #679);
+        #: None for every other decider and with the switch off. The stage writes it to the
+        #: ``loops`` block of its report.
+        self.loop_legs_left_out = None
 
     def __call__(self, mode: str, travel_time_s: float) -> str:
         outcome, used_marginal = self._decide(mode, travel_time_s)
@@ -272,22 +277,34 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     universes"). Again the SAME flag
     ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
     distance layers, and both must resolve the same value.
+
+    Loop-free estimate (issue #679, ADR-0207): when
+    ``secondary_leisure_estimates_without_loops`` is ON, the loop legs
+    (``purpose_subtype.drop_loop_legs``: W_ZWD 710/711 on foot or by bicycle, no
+    out-and-back stroll from home) are
+    left out after the coverage guard and before the estimation, because the
+    secondary location stage takes them out of the chain. Again the SAME flag
+    ``braunschweig.popsim.distance_distributions`` reads for the leisure subtype
+    distance layers.
     """
     if not context.config("secondary_leisure_subtype_split"):
         return None
 
+    from braunschweig.popsim.distance_distributions import _build_preceding_purpose
     from braunschweig.popsim.purpose_subtype import (
         code_coverage_guard,
+        drop_loop_legs,
         estimate_group_probabilities,
         leisure_spec,
+        mark_diary_returns,
         tt_band,
     )
     from braunschweig.popsim.stage.config_keys import (
         KEY_LEISURE_UNSPECIFIED_SUBTYPE, KEY_PURPOSE_SUBTYPE_CODEPLAN_SENTINELS,
-        KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
+        KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS, KEY_SECONDARY_MID_WEEKDAY_LEGS_ONLY,
     )
     from braunschweig.popsim.trips import (
-        map_mode, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
+        map_mode, map_purpose, mid_travel_time_seconds, restrict_to_weekday_diary_legs)
 
     min_obs = int(context.config("secondary_distance_min_obs"))
     # Execute-context config() takes the key alone (declared in configure()
@@ -328,13 +345,37 @@ def _build_leisure_subtype_decider(context, random_seed: int,
     # separate change and is out of this scope (stated in ADR-0115).
     code_coverage_guard(mid_wege, spec)
 
+    # Loop-free estimate (issue #679, ADR-0207; one-argument execute-context read of the key
+    # declared in configure()): with the loop placement on, the strolls and dog walks on foot or
+    # by bicycle leave the chain, so P(group | mode, tt_band) is estimated on the leisure legs the
+    # model still places. Filtered AFTER the coverage guard, which therefore still sees 710/711
+    # (and the spec keeps them as leisure_local codes, so a car stroll stays labelled). Only the
+    # spec's own W_ZWECK legs are handed to the filter, so its per-mode counts describe leisure
+    # legs; the estimate reads no other rows. A (mode, tt_band) cell that loses legs below
+    # min_obs, or disappears, falls to the marginal and is counted by the estimate's thin-cell
+    # log and by _CountedDecider's fallback count.
+    without_loops = bool(context.config(KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS))
+    loop_legs_left_out = None
+    if without_loops:
+        # An out-and-back stroll (from home, the next diary leg goes home) is no loop and stays.
+        # Its marks are read on the whole (weekday) diary before the purpose filter below, with
+        # the chain derivation of loops.estimate_loop_probabilities: map_purpose with its
+        # defaults (only "home", trips.HOME_W_ZWECK, matters here) and _build_preceding_purpose.
+        mid_wege = mid_wege.assign(following_purpose=map_purpose(mid_wege)["purpose"])
+        mid_wege = mark_diary_returns(
+            mid_wege.assign(preceding_purpose=_build_preceding_purpose(mid_wege)))
+        mid_wege, loop_legs_left_out = drop_loop_legs(
+            mid_wege[mid_wege["W_ZWECK"].isin(spec.zweck_values)],
+            log_tag="[braunschweig.secondary_chainsolvers] leisure subtype:")
+
     cell_probs, marginal = estimate_group_probabilities(mid_wege, spec, min_obs=min_obs)
     group_names = sorted(marginal)
     print(
         "[braunschweig.secondary_chainsolvers] leisure subtype: marginal shares "
         + ", ".join(f"{name}={marginal[name]:.3f}" for name in group_names)
         + f" (codeplan no-detail sentinels: {'on' if codeplan_sentinels else 'off'}"
-        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'})"
+        + f", unspecified subtype: {'on' if unspecified_subtype else 'off'}"
+        + (", loop legs left out)" if without_loops else ")")
     )
 
     rng = np.random.RandomState(int(random_seed) + LEISURE_SUBTYPE_SEED_OFFSET)
@@ -344,7 +385,9 @@ def _build_leisure_subtype_decider(context, random_seed: int,
         probs = marginal if cell is None else cell
         return _inverse_cdf_choice(probs, group_names, rng.random_sample()), cell is None
 
-    return _CountedDecider(decide)
+    counted = _CountedDecider(decide)
+    counted.loop_legs_left_out = loop_legs_left_out
+    return counted
 
 
 def _build_other_subtype_decider(context, random_seed: int,

@@ -227,12 +227,18 @@ class _RecordingConfigureContext:
     with the default the stage declared, so a test can assert what a stage registers
     without depending on config values (there are none yet during configure). No
     ``stage()`` method: completed_donor.configure() never calls context.stage()."""
-    def __init__(self):
+    def __init__(self, values=None):
         self.calls = {}
+        self.volatile = set()
+        self._values = values or {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
+        # synpp's ConfigurationContext.config(option, default, volatile): returns the configured value
+        # (else the default) and marks a volatile option, which then stays out of the stage hash.
         self.calls[key] = default
-        return default
+        if volatile:
+            self.volatile.add(key)
+        return self._values.get(key, default)
 
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():
@@ -346,7 +352,11 @@ def test_student_key_changes_only_student_targets_on_a_clean_fixture(tmp_path):
     assert off_student_source != {student_donor}    # the key changes the weekend student's donor for some seed
 
 
-def test_student_switch_off_is_byte_identical(tmp_path):
+def test_student_switch_default_is_off_and_a_warn_bound_changes_nothing_when_off(tmp_path):
+    # Compares the function default with an explicit False (plus a warn bound) in the SAME code, so it
+    # proves the default and the bound's irrelevance when off, not identity with the build before A1. That
+    # identity is pinned by test_build_completed_donor_off_matches_pre_task_inline_pipeline (an inline
+    # reference pipeline that passes no student argument).
     _write_student_fixture(tmp_path)
     default = cd.build_completed_donor(
         tmp_path, random_seed=3, seed_day_filter=None, weekend_plan_match_on=True,
@@ -407,3 +417,20 @@ def test_completed_donor_configure_declares_the_student_keys():
     # the warn bound is declared (synpp needs it for execute); None = report only, no bound invented
     assert config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE in ctx.calls
     assert ctx.calls[config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE] is None
+    # the bound only sets a log level: volatile, so changing it rebuilds neither the donor nor PopulationSim;
+    # the student status key changes donors and must stay in the hash
+    assert config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE in ctx.volatile
+    assert config_keys.KEY_DONOR_MATCH_STUDENT_STATUS not in ctx.volatile
+
+
+@pytest.mark.parametrize("value, ok", [(None, True), (0, True), (0.4, True), (1, True),
+                                       (-0.01, False), (1.01, False), ("high", False), (float("nan"), False)])
+def test_completed_donor_configure_requires_a_student_warn_share_in_zero_one(value, ok):
+    from braunschweig.popsim.stage import config_keys
+    key = config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE
+    ctx = _RecordingConfigureContext({key: value})
+    if ok:
+        cd.configure(ctx)
+    else:
+        with pytest.raises(ValueError, match="donor_match_student_fallback_warn_share"):
+            cd.configure(ctx)

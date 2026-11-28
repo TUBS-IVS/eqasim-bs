@@ -149,8 +149,13 @@ def test_attached_columns_are_the_ones_the_plans_writer_writes():
     assert attach.RESIDENT_PARKING_ZONE_COLUMN == wrapper.RESIDENT_PARKING_ZONE_COLUMN
     assert attach.PARKING_DISTRICT_COLUMN == wrapper.PARKING_DISTRICT_COLUMN
     assert attach.RESIDENT_PARKING_DISTRICT_COLUMN == wrapper.RESIDENT_PARKING_DISTRICT_COLUMN
+    # The writer's optional activity fields also carry the stroll marker and the two loop columns of
+    # the day-view location join (#679), which the parking attach does not add.
+    loop_fields = (writer.OUT_AND_BACK_STROLL_COLUMN, writer.LOOP_STROLL_COLUMN,
+                   writer.LOOP_TRIP_DIARY_DISTANCE_COLUMN)
     assert [attach.PARKING_ZONE_COLUMN, attach.PARKING_FREE_COLUMN,
-            attach.PARKING_DISTRICT_COLUMN] == writer.OPTIONAL_ACTIVITY_FIELDS
+            attach.PARKING_DISTRICT_COLUMN] == [field for field in writer.OPTIONAL_ACTIVITY_FIELDS
+                                                if field not in loop_fields]
     assert attach.RESIDENT_PARKING_ZONE_COLUMN in writer.OPTIONAL_PERSON_FIELDS
     assert attach.RESIDENT_PARKING_DISTRICT_COLUMN in writer.OPTIONAL_PERSON_FIELDS
 

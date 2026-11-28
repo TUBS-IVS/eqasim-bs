@@ -58,10 +58,9 @@ _AGE14 = "(persons.HP_ALTER >= 14)"
 # person under 15 is not expected to fall in a certificate category.  Only the group's
 # non-exhaustive coverage numbers depend on it; it changes no control and no target.
 _AGE15 = "(persons.HP_ALTER >= 15)"
-# Owner: ``kreis_attribute_control.STUDENT_AGE_BOUNDS`` (the student entries of A3, ADR-0211),
-# rendered by ``control_spec`` as the min_age and max_age clauses; the same test ties these copies.
+# Owner: ``kreis_attribute_control.STUDENT_AGE_BOUNDS`` (the soft student entries of A3, ADR-0211),
+# rendered by ``control_spec`` as the min_age and max_age clauses; the same test ties this copy.
 _AGE18_29 = "(persons.HP_ALTER >= 18) & (persons.HP_ALTER <= 29)"
-_AGE30 = "(persons.HP_ALTER >= 30)"
 
 CONTROL_GROUPS: tuple = (
     ControlGroup("age_sex", "persons", r"^[MF]_AGE_", None, True),
@@ -75,14 +74,15 @@ CONTROL_GROUPS: tuple = (
     ControlGroup("leisure_participation", "persons", r"^leisure_participation_", None, True),
     ControlGroup("escort_participation", "persons", r"^escort_participation_", None, True),
     ControlGroup("work_by_employment", "persons", r"^work_by_employment_", _AGE14, True),
-    # Two partitions: the all-ages participation flag (yes/no) and the three age bands, each
-    # with its own edu/noedu pair.  The band controls carry the age range in their own
-    # expression, so together they cover every person once (universe None).
+    # Two partitions: the all-ages participation flag (yes/no) and the education-by-age family.
+    # The family's controls carry their age range in their own expression, so together they cover
+    # every person once (universe None): the bands 0-5 and 6-17, and for the adults either the band
+    # 18+ or, when the student education entries replace it (A3, ADR-0211), the entries for 18-29
+    # (student with / without an education leg, other with / without) and for 30+ (student, other
+    # with / without). Both adult variants at once count every adult twice, which the check reports.
     ControlGroup("education_participation", "persons", r"^education_participation_", None, True),
-    ControlGroup("education_band", "persons", r"^education_\d", None, True),
-    # The four student entries (A3, ADR-0211): each partitions the persons of its age range.
-    ControlGroup("student_education_18_29", "persons", r"^student_education_18_29_", _AGE18_29, True),
-    ControlGroup("student_education_30plus", "persons", r"^student_education_30plus_", _AGE30, True),
+    ControlGroup("education_band", "persons", r"^(education_\d|student_education_)", None, True),
+    # The two soft student entries (A3, ADR-0211): each partitions the persons aged 18 to 29.
     ControlGroup("student_work_leg", "persons", r"^student_work_leg_", _AGE18_29, True),
     ControlGroup("student_season_ticket", "persons", r"^student_season_ticket_", _AGE18_29, True),
     ControlGroup("schulabschluss", "persons", r"^schulabschluss_", _AGE15, False),

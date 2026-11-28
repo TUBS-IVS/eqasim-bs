@@ -1,0 +1,13 @@
+osm_class,hbefa_road_class,min_speed_kmh,max_speed_kmh
+motorway-Nat.,MW-Nat.,80,130
+motorway,MW-City,60,90
+primary-Nat.,Trunk-Nat.,80,110
+primary,Trunk-City,50,80
+trunk,Trunk-City,50,80
+secondary,Distr,50,80
+tertiary,Local,50,60
+residential,Access,30,50
+service,Access,30,50
+living,Access,30,50
+cycleway,Access,30,50
+path,Access,30,50

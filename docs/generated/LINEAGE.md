@@ -21,7 +21,7 @@ ported from another eqasim project), `retired`.
 | configured | 6 |
 | extended | 6 |
 | overridden | 25 |
-| braunschweig_new | 75 |
+| braunschweig_new | 79 |
 | upstream_port | 0 |
 | retired | 0 |
 
@@ -57,7 +57,7 @@ ported from another eqasim project), `retired`.
 
 ## Braunschweig-new stages per model area
 
-- **Analysis**: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`
+- **Analysis**: `braunschweig.analysis.analysis_suite`, `braunschweig.analysis.simwrapper_export`, `braunschweig.analysis.synthesis.departure_time_vs_srv`, `braunschweig.analysis.synthesis.plan_structure_vs_srv`, `braunschweig.data.hbefa`, `braunschweig.emissions.events`, `braunschweig.emissions.inputs`, `braunschweig.emissions.summary`
 - **Person & household attributes**: `braunschweig.data.census.employment`, `braunschweig.data.census.household_income`, `braunschweig.data.census.licenses`, `braunschweig.data.inkar.household_income`
 - **Travel / activity behavior**: `braunschweig.data.mid.data`, `braunschweig.data.mid.zones`, `braunschweig.synthesis.commute_day.home_office_donors_stage`, `braunschweig.synthesis.commute_day.state_stage`, `braunschweig.synthesis.commute_day.trips_day_stage`, `braunschweig.synthesis.day_absence.absence_stage`, `synthesis.population.activities.final`, `synthesis.population.trips.final`
 - **Cordon / external demand**: `braunschweig.data.census.pendler`, `braunschweig.data.cordon_gemeinden`, `braunschweig.data.cordon_network`, `braunschweig.data.cordon_pt_gates`, `braunschweig.data.transit.cut_schedule`, `braunschweig.synthesis.cordon_gates`, `braunschweig.synthesis.incommuters`, `braunschweig.synthesis.portal_trips.anchors`, `braunschweig.synthesis.portal_trips.stage`, `braunschweig.synthesis.student_incommuters`, `synthesis.population.activities.simulated`, `synthesis.population.trips.simulated`

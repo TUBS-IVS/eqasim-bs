@@ -1,0 +1,7 @@
+2026-11-25T23:13:44,098  INFO Gbl:76 Command: org.eqasim.core.standalone_mode_choice.RunStandaloneModeChoice --config-path braunschweig_1pct_i679_config.xml --config:plans.inputPlansFile braunschweig_1pct_i679_population.xml.gz --config:standaloneModeChoice.outputDirectory ~/i679_c7/repro_nofreight --config:standaloneModeChoice.removePersonsWithNoValidAlternatives true --config:standaloneModeChoice.excludedSubpopulations incommuter,student_incommuter,freight --config:global.numberOfThreads 8 --write-input-csv-trips true --write-output-csv-trips true --compression gzip --skip-scenario-check true --eqasim-configurator org.eqasim.braunschweig.BraunschweigConfigurator
+2026-11-25T23:13:48,162  INFO StandaloneModeChoicePerformer:84 Excluded subpopulations: 1201 of 12667 persons (9.48 %) keep their plan unchanged: {freight=521, incommuter=599, student_incommuter=81}
+2026-11-25T23:14:08,168  INFO ParallelProgress:86 [Standalone mode choice, 1876/11466, (16.36%)]
+2026-11-25T23:14:18,171  INFO ParallelProgress:86 [Standalone mode choice, 6666/11466, (58.14%), RT:10s, 666.70it/s, ~07s]
+2026-11-25T23:14:28,172  INFO ParallelProgress:86 [Standalone mode choice, 9853/11466, (85.93%), RT:20s, 492.65it/s, ~03s]
+2026-11-25T23:14:38,173  INFO ParallelProgress:86 [Standalone mode choice, 11434/11466, (99.72%), RT:30s, 381.13it/s, ~00s]
+exit=0

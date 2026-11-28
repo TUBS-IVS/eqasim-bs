@@ -1,0 +1,391 @@
+{
+  "arm": "E",
+  "loop_facility_check": {
+    "aligned|education|same_facility_as_previous": 7,
+    "aligned|home|same_facility_as_previous": 530,
+    "aligned|secondary|different_facility": 1,
+    "aligned|secondary|same_facility_as_previous": 129,
+    "aligned|work|same_facility_as_previous": 20,
+    "misaligned": 11
+  },
+  "loop_facility_mismatch_examples": [
+    {
+      "activity_index": 3,
+      "location_id": "sec_b_18688",
+      "loop": {
+        "facility": "sec_b_18688",
+        "stroll": null,
+        "type": "leisure",
+        "x": "594528.309432",
+        "y": "5779059.545894"
+      },
+      "origin": "secondary",
+      "person_id": "276434",
+      "previous": {
+        "facility": "outside_17",
+        "stroll": null,
+        "type": "outside",
+        "x": "573131.838286669",
+        "y": "5775147.153608089"
+      }
+    }
+  ],
+  "loop_keys": 698,
+  "persons_by_group": {
+    "freight": 521,
+    "incommuter": 599,
+    "resident": 11466,
+    "student_incommuter": 81
+  },
+  "plans_read": "braunschweig.matsim.simulation.prepare__c238a95114636946382737f84d53dde0.cache/braunschweig_1pct_i679_population.xml.gz",
+  "resident_activities_by_type": {
+    "education": 2169,
+    "escort": 1848,
+    "home": 25934,
+    "leisure": 5369,
+    "other": 2551,
+    "outside": 3467,
+    "shop": 2913,
+    "work": 4058
+  },
+  "resident_activities_without_facility_by_type": {},
+  "resident_trips": 36843,
+  "resident_trips_by_mode_after": {
+    "bicycle": 3401,
+    "car": 18499,
+    "car_passenger": 4853,
+    "outside": 1458,
+    "pt": 2100,
+    "walk": 6532
+  },
+  "resident_trips_without_input_row": 0,
+  "rule_caught_by_class_and_mode_after": {
+    "a_loop_leg|bicycle": 40,
+    "a_loop_leg|car": 1,
+    "a_loop_leg|car_passenger": 1,
+    "a_loop_leg|walk": 644,
+    "b_leaves_a_loop_activity|bicycle": 25,
+    "b_leaves_a_loop_activity|walk": 277,
+    "c_other|bicycle": 3,
+    "c_other|car": 5,
+    "c_other|car_passenger": 2,
+    "c_other|walk": 40
+  },
+  "rule_caught_by_mode_after_initial_choice": {
+    "bicycle": 68,
+    "car": 6,
+    "car_passenger": 3,
+    "walk": 961
+  },
+  "rule_caught_by_mode_before": {
+    "bicycle": 39,
+    "car": 17,
+    "car_passenger": 7,
+    "walk": 975
+  },
+  "rule_caught_by_origin_type_destination_type_mode_before": {
+    "education|leisure|bicycle": 2,
+    "education|leisure|walk": 5,
+    "escort|leisure|car": 1,
+    "escort|leisure|walk": 10,
+    "home|leisure|bicycle": 12,
+    "home|leisure|car_passenger": 1,
+    "home|leisure|walk": 464,
+    "leisure|home|bicycle": 12,
+    "leisure|home|walk": 292,
+    "leisure|leisure|bicycle": 9,
+    "leisure|leisure|car": 6,
+    "leisure|leisure|car_passenger": 3,
+    "leisure|leisure|walk": 132,
+    "leisure|other|car": 1,
+    "leisure|other|car_passenger": 1,
+    "leisure|shop|bicycle": 1,
+    "leisure|shop|car": 6,
+    "leisure|shop|walk": 2,
+    "other|leisure|car": 1,
+    "other|leisure|walk": 27,
+    "shop|leisure|bicycle": 2,
+    "shop|leisure|car": 2,
+    "shop|leisure|car_passenger": 2,
+    "shop|leisure|walk": 24,
+    "work|leisure|bicycle": 1,
+    "work|leisure|walk": 19
+  },
+  "rule_caught_classes": {
+    "a_loop_leg": 686,
+    "b_leaves_a_loop_activity": 302,
+    "c_other": 50
+  },
+  "rule_caught_motorised_after_by_class_types_modes_outside": {
+    "a_loop_leg|home|leisure|car_passenger|car_passenger|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "a_loop_leg|leisure|leisure|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "c_other|leisure|leisure|car|car|no_outside|tour_without_outside|tour_over_6_trips": 1,
+    "c_other|leisure|leisure|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 3,
+    "c_other|leisure|other|car_passenger|car_passenger|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "c_other|leisure|other|car|car|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1,
+    "c_other|shop|leisure|car_passenger|car_passenger|plan_has_outside|tour_touches_outside|tour_up_to_6_trips": 1
+  },
+  "rule_caught_motorised_after_examples": [
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT03254032",
+        "stroll": null,
+        "type": "leisure",
+        "x": "580446.624934",
+        "y": "5781291.149097"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03254032",
+        "stroll": null,
+        "type": "leisure",
+        "x": "580446.624934",
+        "y": "5781291.149097"
+      },
+      "person_id": "199810",
+      "plan_has_outside": true,
+      "trip": 7
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "731382",
+      "plan_has_outside": true,
+      "trip": 7
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "731382",
+      "plan_has_outside": true,
+      "trip": 8
+    },
+    {
+      "class": "a_loop_leg",
+      "destination": {
+        "facility": "sec_res_6732",
+        "stroll": null,
+        "type": "leisure",
+        "x": "602262.725052",
+        "y": "5786087.006523"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "sec_res_6732",
+        "stroll": null,
+        "type": "leisure",
+        "x": "602262.725052",
+        "y": "5786087.006523"
+      },
+      "person_id": "737811",
+      "plan_has_outside": true,
+      "trip": 5
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT03241018",
+        "stroll": null,
+        "type": "leisure",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241018",
+        "stroll": null,
+        "type": "leisure",
+        "x": "580859.147759",
+        "y": "5812544.147353"
+      },
+      "person_id": "775446",
+      "plan_has_outside": false,
+      "trip": 4
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "other",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "mode_after": "car",
+      "mode_before": "car",
+      "origin": {
+        "facility": "EXT03241011",
+        "stroll": null,
+        "type": "leisure",
+        "x": "569316.111684",
+        "y": "5803507.709845"
+      },
+      "person_id": "832556",
+      "plan_has_outside": true,
+      "trip": 3
+    },
+    {
+      "class": "a_loop_leg",
+      "destination": {
+        "facility": "home_435420",
+        "stroll": null,
+        "type": "leisure",
+        "x": "617266.740987",
+        "y": "5806988.16777"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "home_435420",
+        "stroll": null,
+        "type": "home",
+        "x": "617266.740987",
+        "y": "5806988.16777"
+      },
+      "person_id": "869970",
+      "plan_has_outside": true,
+      "trip": 0
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT15083411",
+        "stroll": null,
+        "type": "leisure",
+        "x": "644435.305349",
+        "y": "5805129.609192"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "EXT15083411",
+        "stroll": null,
+        "type": "shop",
+        "x": "644435.305349",
+        "y": "5805129.609192"
+      },
+      "person_id": "923264",
+      "plan_has_outside": true,
+      "trip": 4
+    },
+    {
+      "class": "c_other",
+      "destination": {
+        "facility": "EXT15083411",
+        "stroll": null,
+        "type": "other",
+        "x": "644435.305349",
+        "y": "5805129.609192"
+      },
+      "mode_after": "car_passenger",
+      "mode_before": "car_passenger",
+      "origin": {
+        "facility": "EXT15083411",
+        "stroll": null,
+        "type": "leisure",
+        "x": "644435.305349",
+        "y": "5805129.609192"
+      },
+      "person_id": "923264",
+      "plan_has_outside": true,
+      "trip": 5
+    }
+  ],
+  "rule_caught_other_by_origin_type_destination_type_mode_before": {
+    "escort|leisure|car": 1,
+    "home|leisure|walk": 5,
+    "leisure|home|walk": 5,
+    "leisure|leisure|bicycle": 5,
+    "leisure|leisure|car": 5,
+    "leisure|leisure|car_passenger": 3,
+    "leisure|leisure|walk": 9,
+    "leisure|other|car": 1,
+    "leisure|other|car_passenger": 1,
+    "leisure|shop|bicycle": 1,
+    "leisure|shop|car": 5,
+    "leisure|shop|walk": 1,
+    "other|leisure|car": 1,
+    "other|leisure|walk": 3,
+    "shop|leisure|car": 2,
+    "shop|leisure|car_passenger": 2
+  },
+  "rule_caught_trips": 1038,
+  "same_facility_without_leisure_end_by_mode_before": {
+    "bicycle": 221,
+    "car": 825,
+    "car_passenger": 211,
+    "outside": 231,
+    "walk": 651
+  },
+  "stroll_attribute_values_on_trip_destinations": {
+    "true": 103
+  },
+  "stroll_key_trips_by_role_mode_after": {
+    "into|bicycle": 43,
+    "into|walk": 56,
+    "way_home|bicycle": 43,
+    "way_home|car_passenger": 7,
+    "way_home|pt": 3,
+    "way_home|walk": 46
+  },
+  "stroll_key_trips_by_role_mode_before_after_destination_rule_tour": {
+    "into|bicycle|bicycle|leisure|stroll_rule|-": 4,
+    "into|walk|bicycle|leisure|stroll_rule|-": 39,
+    "into|walk|walk|leisure|stroll_rule|-": 56,
+    "way_home|bicycle|bicycle|home|no_rule|-": 5,
+    "way_home|bicycle|walk|home|no_rule|-": 2,
+    "way_home|car_passenger|bicycle|home|no_rule|-": 2,
+    "way_home|car|bicycle|home|no_rule|-": 1,
+    "way_home|pt|bicycle|home|no_rule|-": 2,
+    "way_home|walk|bicycle|home|no_rule|-": 33,
+    "way_home|walk|car_passenger|home|no_rule|tour_without_outside|tour_up_to_6_trips": 7,
+    "way_home|walk|pt|home|no_rule|tour_without_outside|tour_up_to_6_trips": 3,
+    "way_home|walk|walk|home|no_rule|-": 44
+  },
+  "stroll_key_trips_found_by_role_alignment": {
+    "into|aligned": 99,
+    "into|misaligned": 4,
+    "way_home|aligned": 99,
+    "way_home|misaligned": 4
+  },
+  "stroll_keys": 103,
+  "stroll_rule_caught_by_mode_after": {
+    "bicycle": 45,
+    "walk": 58
+  },
+  "stroll_rule_caught_motorised_after_by_types_modes_tour": {}
+}

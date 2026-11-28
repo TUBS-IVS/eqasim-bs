@@ -609,20 +609,22 @@ def test_purpose_subtype_codeplan_sentinels_default_agrees_across_its_two_homes(
 # ---------------------------------------------------------------------------
 
 
-def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15, kernwo=2, w_rbw=0):
+def _add_rows(rows, row_id_start, *, w_zweck, w_zwd, wegkm, n=15, kernwo=2, w_rbw=0,
+              hvm_imp=4):
     """Append n synthetic Wege rows; return the next row id.
 
     ``kernwo`` / ``w_rbw`` carry the two columns the weekday diary universe reads
     (``braunschweig.popsim.trips.weekday_diary_leg_mask``, issue #373 / ADR-0116); the
     defaults put every row INSIDE that universe, so a fixture that does not mention them
     estimates the same table whether ``secondary_mid_weekday_legs_only`` is on or off.
+    ``hvm_imp`` is the MiD main mode (``trips.MODE_BY_HVM``); the default 4 is car.
     """
     row_id = row_id_start
     for _ in range(n):
         rows.append({
             "H_ID": row_id, "P_ID": 0, "W_ID": 0,
             "W_ZWECK": w_zweck, "W_ZWD": w_zwd,
-            "hvm_imp": 4,  # car for all rows -> single mode
+            "hvm_imp": hvm_imp,
             "wegkm_imp": wegkm,
             "W_SZS": 8, "W_SZM": 0, "W_AZS": 8, "W_AZM": 10,
             "W_GEW": 1.0,
@@ -1354,6 +1356,109 @@ def test_configure_accepts_unspecified_off_without_the_fold():
             })
             configure(ctx)
             assert ctx.registered["leisure_unspecified_subtype"] is False
+
+
+# ---------------------------------------------------------------------------
+# Issue #679: the leisure subtype decider estimated without the loop legs (strolls and dog walks
+# on foot or by bicycle), behind secondary_leisure_estimates_without_loops.
+# ---------------------------------------------------------------------------
+
+_KEY_WITHOUT_LOOPS = "secondary_leisure_estimates_without_loops"
+
+
+def _loop_decider_draws(monkeypatch, overrides):
+    """Walk: 40 strolls/dog walks (710/711) and 40 visits (701); car: 40 strolls (710).
+
+    With the loops in, P(leisure_local | walk) is 0.5; without them the walk cell holds only
+    visits (the non-loop local share is 0), while a car stroll is no loop and stays local. The
+    coverage guard sees 710/711 on the frame in both cases.
+    """
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=710, wegkm=3.0, n=20, hvm_imp=1)
+    _add_rows(rows, 100, w_zweck=7, w_zwd=711, wegkm=3.0, n=20, hvm_imp=1)
+    _add_rows(rows, 200, w_zweck=7, w_zwd=701, wegkm=3.0, n=40, hvm_imp=1)
+    _add_rows(rows, 300, w_zweck=7, w_zwd=710, wegkm=9.0, n=40, hvm_imp=4)
+    ctx = _decider_context({"secondary_leisure_subtype_split": True, **overrides},
+                           monkeypatch, pd.DataFrame(rows))
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+    return ({decide("walk", 600.0) for _ in range(200)},
+            {decide("car", 600.0) for _ in range(200)}, decide.loop_legs_left_out)
+
+
+def test_leisure_decider_estimates_without_the_loop_legs_when_the_switch_is_on(monkeypatch):
+    from braunschweig.popsim import purpose_subtype
+    from braunschweig.synthesis.locations.secondary_chainsolvers import loops
+
+    # One owner of the loop definition: the loop module re-exports it, it does not retype it.
+    assert loops.LOOP_CODES is purpose_subtype.LOOP_CODES
+    assert loops.LOOP_MODES is purpose_subtype.LOOP_MODES
+
+    walk_on, car_on, left_out_on = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: True})
+    assert walk_on == {"leisure_visit"}
+    assert car_on == {"leisure_local"}
+    # The counts the stage writes to the loops block of its report: the leisure legs only.
+    assert left_out_on == {"bicycle": {"legs": 0, "left_out": 0, "kept": 0, "out_and_back_kept": 0},
+                           "walk": {"legs": 80, "left_out": 40, "kept": 40,
+                                    "out_and_back_kept": 0}}
+    walk_off, car_off, left_out_off = _loop_decider_draws(monkeypatch, {_KEY_WITHOUT_LOOPS: False})
+    assert walk_off == {"leisure_local", "leisure_visit"}
+    assert car_off == {"leisure_local"}
+    assert left_out_off is None
+
+
+def test_leisure_decider_keeps_out_and_back_strolls_in_the_loop_free_estimate(monkeypatch):
+    """40 visits and 40 walk strolls from home, each followed by its own way home in the diary:
+    the strolls are out-and-back, stay in the estimate and keep leisure_local drawable. The way
+    home is no leisure leg, so the marks must be read before the purpose filter."""
+    rows = []
+    _add_rows(rows, 0, w_zweck=7, w_zwd=701, wegkm=3.0, n=40, hvm_imp=1)
+    _add_rows(rows, 100, w_zweck=7, w_zwd=710, wegkm=3.0, n=40, hvm_imp=1)
+    _add_rows(rows, 100, w_zweck=8, w_zwd=2202, wegkm=3.0, n=40, hvm_imp=1)
+    for row in rows[80:]:
+        row["W_ID"] = 1                                 # the way home after each stroll
+    ctx = _decider_context({"secondary_leisure_subtype_split": True, _KEY_WITHOUT_LOOPS: True},
+                           monkeypatch, pd.DataFrame(rows))
+
+    decide = sc._build_leisure_subtype_decider(ctx, random_seed=1)
+
+    assert {decide("walk", 600.0) for _ in range(200)} == {"leisure_local", "leisure_visit"}
+    assert decide.loop_legs_left_out["walk"] == {"legs": 80, "left_out": 0, "kept": 80,
+                                                 "out_and_back_kept": 40}
+
+
+@pytest.mark.parametrize("missing", ["secondary_leisure_subtype_split",
+                                     "secondary_loop_zero_displacement"])
+def test_configure_refuses_loop_free_estimates_without_their_prerequisites(missing):
+    """The switch only means something with the leisure subtype split (the estimates it changes)
+    and the loop placement (the loops it leaves out are placed there); both stages refuse it
+    otherwise, naming the missing key, and accept it with both on."""
+    from braunschweig.popsim import distance_distributions
+
+    settings = {"secondary_leisure_subtype_split": True,
+                "secondary_loop_zero_displacement": True,
+                "w_zweck_10_as_leisure": True,
+                _KEY_WITHOUT_LOOPS: True}
+    for configure in (distance_distributions.configure, sc.configure):
+        accepted = _FakeContext(dict(settings))
+        configure(accepted)
+        assert accepted.registered[_KEY_WITHOUT_LOOPS] is True
+        with pytest.raises(ValueError, match=missing):
+            configure(_FakeContext({**settings, missing: False}))
+
+
+def test_loop_free_estimates_default_off_in_both_stages():
+    """Declared unconditionally with the one shared default (off: today's estimates)."""
+    from braunschweig.popsim import distance_distributions
+    from braunschweig.popsim.stage.config_keys import (
+        DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS,
+        KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS)
+
+    assert KEY_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS == _KEY_WITHOUT_LOOPS
+    assert DEFAULT_SECONDARY_LEISURE_ESTIMATES_WITHOUT_LOOPS is False
+    for configure in (distance_distributions.configure, sc.configure):
+        ctx = _FakeContext()
+        configure(ctx)
+        assert ctx.registered[_KEY_WITHOUT_LOOPS] is False
 
 
 def _strip_activity_from_locations(locations_df, activity_name: str):

@@ -1,0 +1,267 @@
+id: i678-reach-replay-prod100-2026-11-25
+date: '2026-11-26'
+repository:
+  commit: 950c91a8fba8921c1e1c8b6daeb38966956c9aa4
+  branch: fix/i678-mode-choice-reach
+  notes: >-
+    Result of record: the third attempt (2026-11-26). eqasim-bs fix/i678-mode-choice-reach at 950c91a8 in a clean clone
+    on the project server (run folder i678_replay3, eqasim-bs, 0 changes) with eqasim-java-bs main at 3f398bdfe0960096b1702def8fa772b7db6e8e23
+    (the merge of PR #66: the standalone runner keeps the trips it does not re-choose exactly as they came in and logs
+    how many, and a worker failure ends the run), a clean clone (i678_replay3/eqasim-java-bs); both clones were made
+    from git bundles of these commits. The jar was built there with -Pstandalone and the fixed build timestamp of
+    matsim.runtime.eqasim (braunschweig-2.3.1.jar, 193,801,549 bytes, sha256
+    23fe730bea68f9f472a2f5e868586f6eb32e0b2eb1c046007a23d630e0574862; it holds KeepFilteredTripsModel,
+    BorderTourVehicleConstraint, its Factory and BorderTourVehicleSummaryListener); after the build the clone shows only
+    braunschweig/dependency-reduced-pom.xml as modified (the shade plugin rewrites it). Second attempt (2026-11-25, kept
+    as the comparison before the Java fix): eqasim-bs 884627f0 (run folder i678_replay2, eqasim-bs) with eqasim-java-bs main at
+    ae6a10a1c753537597145cc722ad0277ede58cfb (the merge of PR #65, the border tour vehicle constraint), jar 193,786,595
+    bytes, sha256 8cf877113730d4ddd4397d660386189cd2b6d110bfbdf61e60f6b4c5962e6bb8 (run folder i678_replay, eqasim-java-bs).
+    First (failed) attempt: eqasim-bs 79d0bcbd with the same ae6a10a1 jar. The population and the final config are
+    those of the run prod100_20261031 (code 7a41f0ba), read only; every attempt worked on copies.
+configuration:
+  config: >-
+    configs/base_bs.yml of the clone (the branch defaults: initial mode choice isolate_outside_trips true and
+    max_tour_length 11, loop isolate_outside_trips false and max_tour_length 11, lift all_modes true,
+    max_share_other_modes 0.002; plan check keys, cordon_enabled and freight_enabled as in the file), read by the
+    stand-in context of the replay driver, with three operational overrides: java_binary (JDK 25.0.3), java_memory 56G,
+    matsim_threads 32. The MATSim config is a copy of the final config of prod100_20261031.
+  notes: >-
+    mode_choice_reach.apply with the loop settings changed one value of the final config (maximumLength 6 -> 11,
+    config_diff_final_output.txt); the second file of the initial mode choice differs from it in tourFinder
+    (IsolatedOutsideTrips) and tourConstraints (FromTripBased, BorderTourVehicleContinuity)
+    (config_diff_initial_output.txt). Both files are byte-identical across the three attempts
+    (config_diff_replay2_vs_replay1_output.txt; the third attempt's sha256 in sha256_replay3_output.txt equal those of
+    sha256_replay2_output.txt). Runner arguments from initial_mode_choice.arguments with 32 threads and the default
+    chunk size of 1,000. Excluded subpopulations (second and third attempt): the list of the branch's
+    prepare._initial_mode_choice_excluded_subpopulations for this config, incommuter, student_incommuter and freight.
+    The runner kept 56,364 freight persons unchanged and warned that the two in-commuter names match nobody:
+    prod100_20261031 predates #566, its in-commuters carry no subpopulation attribute, so unlike in a post-#566 prepare
+    they were re-chosen, and the lift and the plan check count them as residents (subpopulation-attribute rule). First
+    attempt: no exclusion.
+sampling:
+  rate: 1.0
+  scope: >-
+    the prepared population of prod100_20261031: 1,261,590 persons, of which 1,130,422 residents (no subpopulation
+    attribute and no ic_ facility in the uncut plan, the rule of the "before" probe), 74,804 in-commuters and 56,364
+    freight (subpopulation freight). The counts of the analysis scripts are residents only unless a row says otherwise;
+    the step reports of the code (initial_mode_choice.json, frozen_pt_walk_lift.json, plan_check.json) count the
+    in-commuters among the residents.
+pipeline:
+  targets: []
+  notes: >-
+    No synpp pipeline run. The run script made the stage directory (symbolic links to the files of the run's prepare
+    stage directory, copies of the final config and of the population, cmp-identical) and ran the replay driver, which
+    calls the steps of prepare.execute in their order through a stand-in context (config, path, stage): the jar check,
+    mode_choice_reach.apply, initial_mode_choice.run(reach=initial settings), frozen_pt_walk_lift.run and
+    plan_check.run with the lift report. The driver keeps the population after the initial mode choice as a hard link
+    (snapshots/). Third attempt: i678_run_replay_v3.sh (differs from i678_run_replay_v2.sh only in the folder and the
+    jar path) and the unchanged i678_reach_replay_v2.py, 1:15:28 wall time for the driver, exit 0; then, read only and
+    unchanged, i678_reach_analysis_v2.py (1,615 s), i678_plan_check_compare.py and i678_unreached_changes.py, started
+    together by i678_run_analyses_v3.sh. Second attempt: i678_run_replay_v2.sh and i678_reach_replay_v2.py, 1:15:59,
+    exit 0, with the same three analyses. First attempt: i678_run_replay.sh, i678_reach_replay.py,
+    i678_reach_analysis.py (input only), i678_cut_subpopulation.py and i678_diag_freight.sh (reproduction).
+classification:
+- wiring_proof
+status:
+  execution: completed
+  notes: >-
+    A replay on production inputs, NOT a validation. The third attempt ran all four steps to the end, completed with
+    two reported plan check thresholds exceeded, both properties of the INPUT population that predate #678 (measured
+    with the branch's plan check code, see the validation rows): share_plans_non_monotonic_large of the frozen resident
+    block (planned lateness over 900 s) and share_lifted_frozen_pt_walk (the long pt-as-walk trips the lift turns into
+    car_passenger, bound max_frozen_pt_as_walk_share 0.02). fail_on_threshold is false, so the check logged both at
+    ERROR and continued; no bound or code was changed (owner decision 2026-11-26: record the pt-as-walk excess as
+    pre-existing and continue). What changed against the second attempt (the Java fix of PR #66): the runner now
+    leaves the trips it does not re-choose exactly as they came in ("660457 of 3919594 trips (16.85 %) are rejected by
+    the model's filter and not re-chosen; they were kept unchanged"). In the second attempt it had re-routed them:
+    760 resident border trips lost their walkFallbackFrom stamp (pt-as-walk relabelled as walk) and 67 resident border
+    pt trips became walk-only. Everything the mode choice decides is identical between the two attempts (reach
+    classes, newly reached trips, every mode change, freight); only the kept trips and therefore the lift and the
+    plan check's pt-as-walk counts differ. The second attempt's pt-as-walk share after the initial choice (0.23 %) was
+    an artefact of the dropped stamps. First attempt (79d0bcbd, kept as evidence): BLOCKED at the initial mode choice.
+    The runner failed with java.lang.NullPointerException "Cannot invoke String.equals(Object) because the return
+    value of DiscreteModeChoiceTrip.getInitialMode() is null" in
+    org.eqasim.core.simulation.mode_choice.constraints.OutsideConstraint.validateBeforeEstimation: the injected freight
+    legs are a bare leg mode="truck" without routingMode. Reproduced on 500 freight persons with the initial config and
+    with the stock rule (ActivityBased, VehicleContinuity), so independent of the #678 settings. After the worker
+    exception the JVM did not exit; it was stopped by hand after 35 minutes (exit 143) and wrote no output. Fixed on
+    the branch by commit 884627f0 (freight excluded) and in the Java fork by PR #66 (the run ends on a worker failure).
+source: >-
+  the project server, run folder i678_replay3 (third attempt: stage/, snapshots/, replay_output.txt the full log, analysis outputs),
+  run folders i678_replay2 (second attempt) and i678_replay (first attempt, thread_dump_1.txt, diag_freight/). Committed in
+  docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/ with the sha256 of the server file (sha256_output.txt,
+  sha256_replay2_output.txt, sha256_replay3_output.txt). Third attempt: i678_run_replay_v3.sh
+  (0a0603871936ad8de308728fdd1f8581db791c862556ea374fad24615e755fc5), i678_run_analyses_v3.sh (the server file
+  run_analyses.sh, 450c9808ad087fd64c31b48db7b0edb11f965ba0af1622bb412f70446537954e, with its expanded home paths
+  written as ~, so the committed blob differs from that hash); the step reports replay3_initial_mode_choice.json,
+  replay3_frozen_pt_walk_lift.json, replay3_plan_check.json and the driver summary replay3_summary.json; selected log
+  lines replay3_lines_output.txt (line numbers of the server log kept); analysis_replay3.json with
+  analysis_replay3_output.txt; plan_check_compare_replay3.json with plan_check_compare_replay3_output.txt;
+  unreached_changes_replay3.json with unreached_changes_replay3_output.txt. Second attempt: i678_reach_replay_v2.py
+  (4ef27fcaf40ca15b51185326e416170956c2eeadc376d3420a04fa128ad44a1a, also used by the third attempt),
+  i678_run_replay_v2.sh (4b475a49a7b2d726c60e947ff41b47e78008ebcc54adc4baae6ef8836b4a904c),
+  i678_reach_analysis_v2.py (5723827760ea1540a7e60fe42884dd9541af34dabda1625bc7a81ce4af978c52),
+  i678_plan_check_compare.py (c103784dc94026b00d45abc0d46211928ce3379d83dc44b4c64e7d9fdf103ba2),
+  i678_unreached_changes.py (7ef35ec389d0b89469174b0e890f85ce4ba2be94b3b217d331a38955d7833c86) (the three analyses
+  also used by the third attempt); the step reports replay2_initial_mode_choice.json, replay2_frozen_pt_walk_lift.json,
+  replay2_plan_check.json and replay2_summary.json; replay2_lines_output.txt; analysis_replay2.json with
+  analysis_replay2_output.txt; plan_check_compare.json with plan_check_compare_output.txt; unreached_changes.json with
+  unreached_changes_output.txt; config_diff_replay2_vs_replay1_output.txt. First attempt: i678_reach_replay.py
+  (eedbe6cce01ce5e54e8665ee79e5b1d627d4599465b6db4216ec4aa722b05a33), i678_run_replay.sh
+  (1713b6e83529f59decf6b782044fa3108e4191bbf6595849456df618057cd862), i678_reach_analysis.py
+  (01789407e6eed9ff714aabc0df6463db38d06cf645e1a92bc3823949bb5dea21), i678_cut_subpopulation.py
+  (4effc0aeb53be0bc58cd0cb802b4839ba5a52aa6a5fa4eebe646db6c4ff6e714), i678_diag_freight.sh
+  (e62578e19eb72a7a9980eb9f58963eedcdf6602026c2a01d81193ea4e8af605b) with replay_summary.json,
+  replay_lines_output.txt, thread_dump_excerpt_output.txt, analysis_before.json, analysis_before_output.txt,
+  diag_freight_{initial,final,driver}_output.txt and config_diff_{final,initial}_output.txt. Home directory paths are
+  written as ~ in the committed outputs; nothing else differs from the server files.
+environment: 'the project server (64 cores, 94 GB), conda env eqasim (Python 3.10), Java JDK 25.0.3+9 (25.0.3), Maven 3.6.3; 32 threads, -Xmx56G; load average about 1 to 3 in the third attempt, about 1 to 4 in the second (another session ran populationsim workers and a Java job)'
+validation:
+- metric: persons in and out of every step, and are freight and in-commuters handled as the exclusion says?
+  reference: 'none: a wiring check on model output'
+  result: >-
+    Third attempt: 1,261,590 persons in the population file after the jar check, the config edit, the initial mode
+    choice (persons_before = persons_after = 1,261,590 in initial_mode_choice.json), the lift and the plan check; no
+    person lost. The runner: "Excluded subpopulations: 56364 of 1261590 persons (4.47 %) keep their plan unchanged",
+    1,205,226 plans chosen in 1,206 chunks, choice phase 15:26:53 to 15:50:32, Java wall time 2,593 s, peak resident
+    memory of the largest process 45,798,356 kB. All 56,364 freight plans are identical to the input after the initial
+    choice and after the lift. In-commuters (not excluded in this pre-#566 run): 669 of 74,804 plans differ after the
+    choice (second attempt 2,535: the difference is the re-routing of kept trips the Java fix removed), 1,256 of their
+    221,700 trips changed mode (same in both attempts), and the lift lifted 483 of their legs (second attempt 511).
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay3.json
+- metric: trips the standalone runner keeps unchanged because its filters reject them (new log line of PR #66)
+  reference: 'none: a count of model output'
+  result: >-
+    "Standalone mode choice: 660457 of 3919594 trips (16.85 %) are rejected by the model's filter and not re-chosen;
+    they were kept unchanged (persons without a valid alternative are not counted)". The count covers residents and
+    in-commuters (freight is excluded before the choice) under the runner's own filters for the initial rule; it is
+    not the same classification as the Python reach classes below and is not compared with them. The second attempt's
+    jar had no such line.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay3_lines_output.txt
+- metric: resident trips not reached by reason, before and after
+  reference: 'none: a count of model output, classified with plan_check.leg_reach of the branch'
+  result: >-
+    Identical in the second and third attempt. 3,697,894 resident trips. Before, today's loop rule (coarse, 6):
+    reached 3,160,049, fixed_border 486,324, fixed_length 51,521. The branch's loop rule (coarse, 11), which also holds
+    after the initial choice and after the lift (the classes depend only on the activities, which neither step
+    changes): reached 3,207,293, fixed_border 486,324, fixed_length 4,277. The branch's initial rule (finer, 11):
+    reached 3,223,256, fixed_border 444,614, fixed_vehicle 25,747, fixed_length 4,277. The lift report (all persons
+    the lift treats as residents, 3,919,594 trips; the lift acts on residents only, but in this pre-#566 population
+    the in-commuters carry no subpopulation attribute and count as residents, see configuration notes) counts under the loop rule fixed_border 698,210 and fixed_length 4,277.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay3.json
+- metric: trips the initial choice newly reached (not reached under today's rule, reached under the initial rule) that changed their mode, by from-mode and to-mode
+  reference: 'none: model output under free-flow travel times'
+  result: >-
+    Identical in the second and third attempt (analysis_replay3.json differs from analysis_replay2.json only in the
+    in-commuter plan counts, the walks over 5 km after the choice and the lifted trips). 63,207 newly reached (15,963 in
+    border tours, 47,244 in tours of 7 to 11 trips); 32,114 changed mode (7,546 and 24,568). From -> to: car -> walk
+    8,234; walk -> car_passenger 4,800; walk -> car 3,851; pt -> car_passenger 3,023; bicycle -> car 2,687;
+    car_passenger -> pt 1,849; car_passenger -> walk 1,691; car_passenger -> car 1,381; bicycle -> walk 1,003; walk ->
+    pt 819; car -> car_passenger 765; pt -> car 502; walk -> bicycle 427; car -> bicycle 301; bicycle -> pt 207; car ->
+    pt 194; bicycle -> car_passenger 155; pt -> walk 86; car_passenger -> bicycle 75; pt -> bicycle 64. Over all trips
+    the initial rule reaches, 1,679,072 of 3,223,256 changed mode. 598 resident trips that the Python classification
+    counts as not reached changed mode as well: all of class fixed_vehicle (car or bicycle in a border tour), i.e. the
+    vehicle legs the constraint frees for missing availability. In the third attempt these 598 are the ONLY changes in
+    not-reached resident trips (unreached_changes_replay3_output.txt); in the second attempt the 760 dropped stamps and
+    the 67 re-routed pt trips came on top.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/unreached_changes_replay3_output.txt
+- metric: trips of border tours that the initial choice reached but that still have an unfitting mode after it (the number behind the loop switch)
+  reference: 'none: model output; bounds of the plan check (walk 5 km, bicycle 30 km, pt-as-walk 5 km)'
+  result: >-
+    Identical in the second and third attempt. Of the 15,963 border-tour trips the initial choice reached, 1,433 were
+    plain walks over 5 km and 538 pt-as-walk trips over 5 km before the choice; after it, 123 plain walks over 5 km
+    remain unfit (no pt-as-walk, no bicycle). The loop (coarse rule) does not reach them, so the lift repaired them.
+    The 538 pt-as-walk trips are inside trips of border tours that the initial choice REACHED and re-chose or
+    re-routed (real repairs); they are distinct from the 760 border pt-as-walk trips the initial choice does NOT reach
+    (lift row).
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay3.json
+- metric: lifted trips by mode and reason, the taken-along bicycle trips, and the share of the other modes against max_share_other_modes
+  reference: 'the bounds of the branch: max_share_other_modes 0.002 (an ASSUMPTION, ADR-0206) and max_frozen_pt_as_walk_share 0.02 (an ASSUMPTION, ADR-0188 and ADR-0189)'
+  result: >-
+    Third attempt, lift report (all persons the lift treats as residents, which in this pre-#566 population includes
+    the in-commuters, see configuration notes): pt 1,212, walk 258, bicycle 5, all fixed_border
+    (fixed_vehicle 0, fixed_length 0); 2 bicycle trips taken along with their tour; share_lifted_other_modes 0.0000671
+    (263 of 3,919,594 trips) against 0.002, not exceeded; share_lifted (pt) 0.0268 (1,212 of 45,216 frozen pt-intended
+    trips, all detected by the walkFallbackFrom stamp; 5-10 km 578, 10 km and more 634) against 0.02, EXCEEDED
+    (pre-existing, plan check row). Residents only: pt 760, walk 227, bicycle 5 (3 unfit, 2 taken along);
+    in-commuters the other 483 (pt 452, walk 31); this split by person group comes from the analysis
+    (analysis_replay3.json), not from the lift report. The 760 resident pt lifts are the border pt-as-walk trips the
+    initial choice does not reach, kept with their stamp: of the 1,298 resident pt-as-walk trips over 5 km that the
+    loop does not reach on the input, 538 were repaired by the initial choice (row above) and 760 = 1,298 - 538 keep
+    their class. The 227 resident walks are 123 inside trips the initial choice reached but left unfit, 99 border trips
+    that were long walks already, and 5 freed vehicle legs that became walks. Second attempt (before the Java fix): pt
+    95, walk 1,470, bicycle 5, share_lifted_other_modes 0.000376, share_lifted 0.00231; residents walk 987 (the 227
+    plus the 760 trips whose stamp the runner had dropped, so they were lifted as walks) and pt 67 (border pt trips
+    the runner had re-routed to walk-only). Total lifted trips: 1,570 in the second attempt
+    (replay2_frozen_pt_walk_lift.json) and 1,475 in the third.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay3_frozen_pt_walk_lift.json
+- metric: n_unreached_unfit and the plan check's threshold result
+  reference: 'the plan check invariant of the branch (n_unreached_unfit must be 0 with all_modes) and its thresholds (max_frozen_defect_share 0.005, max_frozen_pt_as_walk_share 0.02; both ASSUMPTIONS of ADR-0188 and ADR-0189, fail_on_threshold false)'
+  result: >-
+    Third attempt: n_unreached_unfit 0 in the frozen and the in-region resident block of plan_check.json (the same
+    code gives 3,320 on the input and 1,473 after the initial choice; the 1,473 are the trips the lift then repaired,
+    2 taken-along bicycles aside; second attempt 1,568). Threshold result: exceeded [share_plans_non_monotonic_large,
+    share_lifted_frozen_pt_walk]; share_plans_late 0.003 % and share_pt_as_walk_long 0.0 are within their bounds. The
+    pt-as-walk share of frozen pt-intended trips over 5 km (plan check rule, residents and in-commuters) is 3.93 %
+    (1,785 / 45,469) in the input, 2.68 % (1,212 / 45,216) after the initial mode choice, and 0 after the lift (0 of
+    44,004). The bound max_frozen_pt_as_walk_share 0.02 was already exceeded before #678: the lift replay of #575 on
+    the same run measured 3.9 % (1,785 of 45,469) (docs/runs/i575-frozen-pt-walk-lift-prod100-2026-11-06.yml). The
+    input predates ADR-0186: prod100_20261031 was cut in the old extent mode (its prepare cache has no
+    transit_cut_summary.csv), which split pt trips at the extent polygon and re-routed the inside pieces on the cut
+    timetable, the mechanism that ADR-0186's kept-stops cut (the production setting since) addresses. This replay
+    therefore does not measure the share under the current cut; the next 100 % production run (#22) does. The
+    second attempt's 0.23 % (95 of 41,140) after the initial choice was an artefact of the dropped stamps, not a
+    repair. Of the fall from 1,785 to 1,212, the residents' part is 538 real repairs by the initial choice (1,298 ->
+    760); the rest (487 -> 452) is in-commuters, re-chosen in this pre-#566 run, plus any trips where the plan
+    check's pt-as-walk rule and unfit_mode differ; not traced, because the committed analysis splits only residents.
+    share_plans_non_monotonic_large 1.12 % (1,702 of 151,733 frozen residents) against 0.50 %, the same in both
+    attempts; a property of the input: the branch's plan check gives 1.14 % (1,726) on the input and 1.13 % (1,722)
+    after the initial choice (plan_check_compare_replay3.json). The run's own plan_check.json (older code) already
+    listed share_plans_non_monotonic as exceeded.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/plan_check_compare_replay3.json
+- metric: resident plain walk trips over 5 km (straight line; mode walk, only walk legs, not pt-intended), before and after
+  reference: 'the "before" manifest docs/runs/i678-mode-choice-reach-probe-prod100-2026-11-25.yml (1,433 + 1,122 = 2,555 walks over 5 km in trips of frozen tours that do not touch outside and in tours over 6 trips); model output, not observed data'
+  result: >-
+    Input, today's rule: not reached 1,433 (not touching outside) + 1,122 (long tours) = 2,555, equal to the "before"
+    manifest, plus 99 that touch outside; reached 88,112. Input, the branch's loop rule: not reached 1,532, reached
+    89,234. After the initial choice, loop rule: not reached 227 (the walks the lift had to repair: 123 left unfit by
+    the initial choice, 99 long walks already at the border, 5 freed vehicle legs), reached 1,817. Second attempt: 987
+    not reached, of which 760 were border pt-as-walk trips relabelled by the dropped stamp. After the lift: not reached
+    0, which is the invariant holding by construction (the lift repairs every unreached unfit trip, the plan check
+    enforces n_unreached_unfit = 0), not a further result; reached 1,817, which the loop can still re-choose.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_replay3.json
+- metric: border-tour vehicle legs relaxed for missing availability, own count against the runner's running log lines
+  reference: 'the running summary lines of BorderTourVehicleConstraint.Factory (written whenever the relaxed count reaches a power of two); model output'
+  result: >-
+    Counted from the input population: a trip of a home-based tour with a trip at outside whose routing mode is car or
+    bicycle, where BraunschweigModeAvailability does not offer that mode (car: carAvailability none or hasLicense no;
+    bicycle: bicycleAvailability none). Residents: car 2,394 of 162,153, bicycle 67 of 1,415; in-commuters: car 0 of
+    134,649. Total 2,461 of 298,217 (0.83 %). The runner's last running line in the third attempt: "2050 of 264771
+    (0.77 %)" at 15:44:48 (second attempt "2049 of 264642 (0.77 %)"; the running counts differ by thread timing). Both
+    figures of that line are running counts at the moment the relaxed count passed 2,048: 264,771 is the number of
+    border-tour vehicle legs counted UP TO THAT MOMENT, not the total, so it is not comparable with the denominator
+    298,217. No line for 4,096 followed, so the runner's final relaxed total lies between 2,050 and 4,095, and its
+    final vehicle-leg total is at least 264,771. The counted 2,461 of 298,217 lies in both ranges; that is the extent
+    of the agreement (the standalone runner writes no final summary line for this constraint).
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/replay3_lines_output.txt
+- metric: the gap of the step-1 manifest (uncut 365 tours of 13 trips and 1,193 of 9 to 11 trips against 329 and 815 persons in the prepared population)
+  reference: 'none: a count of model output'
+  result: >-
+    Explained by the cordon cut. Of the uncut resident home-based tours without an outside activity and with more
+    than 6 trips (7,355), the same tour in the prepared population (matched by its index among the person's home
+    tours; every person's tour count matched) has the same length and no outside activity in 6,554 cases and touches
+    outside in 801 cases: 13 trips 329 + 36, 9 to 11 trips 812 + 381, 7 to 8 trips 5,413 + 384. A tour with an
+    activity beyond the cut extent becomes a border tour, which the finer rule cuts into shorter runs. The 815 persons
+    of step 1 with a longest run of 9 to 11 trips are these 812 plus 3 whose long run lies inside a border tour; the
+    5,473 with 7 to 8 trips are 5,413 plus 60. The same 801 tours are the unexplained difference between 7,355 and
+    6,554 in the "before" manifest.
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/analysis_before_output.txt
+- metric: first attempt (79d0bcbd, no exclusion) - does the replay run on the full population?
+  reference: 'none: a wiring check on model output'
+  result: >-
+    No: the freight NullPointerException and the hang described in status; residents and in-commuters (1,205,226) had
+    finished their choice, no output was written, no population was replaced. The same failure on 500 freight persons
+    with the initial config and with the stock config (diag_freight_*_output.txt).
+  artifact: docs/runs/artifacts/i678-reach-replay-prod100-2026-11-25/diag_freight_final_output.txt
+issues:
+- '#678'

@@ -5,6 +5,7 @@ import zipfile
 import pytest
 
 from braunschweig.matsim.simulation import plan_check as C
+from braunschweig.matsim.simulation.mode_choice_reach import ReachSettings
 
 POPULATION = """<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE population SYSTEM "http://www.matsim.org/files/dtd/population_v6.dtd">
@@ -120,6 +121,85 @@ def test_leg_tour_frozen_marks_the_legs_of_tours_touching_outside():
     assert C.leg_tour_frozen(activities) == [True, True, False, False]
 
 
+def _reach(types, modes, *, isolate, limit):
+    activities = [(kind, None, float(index), 0.0) for index, kind in enumerate(types)]
+    legs = [(mode, None, None, mode) for mode in modes]
+    return C.leg_reach(activities, legs, isolate_outside_trips=isolate, max_tour_length=limit)
+
+
+R, B, V, N = C.REACHED, C.FIXED_BORDER, C.FIXED_VEHICLE, C.FIXED_LENGTH
+REACH_CASES = [  # name, activity types, modes, coarse rule with limit 6, finer rule with limit 8
+    ("ordinary", ["home", "work", "shop", "home"], ["walk"] * 3, [R] * 3, [R] * 3),
+    ("portal stay", ["home", "work", "outside", "leisure", "home"], ["walk"] * 4, [B] * 4, [R, B, B, R]),
+    ("outside destination", ["home", "work", "outside", "home"], ["walk"] * 3, [B] * 3, [R, B, B]),
+    ("cut trip", ["home", "a", "outside", "outside", "b", "home"], ["pt", "pt", "outside", "pt", "pt"],
+     [B] * 5, [R, B, B, B, R]),
+    ("not from home", ["leisure", "work", "outside", "shop", "home"], ["walk"] * 4, [B] * 4, [R, B, B, R]),
+    ("seven trips", ["home"] + ["other"] * 6 + ["home"], ["walk"] * 7, [N] * 7, [R] * 7),
+    ("nine trips", ["home"] + ["other"] * 8 + ["home"], ["walk"] * 9, [N] * 9, [N] * 9),
+    ("car to the border", ["home", "a", "outside", "home"], ["car"] * 3, [B] * 3, [V, B, B]),
+    ("car left behind", ["home", "a", "b", "outside", "home"], ["car", "walk", "pt", "pt"], [B] * 4, [V, R, B, B]),
+]
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", REACH_CASES)
+def test_leg_reach_matches_the_named_cases(name, types, modes, coarse, finer):
+    assert _reach(types, modes, isolate=False, limit=6) == coarse
+    assert _reach(types, modes, isolate=True, limit=8) == finer
+
+
+ODD_SHAPE_CASES = [  # name, activity types, modes, coarse rule with limit 6, finer rule with limit 8
+    # trips outside>a, a>home; one base tour (ends at home) that starts at the border: coarse B,B; finer cut:
+    # the border trip is B, the trip a>home does not touch the border and is a walk trip of 1 <= 8: R.
+    ("starts at outside", ["outside", "a", "home"], ["walk"] * 2, [B] * 2, [B, R]),
+    # trips home>a, a>b, b>outside; the base tour ends at outside: coarse B,B,B; finer cut: [home>a, a>b] R,R and B.
+    ("ends at outside without home", ["home", "a", "b", "outside"], ["walk"] * 3, [B] * 3, [R, R, B]),
+    # trips outside>outside (ends a base tour on its own), outside>a, a>home: coarse B,B,B; finer: B, B, and a>home R.
+    ("outside to outside first", ["outside", "outside", "a", "home"], ["walk"] * 3, [B] * 3, [B, B, R]),
+    # trips home>a, a>outside (ends the base tour), outside>outside (a tour of its own): coarse B,B,B; finer R,B,B.
+    ("outside to outside last", ["home", "a", "outside", "outside"], ["walk"] * 3, [B] * 3, [R, B, B]),
+    # mode None is not a restricted mode: the vehicle rule never fires although the home tour touches the border;
+    # trips home>a, a>b, b>outside, outside>home: coarse B x4; finer R,R (run of 2 <= 8), B, B.
+    ("mode and routing mode None", ["home", "a", "b", "outside", "home"], [None] * 4, [B] * 4, [R, R, B, B]),
+]
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", ODD_SHAPE_CASES)
+def test_leg_reach_of_odd_plan_shapes(name, types, modes, coarse, finer):
+    assert _reach(types, modes, isolate=False, limit=6) == coarse
+    assert _reach(types, modes, isolate=True, limit=8) == finer
+
+
+def test_leg_reach_rejects_a_plan_whose_legs_do_not_match_its_activities():
+    activities = [("home", None, 0.0, 0.0), ("work", None, 1.0, 0.0), ("home", None, 0.0, 0.0)]
+    with pytest.raises(ValueError):
+        C.leg_reach(activities, [("walk", None, None, None)], isolate_outside_trips=True, max_tour_length=8)
+
+
+@pytest.mark.parametrize("name, types, modes, coarse, finer", REACH_CASES)
+def test_the_coarse_rule_without_a_length_limit_is_the_old_tour_rule(name, types, modes, coarse, finer):
+    activities = [(kind, None, float(index), 0.0) for index, kind in enumerate(types)]
+    reach = _reach(types, modes, isolate=False, limit=10 ** 9)
+    assert [value != C.REACHED for value in reach] == C.leg_tour_frozen(activities)
+
+
+def test_leg_reach_gives_every_leg_of_a_routed_pt_trip_the_class_of_the_trip():
+    activities = [("home", None, 0.0, 0.0), ("pt interaction", None, 1.0, 0.0), ("pt interaction", None, 2.0, 0.0),
+                  ("outside", None, 3.0, 0.0), ("home", None, 0.0, 0.0)]
+    legs = [("walk", None, None, "pt"), ("pt", None, None, "pt"), ("walk", None, None, "pt"), ("car", None, None, "car")]
+    assert C.leg_reach(activities, legs, isolate_outside_trips=True, max_tour_length=8) == [C.FIXED_BORDER] * 4
+
+
+def test_leg_reach_of_a_plan_without_legs_is_empty():
+    assert C.leg_reach([], [], isolate_outside_trips=True, max_tour_length=8) == []
+    assert C.leg_reach([("home", None, 0.0, 0.0)], [], isolate_outside_trips=False, max_tour_length=6) == []
+
+
+def test_a_border_trip_wins_over_the_vehicle_and_the_length_reason():
+    types = ["home"] + ["other"] * 8 + ["outside", "home"]
+    assert _reach(types, ["car"] * 10, isolate=True, limit=6) == [C.FIXED_VEHICLE] * 8 + [C.FIXED_BORDER] * 2
+
+
 def test_summarise_counts_late_non_monotonic_long_and_slow_legs_per_subpopulation_and_class(population_path):
     summary = C.summarise(C.iter_person_plans(population_path), simulation_end_s=30 * 3600.0,
                           walk_max_distance_m=5000.0, bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0,
@@ -190,10 +270,11 @@ def _plan(person_id, activities, legs, subpopulation=C.RESIDENTS):
     return C.PersonPlan(person_id=person_id, subpopulation=subpopulation, activities=activities, legs=legs)
 
 
-def _summarise(plans):
+def _summarise(plans, reach=None):
     return C.summarise(plans, simulation_end_s=30 * 3600.0, walk_max_distance_m=5000.0,
                        bicycle_max_distance_m=30000.0, leg_max_duration_s=10800.0,
-                       pt_as_walk_bound_min_distance_m=5000.0, non_monotonic_bound_min_lateness_s=900.0)
+                       pt_as_walk_bound_min_distance_m=5000.0, non_monotonic_bound_min_lateness_s=900.0,
+                       reach=reach)
 
 
 def test_summarise_counts_plans_whose_last_planned_arrival_is_after_the_simulated_day_per_class():
@@ -313,7 +394,9 @@ class _RunContext:
                         C.KEY_LEG_MAX_DURATION_S: 10800.0, C.KEY_MAX_FROZEN_DEFECT_SHARE: max_share,
                         C.KEY_MAX_FROZEN_PT_AS_WALK_SHARE: 0.02,
                         C.KEY_PT_AS_WALK_BOUND_MIN_DISTANCE_M: 5000.0, C.KEY_NON_MONOTONIC_BOUND_MIN_LATENESS_S: 900.0,
-                        C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold}
+                        C.KEY_FAIL_ON_THRESHOLD: fail_on_threshold,
+                        "braunschweig.mode_choice.isolate_outside_trips": False,
+                        "braunschweig.mode_choice.max_tour_length": 11}
         (directory / "runtime").mkdir(exist_ok=True)
         _write_stub_jar(directory / "runtime" / JAR_NAME)
 
@@ -362,7 +445,7 @@ def test_run_does_not_raise_when_the_frozen_defect_is_inside_the_share(tmp_path)
     assert (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
 
 
-_LIFT_ABOVE_BOUND = {"share_lifted": 0.5, "n_pt_trips_frozen": 10}
+_LIFT_ABOVE_BOUND = {"share_lifted": 0.5, "n_pt_trips_frozen": 10, "all_modes": False}
 
 
 def test_run_records_a_lift_share_above_the_bound_and_raises_after_writing_the_json_naming_it(tmp_path):
@@ -769,3 +852,125 @@ def test_run_raises_before_writing_the_report_when_the_jar_predates_the_stamp(tm
     with pytest.raises(RuntimeError, match="predates the walk fallback stamp"):
         C.run(context, "bs_config.xml")
     assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()
+
+
+# --- the reach classification in the summary and the unreached invariant (#678) ---
+
+FINER_EIGHT = ReachSettings(isolate_outside_trips=True, max_tour_length=8)
+
+
+def _reach_plan(person_id, types, modes, coordinates=None):
+    """A resident plan with one trip per leg; activities one metre apart on the x axis unless ``coordinates``."""
+    coordinates = coordinates or [(float(index), 0.0) for index in range(len(types))]
+    activities = [(kind, None, x, y) for kind, (x, y) in zip(types, coordinates)]
+    return _plan(person_id, activities, [(mode, None, None, mode) for mode in modes])
+
+
+def _case(name):
+    _, types, modes, _, _ = next(case for case in REACH_CASES if case[0] == name)
+    return types, modes
+
+
+def _frozen_residents(summary):
+    return summary["subpopulations"][C.RESIDENTS][C.FROZEN]
+
+
+def test_summarise_counts_the_trips_by_reason():
+    plans = [_reach_plan(name, *_case(name)) for name in ("portal stay", "car left behind", "nine trips")]
+    frozen = _frozen_residents(_summarise(plans, reach=FINER_EIGHT))
+    assert frozen["n_persons"] == 3
+    assert (frozen["n_trips_fixed_border"], frozen["n_trips_fixed_vehicle"], frozen["n_trips_fixed_length"]) == (4, 1, 9)
+
+
+def test_a_person_with_one_unreached_trip_is_in_the_frozen_block():
+    # trips home>a (reached) and a>outside, outside>home (border): one frozen person, not split over two blocks
+    summary = _summarise([_reach_plan("p", ["home", "a", "outside", "home"], ["walk"] * 3)], reach=FINER_EIGHT)
+    residents = summary["subpopulations"][C.RESIDENTS]
+    assert residents[C.FROZEN]["n_persons"] == 1 and residents[C.IN_REGION]["n_persons"] == 0
+    assert residents[C.FROZEN]["n_legs"] == 2 and residents[C.IN_REGION]["n_legs"] == 1   # legs follow their trip
+
+
+def test_summarise_without_reach_settings_keeps_the_old_tour_rule():
+    types, modes = _case("seven trips")   # no outside activity: the old tour rule does not freeze it
+    plan = _reach_plan("p", types, modes)
+    old = _summarise([plan])["subpopulations"][C.RESIDENTS]
+    assert old[C.FROZEN]["n_persons"] == 0 and old[C.IN_REGION]["n_persons"] == 1
+    new = _summarise([plan], reach=ReachSettings(isolate_outside_trips=False, max_tour_length=6))
+    assert new["subpopulations"][C.RESIDENTS][C.FROZEN]["n_persons"] == 1
+    assert old[C.FROZEN]["n_trips_fixed_length"] == 0 and old[C.IN_REGION]["n_unreached_unfit"] == 0
+
+
+def _walk_plan(person_id, work_xy, outside_xy):
+    return _reach_plan(person_id, ["home", "work", "outside"], ["walk", "walk"],
+                       [(0.0, 0.0), work_xy, outside_xy])
+
+
+def test_an_unreached_walk_over_the_bound_is_counted_as_unfit():
+    # home>work 1 km (reached), work>outside 6 km straight line (border: unreached)
+    frozen = _frozen_residents(_summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT))
+    assert frozen["n_unreached_unfit"] == 1 and frozen["n_walk_trips_over_reached"] == 0
+
+
+def test_a_reached_walk_over_the_bound_is_only_reported():
+    # home>work 6 km (reached), work>outside 100 m
+    summary = _summarise([_walk_plan("p", (6000.0, 0.0), (6000.0, 100.0))], reach=FINER_EIGHT)
+    reached = summary["subpopulations"][C.RESIDENTS][C.IN_REGION]   # the trips of this class are the reached ones
+    assert reached["n_walk_trips_over_reached"] == 1 and reached["n_bicycle_trips_over_reached"] == 0
+    assert _frozen_residents(summary)["n_unreached_unfit"] == 0
+
+
+def test_the_unfit_bounds_are_strict_for_walk_and_bicycle_trips():
+    at_bound = _reach_plan("b", ["home", "outside", "home"], ["bicycle", "walk"],
+                           [(0.0, 0.0), (30000.0, 0.0), (25000.0, 0.0)])
+    assert _frozen_residents(_summarise([at_bound], reach=FINER_EIGHT))["n_unreached_unfit"] == 0
+    over = _reach_plan("o", ["home", "outside", "home"], ["bicycle", "walk"],
+                       [(0.0, 0.0), (30001.0, 0.0), (25000.0, 0.0)])
+    assert _frozen_residents(_summarise([over], reach=FINER_EIGHT))["n_unreached_unfit"] == 2
+
+
+def test_the_invariant_raises_when_the_lift_covers_all_modes():
+    summary = _summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT)
+    with pytest.raises(ValueError, match="n_unreached_unfit"):
+        C.check_unreached_invariant(summary, lift_all_modes=True)
+
+
+def test_the_invariant_only_logs_when_the_lift_does_not_cover_all_modes(caplog):
+    summary = _summarise([_walk_plan("p", (0.0, 1000.0), (6000.0, 1000.0))], reach=FINER_EIGHT)
+    with caplog.at_level("ERROR"):
+        C.check_unreached_invariant(summary, lift_all_modes=False)
+    assert "n_unreached_unfit" in caplog.text
+
+
+def test_the_invariant_is_silent_without_unfit_trips(caplog):
+    summary = _summarise([_walk_plan("p", (6000.0, 0.0), (6000.0, 100.0))], reach=FINER_EIGHT)
+    with caplog.at_level("ERROR"):
+        C.check_unreached_invariant(summary, lift_all_modes=True)
+    assert caplog.text == ""
+
+
+def test_the_share_of_the_other_modes_is_a_threshold_violation():
+    summary = _summarise([])
+    lift_report = {"share_lifted": 0.0, "bound_exceeded_other_modes": True, "share_lifted_other_modes": 0.5,
+                   "max_share_other_modes": 0.002}
+    assert "share_lifted_other_modes" in C.find_threshold_violations(summary, 0.005, 0.02, lift_report)
+    lift_report["bound_exceeded_other_modes"] = False
+    assert C.find_threshold_violations(summary, 0.005, 0.02, lift_report) == []
+
+
+def test_run_refuses_a_lift_report_without_all_modes(tmp_path):
+    """Without the key the invariant's raise would silently become an ERROR line (#678 final review, finding 13)."""
+    _write_run_inputs(tmp_path)
+    with pytest.raises(ValueError, match="all_modes"):
+        C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml",
+              lift_report={"share_lifted": 0.0, "bound_exceeded_other_modes": False})
+    assert not (tmp_path / C.PLAN_CHECK_FILE_NAME).exists()   # refused before anything is written
+
+
+def test_run_writes_the_json_before_the_invariant_stops_the_run(tmp_path):
+    import json
+    _write_run_inputs(tmp_path)   # the resident "late" walks 9 km at the border: unreached and unfit
+    with pytest.raises(ValueError, match="n_unreached_unfit"):
+        C.run(_RunContext(tmp_path, fail_on_threshold=False, max_share=1.0), "bs_config.xml",
+              lift_report={"share_lifted": 0.0, "all_modes": True, "bound_exceeded_other_modes": False})
+    written = json.loads((tmp_path / C.PLAN_CHECK_FILE_NAME).read_text(encoding="utf-8"))
+    assert written["subpopulations"][C.RESIDENTS][C.FROZEN]["n_unreached_unfit"] == 2

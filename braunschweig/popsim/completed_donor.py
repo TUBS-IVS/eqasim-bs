@@ -502,6 +502,26 @@ def validate(context):
         stage_label=__name__ + ".validate()")
 
 
+def validate_student_fallback_warn_share(value):
+    """Check the A1 warn bound (``donor_match_student_fallback_warn_share``, ADR-0211) and return it as a float.
+
+    ``None`` (report only, no bound) passes unchanged; any other value must be a number in [0, 1] (a share of
+    student targets). Raises ``ValueError`` naming the key otherwise, so a bad YAML value fails the DAG build
+    instead of silently never (or always) warning."""
+    from braunschweig.popsim.stage.config_keys import KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE
+    if value is None:
+        return None
+    try:
+        share = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got {value!r}") from None
+    if not 0.0 <= share <= 1.0:   # also refuses NaN
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got {value!r}")
+    return share
+
+
 def configure(context):
     """Declare the completed-donor config dependencies.
 
@@ -560,10 +580,13 @@ def configure(context):
     # ADR-0166: the lift-free preference changes which donor a "never" passenger draws.
     context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER)
     # ADR-0211 (A1): the student status key changes which donor a student target draws, so it belongs in THIS
-    # stage's config hash. The warn bound only changes a log level; it is declared (synpp needs every key an
-    # execute reads) and therefore also part of the hash, which costs one rebuild when the smoke sets it.
+    # stage's config hash. The warn bound only changes a log level, so it is declared volatile (precedent:
+    # KEY_SOLVER_FALLBACK_ERROR_RATE in the popsim stage): changing it rebuilds neither the donor nor
+    # PopulationSim. Its range is checked here, at DAG-build time.
     context.config(KEY_DONOR_MATCH_STUDENT_STATUS, DEFAULT_DONOR_MATCH_STUDENT_STATUS)
-    context.config(KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE)
+    validate_student_fallback_warn_share(context.config(
+        KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE,
+        volatile=True))
     context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)
 
 
@@ -607,8 +630,8 @@ def execute(context) -> CompletedDonor:
     donor_match_passenger_access = bool(context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS))
     donor_match_lift_free_never_passenger = bool(context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER))
     donor_match_student_status = bool(context.config(KEY_DONOR_MATCH_STUDENT_STATUS))
-    student_warn_cfg = context.config(KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE)
-    student_fallback_warn_share = None if student_warn_cfg is None else float(student_warn_cfg)
+    student_fallback_warn_share = validate_student_fallback_warn_share(
+        context.config(KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE))
 
     result = build_completed_donor(
         mid_dir,

@@ -20,6 +20,17 @@ Output:
     Scatter of sample ratio vs euclidean km + fitted curve + constant-1.3 line.
   <output_dir>/summary.md
 
+Loop legs (strolls and dog walks, issue #679) are left out of the secondary walk/bike OD pairs where
+the cached secondary locations result carries ``loop_origin`` (``_build_secondary_legs``); a cache
+pair without matching marker rows stops the run. The W12 survey side of the band-shift impact is a
+published table that still counts them: the run prints a NOTE and summary.md says so.
+
+The secondary legs are the pickles of ONE run (locations, activities, trips, loop marker), resolved
+from the legs' locations pickle through the cache's pipeline.json; an ambiguous cache is refused
+unless the run is named with --locations-key (<stage>__<hash>). LIMITATION: the other stages this
+script reads (home locations, home zones, enriched persons, work locations, education) are still
+the newest pickle of their name, not resolved from that run; the run prints a NOTE.
+
 Run (server-side only; no cache here):
   python scripts/calibrate_detour_circuity.py \\
     --working-directory eqasim-data/cache_bs_25pct_allfeat \\
@@ -43,6 +54,17 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from braunschweig.calibration.secondary_measurement import (  # noqa: E402
+    leave_out_loop_legs,
+)
+from scripts.validate_secondary_distances import (  # noqa: E402
+    AmbiguousCacheRunError,
+    attach_loop_marker,
+    load_loop_origin,
+    read_pickle,
+    require_same_activity_keys,
+    resolve_run_pickles,
+)
 from braunschweig.calibration.detour_fit import (  # noqa: E402
     accumulate_accepted_indices,
     bbox_from_home_locations,
@@ -123,9 +145,104 @@ def _load_config(config_path: str) -> dict:
 # OD pool extraction from cached stages
 # ---------------------------------------------------------------------------
 
-def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
-                                         np.ndarray, np.ndarray]:
+def _build_secondary_legs(df_xy: pd.DataFrame, df_acts: pd.DataFrame, df_trips: pd.DataFrame,
+                          df_loop_origin: pd.DataFrame | None) -> pd.DataFrame:
+    """The secondary legs (previous activity -> shop / leisure / other activity) with their mode.
+
+    ``df_xy`` has ``person_id``, ``activity_index``, ``x_m``, ``y_m`` (EPSG:25832) and optionally
+    ``commune_id``; ``df_acts`` has ``purpose`` per activity; ``df_trips`` has ``mode`` per
+    ``trip_index`` (the leg INTO activity ``k`` is trip ``k``). Returns one row per leg with the
+    activity's ``x_m`` / ``y_m``, the previous activity's ``prev_x`` / ``prev_y`` and ``mode``;
+    legs without a mode or a previous place are dropped and counted in the log.
+
+    ``df_loop_origin`` is the ``loop_origin`` marker of the secondary locations stage
+    (``validate_secondary_distances.load_loop_origin``; None when the cache has none or the
+    switch ``secondary_loop_zero_displacement`` was off). The leg INTO a marked activity is a loop
+    leg and is left out (``secondary_measurement.leave_out_loop_legs``, as the validation script
+    does): its two ends are the same place, so it says nothing about a detour. A secondary
+    activity without a marker row raises ``RuntimeError``
+    (``validate_secondary_distances.attach_loop_marker``).
+
+    CAVEAT (printed when loop legs were left out): the survey side of the band-shift impact (W12)
+    is a published table that still counts strolls and dog walks, so it is compared with a pool
+    that has none.
+    """
+    # Never join the day locations with activities of another day (the pre-assignment table).
+    require_same_activity_keys(df_xy, df_acts, tag="[circuity]")
+    df_merged = df_xy.merge(
+        df_acts[["person_id", "activity_index", "purpose"]],
+        on=["person_id", "activity_index"],
+        how="inner",
+    )
+    if df_loop_origin is not None:
+        df_merged = attach_loop_marker(df_merged, df_loop_origin, tag="[circuity]")
+    df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
+
+    # Build legs: shift by one to obtain the previous activity's coordinates.
+    df_prev = df_merged[["person_id", "x_m", "y_m"]].shift(1).rename(
+        columns={"person_id": "prev_person_id", "x_m": "prev_x", "y_m": "prev_y"}
+    )
+    df_legs_all = pd.concat([df_merged, df_prev], axis=1)
+    same_person_mask = df_legs_all["person_id"] == df_legs_all["prev_person_id"]
+    df_legs_all = df_legs_all[same_person_mask].copy()
+
+    # Keep only secondary purposes.
+    _SEC_PURPOSES = ("shop", "leisure", "other")
+    sec_mask = df_legs_all["purpose"].isin(_SEC_PURPOSES)
+    df_sec_legs = df_legs_all[sec_mask].copy()
+    logger.info("[circuity] secondary legs before mode join: %d", len(df_sec_legs))
+
+    if df_loop_origin is not None:
+        by_purpose = {purpose: df_sec_legs[df_sec_legs["purpose"] == purpose]
+                      for purpose in _SEC_PURPOSES}
+        kept_by_purpose, loop_summary = leave_out_loop_legs(by_purpose)
+        df_sec_legs = pd.concat(
+            [kept_by_purpose[purpose] for purpose in _SEC_PURPOSES], ignore_index=True
+        ).sort_values(["person_id", "activity_index"]).reset_index(drop=True)
+        n_legs, n_loops = int(loop_summary["n_legs"].sum()), int(loop_summary["n_loops"].sum())
+        logger.info(
+            "[circuity] loop legs left out of the secondary OD pairs: %d of %d legs (%.2f%%).",
+            n_loops, n_legs, 100.0 * n_loops / n_legs if n_legs else float("nan"))
+        print("NOTE: %d of %d secondary legs are loop legs (strolls, dog walks) and were left "
+              "out of the OD pairs; the survey side of the band-shift impact (W12) still "
+              "includes them." % (n_loops, n_legs))
+
+    # Join mode via trip_index == activity_index.
+    df_mode = df_trips[["person_id", "trip_index", "mode"]].rename(
+        columns={"trip_index": "activity_index"}
+    )
+    n_before_mode = len(df_sec_legs)
+    df_sec_legs = df_sec_legs.merge(
+        df_mode, on=["person_id", "activity_index"], how="left"
+    )
+    if len(df_sec_legs) != n_before_mode:
+        logger.warning(
+            "[circuity] secondary mode-join changed row count %d -> %d; "
+            "possible non-unique (person_id, activity_index) key in trips stage.",
+            n_before_mode, len(df_sec_legs),
+        )
+    n_mode_missing = df_sec_legs["mode"].isna().sum()
+    if n_mode_missing > 0:
+        logger.warning(
+            "[circuity] secondary mode join: %d/%d legs missing mode (no fallback; "
+            "these legs are excluded from both pools).",
+            n_mode_missing, n_before_mode,
+        )
+    return df_sec_legs.dropna(subset=["mode", "prev_x", "prev_y"])
+
+
+def _extract_od_pools(wd: str, locations_key: str | None = None
+                      ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+                                 np.ndarray, np.ndarray]:
     """Extract car and walk OD pools from the cached synthesis stages.
+
+    ``locations_key`` (``<stage>__<hash>``) names the run whose locations pickle the secondary
+    legs are built on; needed only when the cache holds several candidates (an ambiguous cache
+    raises ``AmbiguousCacheRunError``, see ``validate_secondary_distances.resolve_run_pickles``).
+    LIMITATION: only the secondary legs (locations, activities, trips, loop marker) are resolved
+    from that run. The home locations, home zones, enriched persons and work locations (and the
+    education stage) are still the NEWEST pickle of their name, not necessarily those of the same
+    run; the run prints a NOTE.
 
     Car OD pool:
       - home->work pairs for employed persons (commute legs)
@@ -161,6 +278,10 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
         back to all pairs being treated as car. Logged explicitly below.
     """
     logger.info("[circuity] extracting OD pools from cache: %s", wd)
+    print("NOTE: only the secondary legs come from ONE resolved run (the locations, activities, "
+          "trips and loop marker of the legs' run); the home locations, home zones, enriched "
+          "persons, work locations and education stage are loaded as the NEWEST pickle of their "
+          "name and may belong to another run of this cache.")
 
     # --- Core stages ---
     df_home_locations = _load_stage(wd, "synthesis.population.spatial.home.locations")
@@ -257,10 +378,21 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
     # Each leg is defined as (previous_activity_location -> secondary_activity_location).
     # Mode is joined from the trips stage via activity_index == trip_index.
     # Car/car_passenger -> car pool; walk/bike -> walk pool; pt excluded.
+    # Loop legs (strolls, dog walks; the leg INTO a loop activity, which sits at the place of the
+    # activity before it, issue #679) are left out where the secondary locations result carries
+    # loop_origin: _build_secondary_legs.
+    # The three stages (and the loop marker) are the pickles of ONE run, resolved from the legs'
+    # locations pickle by validate_secondary_distances.resolve_run_pickles: synpp caches a stage
+    # under its resolved alias target (configs/base_bs.yml aliases:), so the logical names have no
+    # pickle in the production workflow. The trips are the modes the chain solver saw (trips_final
+    # there), before the outside-tour mode stage.
+    secondary_inputs = None
+    secondary_run = None
     try:
-        df_all_locs = _load_stage(wd, "synthesis.population.spatial.locations")
-        df_acts = _load_stage(wd, "synthesis.population.activities")
-        df_trips = _load_stage(wd, "synthesis.population.trips")
+        secondary_run = resolve_run_pickles(wd, tag="[circuity]", locations_key=locations_key)
+        df_all_locs = read_pickle(secondary_run.locations)
+        df_acts = read_pickle(secondary_run.activities)
+        df_trips = read_pickle(secondary_run.trips)
         logger.info(
             "[circuity] secondary: loaded locations (%d), activities (%d), trips (%d)",
             len(df_all_locs), len(df_acts), len(df_trips),
@@ -286,50 +418,28 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
                 on="household_id", how="left",
             )
 
-        # Merge purpose onto coordinates.
-        df_merged = df_xy.merge(
-            df_acts[["person_id", "activity_index", "purpose"]],
-            on=["person_id", "activity_index"],
-            how="inner",
-        )
-        df_merged = df_merged.sort_values(["person_id", "activity_index"]).reset_index(drop=True)
+        secondary_inputs = (df_xy, df_acts, df_trips)
 
-        # Build legs: shift by one to obtain the previous activity's coordinates.
-        df_prev = df_merged[["person_id", "x_m", "y_m"]].shift(1).rename(
-            columns={"person_id": "prev_person_id", "x_m": "prev_x", "y_m": "prev_y"}
+    except AmbiguousCacheRunError:
+        # A cache with several runs that does not say which one the legs belong to is not "stage
+        # not found": it must stop the run.
+        raise
+    except RuntimeError as exc:
+        logger.warning(
+            "[circuity] secondary locations stages not found (see resolve_run_pickles for the "
+            "names tried: locations, activities and trips of the legs' run): %s; "
+            "secondary OD pairs will be absent from the pool.", exc
         )
-        df_legs_all = pd.concat([df_merged, df_prev], axis=1)
-        same_person_mask = df_legs_all["person_id"] == df_legs_all["prev_person_id"]
-        df_legs_all = df_legs_all[same_person_mask].copy()
 
-        # Keep only secondary purposes.
-        _SEC_PURPOSES = ("shop", "leisure", "other")
-        sec_mask = df_legs_all["purpose"].isin(_SEC_PURPOSES)
-        df_sec_legs = df_legs_all[sec_mask].copy()
-        logger.info("[circuity] secondary legs before mode join: %d", len(df_sec_legs))
-
-        # Join mode via trip_index == activity_index.
-        df_mode = df_trips[["person_id", "trip_index", "mode"]].rename(
-            columns={"trip_index": "activity_index"}
-        )
-        n_before_mode = len(df_sec_legs)
-        df_sec_legs = df_sec_legs.merge(
-            df_mode, on=["person_id", "activity_index"], how="left"
-        )
-        if len(df_sec_legs) != n_before_mode:
-            logger.warning(
-                "[circuity] secondary mode-join changed row count %d -> %d; "
-                "possible non-unique (person_id, activity_index) key in trips stage.",
-                n_before_mode, len(df_sec_legs),
-            )
-        n_mode_missing = df_sec_legs["mode"].isna().sum()
-        if n_mode_missing > 0:
-            logger.warning(
-                "[circuity] secondary mode join: %d/%d legs missing mode (no fallback; "
-                "these legs are excluded from both pools).",
-                n_mode_missing, n_before_mode,
-            )
-        df_sec_legs = df_sec_legs.dropna(subset=["mode", "prev_x", "prev_y"])
+    # Outside the try: a cache pair that does not belong together (the loop marker misses a
+    # secondary activity) raises RuntimeError in _build_secondary_legs, and that must stop the
+    # run, not read as "stage not found".
+    if secondary_inputs is not None:
+        df_sec_legs = _build_secondary_legs(
+            *secondary_inputs, df_loop_origin=load_loop_origin(
+                wd, tag="[circuity]",
+                not_filtered_text="loop legs (strolls, dog walks) were NOT left out of the OD pool",
+                run=secondary_run))
 
         sec_mode_arr = df_sec_legs["mode"].values
         car_sec_mask = np.isin(sec_mode_arr, ["car", "car_passenger"])
@@ -361,14 +471,6 @@ def _extract_od_pools(wd: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
             walk_dx.extend(sec_dx_arr[walk_sec_mask].tolist())
             walk_dy.extend(sec_dy_arr[walk_sec_mask].tolist())
             walk_commune_ids.extend(sec_commune_vals[walk_sec_mask].tolist())
-
-    except RuntimeError as exc:
-        logger.warning(
-            "[circuity] secondary locations stages not found (tried "
-            "synthesis.population.spatial.locations / synthesis.population.activities / "
-            "synthesis.population.trips): %s; "
-            "secondary OD pairs will be absent from the pool.", exc
-        )
 
     # --- EDUCATION legs (long = car pool, short = walk pool) ---
     # Real stage: braunschweig.synthesis.locations.education_gravity
@@ -1029,6 +1131,9 @@ def _write_summary(
         "- car graph: OSM PBF driving network via pyrosm (bbox-clipped to ZGB homes + margin), EPSG:25832",
         "- walk graph: OSM PBF walking network via pyrosm (bbox-clipped to ZGB homes + margin), EPSG:25832",
         "- OD pool: home->work (employed persons) + secondary (car/walk) + education legs",
+        "- secondary legs: loop legs (strolls, dog walks) are left out where the cached secondary "
+        "locations result carries loop_origin (see the NOTE line of the run log); the W12 survey "
+        "side of the band-shift impact still includes them",
         "- pt row: NOT fitted here; carried over from existing seed file (UNVERIFIED placeholder)",
         (
             "- walk fit: PLACEHOLDER (n=0, no real walk curve fitted; re-run with --osm-pbf). "
@@ -1137,6 +1242,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--locations-key", default=None,
+        help=(
+            "Cache key (<stage>__<hash>, the pickle name without .p) of the locations pickle of "
+            "the run whose secondary legs are used. Needed only when the cache holds several "
+            "candidates (hashed variants of a copied cache); an ambiguous cache is refused."
+        ),
+    )
+    parser.add_argument(
         "--seed", type=int, default=None,
         help="Random seed (default: random_seed from config, or 0).",
     )
@@ -1182,7 +1295,7 @@ def main():
     # --- Extract OD pools ---
     (car_origins, car_dests,
      walk_origins, walk_dests,
-     car_commune_ids, walk_commune_ids) = _extract_od_pools(wd)
+     car_commune_ids, walk_commune_ids) = _extract_od_pools(wd, locations_key=args.locations_key)
 
     if len(car_origins) == 0:
         raise RuntimeError(

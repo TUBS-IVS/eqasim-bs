@@ -8,11 +8,12 @@ import pandas as pd
 from shapely.geometry import box
 
 from braunschweig.matsim.simulation import prepare
+from tests.stage_context import PREPARED_MINIMAL_CONFIG, prepare_reach_defaults
 
 
 class _Context:
     def __init__(self, tmp_path, values):
-        self.values = values
+        self.values = {**prepare_reach_defaults(), **values}  # execute() reads the reach keys (#678)
         self.declared_config, self.declared_stages = [], []
         self._path = tmp_path / "prepare"
         self._path.mkdir()
@@ -89,8 +90,7 @@ def _on_context(tmp_path, monkeypatch, line_ids=("L1",), zoned=9, tool_zoned=9):
     pd.DataFrame([{"route_id": "L1", "agency_id": "a", "route_type": 3, "route_short_name": "1"}]).to_csv(
         context._cleaned / "output" / "routes.txt", index=False)
     pd.DataFrame([{"agency_id": "a", "agency_name": "KVG"}]).to_csv(context._cleaned / "output" / "agency.txt", index=False)
-    (Path(context.path()) / "bs_config.xml").write_text('<?xml version="1.0" encoding="utf-8"?>\n<config>\n</config>\n',
-                                                         encoding="utf-8")
+    (Path(context.path()) / "bs_config.xml").write_text(PREPARED_MINIMAL_CONFIG, encoding="utf-8")
     (Path(context.path()) / "bs_transit_schedule.xml.gz").write_bytes(gzip.compress(_schedule(line_ids, zoned).encode()))
     calls = []
 
@@ -169,7 +169,7 @@ def test_off_execute_does_not_touch_config_or_call_the_zone_tool(tmp_path, monke
     context.stages["braunschweig.data.vrb.zones"] = gpd.GeoDataFrame(
         {"zone": ["1"], "geometry": [box(0, 0, 1, 1)]}, crs="EPSG:25832")
     config = Path(context.path()) / "bs_config.xml"
-    config.write_text('<?xml version="1.0" encoding="utf-8"?>\n<config>\n</config>\n', encoding="utf-8")
+    config.write_text(PREPARED_MINIMAL_CONFIG, encoding="utf-8")
     (Path(context.path()) / "bs_transit_schedule.xml.gz").write_bytes(gzip.compress(_schedule(("L1",), 1).encode()))
     before = config.read_bytes()
     calls = []

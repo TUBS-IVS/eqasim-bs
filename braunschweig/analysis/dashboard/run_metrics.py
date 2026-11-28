@@ -42,8 +42,14 @@ from braunschweig.analysis.dashboard.spatial_metrics import _load_zgb_kreise
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_od_matrix
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_per_kreis
 from braunschweig.analysis.dashboard.spatial_metrics import metrics_time_of_day
+from braunschweig.analysis.loop_trip_distances import apply_loop_trip_distances
 
 logger = logging.getLogger(__name__)
+
+#: The companion of MATSim's traveldistancestats.csv that eqasim-java-bs writes (#679,
+#: org.eqasim.braunschweig.analysis.LoopTripDistanceStatsListener): the same columns, with the zero-length loop trips
+#: at their survey diary length.
+LOOP_COUNTED_TRAVEL_DISTANCE_FILE = "traveldistancestats_loops_counted.csv"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,11 +149,17 @@ def _commute_block(trips: pd.DataFrame) -> dict[str, Any] | None:
     }
 
 
-def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None) -> dict[str, Any]:
+def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None,
+                   loop_trips: pd.DataFrame | None = None) -> dict[str, Any]:
     """MATSim-side run metrics of the output directory ``sim_output``.
 
     ``stuck_summary_path`` optionally names the ``stuck_summary.json`` the analysis suite already wrote
     (``<output_path>/analysis/stuck/``); it is reused for the ``stuck`` block when newer than the events file.
+
+    ``loop_trips`` is the loop table of the synthesis trips file (``read_loop_trips``): the survey diary length of the
+    zero-length loop trips (#679). It replaces their 0 m in ``eqasim_trips.csv`` ``routed_distance`` (a path length,
+    kind ``"path"``) before any km metric is computed; the correction report is the ``loop_trips`` block (with
+    ``available: False`` when there is no loop table).
     """
     out: dict[str, Any] = {"available": False}
     if sim_output is None or not sim_output.exists():
@@ -190,12 +202,19 @@ def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None) -> 
         }
         out["score_final"] = float(round(ss.iloc[-1]["avg_executed"], 3))
 
-    # avg leg/trip distance evolution
-    tds = _safe_read_csv(sim_output / "traveldistancestats.csv", sep=";")
+    # avg leg/trip distance evolution. MATSim's own traveldistancestats.csv counts the zero-length loop trips (#679)
+    # with 0 m; eqasim-java-bs writes the same columns with their survey diary length next to it
+    # (LOOP_COUNTED_TRAVEL_DISTANCE_FILE), which is used when the run has it; distance_evolution_source names the file.
+    tds = _safe_read_csv(sim_output / LOOP_COUNTED_TRAVEL_DISTANCE_FILE, sep=";")
+    source = LOOP_COUNTED_TRAVEL_DISTANCE_FILE
+    if tds is None or not len(tds):
+        tds = _safe_read_csv(sim_output / "traveldistancestats.csv", sep=";")
+        source = "traveldistancestats.csv"
     if tds is not None and len(tds):
         cols = {c.strip().lower(): c for c in tds.columns}
         leg_col = cols.get("avg. average leg distance") or list(tds.columns)[1]
         trip_col = cols.get("avg. average trip distance") or list(tds.columns)[2]
+        out["distance_evolution_source"] = source
         out["distance_evolution"] = {
             "iterations": [int(x) for x in tds["ITERATION"].tolist()],
             "avg_leg_km": [float(round(v / 1000, 3)) for v in tds[leg_col].tolist()],
@@ -216,6 +235,10 @@ def metrics_matsim(sim_output: Path, stuck_summary_path: Path | None = None) -> 
         # the real modes used inside the study area. No-op when the cordon is off.
         et = et[et["mode"] != "outside"].copy()
         et["km"] = et["routed_distance"].astype(float) / 1000.0
+        # Loop trips are 0 m in the model; use their survey diary length for every km metric below.
+        et, out["loop_trips"] = apply_loop_trip_distances(
+            et, loop_trips, key_columns=("person_id", "person_trip_id"), distance_column="km", distance_unit="km",
+            metric_kind="path", crow_fly_column="euclidean_distance", crow_fly_unit="m")
 
         # Cross-boundary trips (eqasim-bs#442): a portal stay of a resident or an in-commuter's home
         # is an "outside" activity. They are reported as an ADDITIVE category (``cross_boundary``) next

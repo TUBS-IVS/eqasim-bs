@@ -1280,6 +1280,30 @@ def test_align_members_student_is_not_robbed_of_its_student_donor_by_an_earlier_
     assert sorted(wpm.align_members(target, donor, student_key=True)) == [(0, 1), (1, 0)]
 
 
+@pytest.mark.parametrize("target_rows, donor_rows, off_pairs", [
+    # sex mismatch: a female student 22 and a male student donor 23; the present ladder would give the
+    # student the female non-student donor of her (age band, sex) cell
+    ([(22, 2, 10), (24, 2, 1)], [(24, 2, 1), (23, 1, 10)], [(0, 0), (1, 1)]),
+    # age-band mismatch: a student aged 16 and a student donor aged 40 (other band, other sex); only the
+    # last student tier (student status alone) pairs them
+    ([(16, 2, 10), (30, 2, 1)], [(30, 2, 1), (40, 1, 10)], [(0, 0), (1, 1)]),
+], ids=["sex_mismatch", "age_band_mismatch"])
+def test_align_members_student_keeps_a_student_donor_across_sex_and_age_band(target_rows, donor_rows, off_pairs):
+    target, donor = _members(target_rows), _members(donor_rows)
+    on = wpm.align_members(target, donor, student_key=True)
+    assert sorted(on) == [(0, 1), (1, 0)]
+    assert [tpos for tpos, _ in on] == [0, 1]  # target order, pair count unchanged
+    assert sorted(wpm.align_members(target, donor)) == off_pairs
+
+
+def test_align_members_looser_student_tier_does_not_steal_an_exact_student_pair():
+    # the first student (male 22) has only a female student donor in his band; the second (female 21)
+    # matches that donor exactly: the exact tier runs for every student before the looser ones
+    target = _members([(22, 1, 10), (21, 2, 10)])
+    donor = _members([(23, 2, 10), (40, 1, 10)])
+    assert sorted(wpm.align_members(target, donor, student_key=True)) == [(0, 1), (1, 0)]
+
+
 def test_align_members_student_without_a_student_donor_keeps_the_present_ladder_and_the_pair_count():
     target = _members([(22, 2, 10), (24, 2, 1), (9, 1, 9)])
     donor = _members([(23, 2, 1), (40, 1, 1), (10, 1, 9)])

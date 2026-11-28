@@ -1,0 +1,46 @@
+2026-11-25 20:35:29,521 INFO __main__: [secondary-validate] W12 targets loaded: shop 5.2 km, leisure 15.0 km, other 11.3 km.
+2026-11-25 20:35:29,522 INFO __main__: Loading stage 'synthesis.population.spatial.locations' from '~/i679_c7/vsd_shim_on2/synthesis.population.spatial.locations__shim.p'
+2026-11-25 20:35:29,765 INFO __main__: Loading stage 'synthesis.population.activities' from '~/i679_c7/vsd_shim_on2/synthesis.population.activities__shim.p'
+2026-11-25 20:35:29,770 INFO __main__: Loading stage 'synthesis.population.trips' from '~/i679_c7/vsd_shim_on2/synthesis.population.trips__shim.p'
+2026-11-25 20:35:29,890 INFO __main__: Loaded locations (45932 rows), activities (45932 rows) and trips (34466 rows).
+2026-11-25 20:35:29,968 INFO __main__: Merged locations+activities: 45932 rows (from 45932 locations, 45932 activities).
+2026-11-25 20:35:29,970 INFO __main__: Loading stage 'braunschweig.synthesis.locations.secondary_chainsolvers' from '~/i679_c7/vsd_shim_on2/braunschweig.synthesis.locations.secondary_chainsolvers__shim.p'
+2026-11-25 20:35:29,992 INFO __main__: [secondary-validate] loop_origin: found, 746/13637 secondary location rows are loops.
+2026-11-25 20:35:30,043 INFO __main__: [secondary-validate] loop_origin join: matched 11203/11203 secondary activities (100%, no unmatched row).
+2026-11-25 20:35:30,067 INFO __main__: Leg construction: 34466/45932 legs are within-person (dropped 11466 first-activity rows).
+2026-11-25 20:35:30,080 INFO __main__: [secondary-validate] secondary legs (shop/leisure/other): 11203 / 34466 total legs.
+2026-11-25 20:35:30,099 INFO __main__: [secondary-validate] mode join: primary 11203/11203 (100%, no fallback).
+2026-11-25 20:35:30,103 INFO __main__: [secondary-validate] purpose=shop: 3003 legs, mean euclidean=4.57 km.
+2026-11-25 20:35:30,106 INFO __main__: [secondary-validate] purpose=leisure: 5491 legs, mean euclidean=5.63 km.
+2026-11-25 20:35:30,109 INFO __main__: [secondary-validate] purpose=other: 2709 legs, mean euclidean=6.59 km.
+2026-11-25 20:35:30,109 INFO __main__: [secondary-validate] measurement: primary (direct from cache) 11203/11203 (100%); no fallback path exists.
+2026-11-25 20:35:30,165 INFO __main__: [secondary-validate] loops left out: purpose=shop 0/3003 legs (0.00%).
+2026-11-25 20:35:30,165 INFO __main__: [secondary-validate] loops left out: purpose=leisure 746/5491 legs (13.59%).
+2026-11-25 20:35:30,165 INFO __main__: [secondary-validate] loops left out: purpose=other 0/2709 legs (0.00%).
+2026-11-25 20:35:30,166 INFO __main__: [secondary-validate] per-group subtype distances: NOT available in this cache (the 'activity_subtype' column is not yet exposed by the cached stage output -- see issue #127 Task 6 follow-up). Skipping subtype rows.
+2026-11-25 20:35:30,166 INFO __main__: [secondary-validate] leisure_visit placement share: NOT available in this cache (neither 'activity_subtype' nor 'pot_visit' is exposed by the cached stage output -- see issue #127 Task 6 follow-up). Skipping.
+2026-11-25 20:35:30,171 INFO __main__: [secondary-validate] wrote comparison CSV to '~/i679_c7/i679_on2_validate_secondary_distances_shim.csv'.
+2026-11-25 20:35:30,171 INFO __main__: [secondary-validate] This is the OFF-path baseline (secondary_purpose_distributions: false). The ON comparison requires a synpp re-run with the feature flags enabled -- that step is DEFERRED (server run).
+
+------------------------------------------------------------------------------
+Secondary trip distances: model vs MiD 2023 W12
+  Routed-equiv = per-leg circuity scaling by mode network (car/pt/walk)
+  EMD computed on the 9 W12 distance bands after per-leg circuity scaling
+------------------------------------------------------------------------------
+purpose            n   mean_euc_km  mean_routed_km   w12_mean_km    emd_vs_w12
+------------------------------------------------------------------------------
+shop            3003          4.57            5.94           5.2        0.0484
+leisure         4745          6.52            8.48          15.0        0.0363
+other           2709          6.59            8.56          11.3        0.0357
+------------------------------------------------------------------------------
+* W12 (published MiD table over all trips of the purpose) INCLUDES strolls and dog walks; the model rows above leave loop legs out.
+
+Loop legs (strolls, dog walks) left out of the model side above:
+  shop               0 of     3003 legs  (0.00 %)
+  leisure          746 of     5491 legs  (13.59 %)
+  other              0 of     2709 legs  (0.00 %)
+Survey side: eqasim-data/data/braunschweig/mid/mid2023_W12_triplength_by_purpose.csv
+  (published MiD W12: all trips of the purpose, NOT filtered for W_ZWD 710/711; no loop-free W12 exists.
+  The loop-free MiD reference is written by scripts/extract_mid_w_zwd_groups.py --without-loops; this comparison does not read it.)
+
+rc=0

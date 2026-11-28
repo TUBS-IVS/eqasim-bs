@@ -1,0 +1,16 @@
+{
+  "population": "long_12_13.xml.gz",
+  "config_file": "braunschweig_100pct_prod20261031_config_initial_mode_choice.xml",
+  "threads": 16,
+  "xmx": "48G",
+  "chunk_size": 1,
+  "java_exit": 143,
+  "java_wall_time_s": 1997.8,
+  "java_cpu_user_s": 41641.1,
+  "java_cpu_sys_s": 355.1,
+  "java_max_rss_kb": 21555112,
+  "started": "2026-11-25T14:21:30+0100",
+  "persons_before": 329,
+  "relaxed_lines": [],
+  "n_exception_lines": 0
+}

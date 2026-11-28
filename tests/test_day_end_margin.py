@@ -89,6 +89,7 @@ class _PopulationContext:
         self._config = {"enable_urban_parking": False, "write_income_eur": False,
                         POP.KEY_PARKING_ZONES_ENABLED: False, POP.KEY_COMMUTE_DAY_STATE_ENABLED: False,
                         POP.KEY_DAY_ABSENCE_ENABLED: False, "cordon_enabled": False,
+                        POP.KEY_SECONDARY_LOOP_ZERO_DISPLACEMENT: False,
                         M.KEY_ENABLED: enabled, M.KEY_LAST_ARRIVAL_MARGIN_S: H}
 
     def config(self, name, default=None):

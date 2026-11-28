@@ -1,0 +1,12 @@
+# Exception and mode-choice feasibility scan of arm D (eqasim-bs 55d9b194, eqasim-java-bs f8accd10c) and arm C, written 2026-11-26T09:47:26+01:00
+# grep -c per file; paths relative to the run directory
+i679_d logs/run_20261126T092032.log (arm D, final launch): Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=6 lines_with_feasible_not_parking=0 Removing_persons_with_no_valid_alternative=0 lines=5698
+i679_d .../simulation_output/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=0 lines_with_feasible_not_parking=0 Removing_persons_with_no_valid_alternative=0 lines=0
+i679_d .../prepare/mode_choice/logfileWarningsErrors.log: Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=0 lines_with_feasible_not_parking=0 Removing_persons_with_no_valid_alternative=0 lines=0
+i679_c logs/run_20261125T233012.log (arm C): Traceback=0 Exception_in_thread=0 Exception_any=0 OutOfMemoryError=0 missing_facility=0 NoFeasibleChoice=0 lines_with_feasible=70 lines_with_feasible_not_parking=64 Removing_persons_with_no_valid_alternative=0 lines=10822
+MATSim iterations in arm D: it.0 it.1 it.2 it.3 it.4 it.5 
+## first launch of arm D at 5b212d47 (logs/run_20261126T084734.log): Traceback=1
+[isolated-run] run=i679_d eqasim-bs=5b212d4788bcac25f15c93f66651533fb8d05a89 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed start=2026-11-26T08:47:35+01:00
+[isolated-run] run=i679_d eqasim-bs=5b212d4788bcac25f15c93f66651533fb8d05a89 eqasim-java-bs=f8accd10cc15e1368452e7986bfbb85bdbede9ed exit=1 end=2026-11-26T09:11:19+01:00
+ValueError: ~/i679_d/cache/braunschweig.matsim.simulation.prepare__c238a95114636946382737f84d53dde0.cache/braunschweig_1pct_i679_config.xml: module 'DiscreteModeChoice' has parameter sets (<parameterset>); only flat modules can be compared
+arm C, lines from the preparation stage start (line 5333) on: lines_with_feasible_not_parking=0 (the other non-parking lines are synthesis-stage lines: fleet sampling, PopulationSim, feasible_fuels)

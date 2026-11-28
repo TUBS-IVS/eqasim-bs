@@ -195,7 +195,7 @@ def test_completed_donor_configure_declares_the_passenger_keys_default_on():
     calls = {}
 
     class _Context:
-        def config(self, key, default=None):
+        def config(self, key, default=None, volatile=False):  # synpp ConfigurationContext signature
             calls[key] = default
             return default
 

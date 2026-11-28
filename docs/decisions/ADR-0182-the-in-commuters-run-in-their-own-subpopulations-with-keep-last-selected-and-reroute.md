@@ -44,7 +44,8 @@
    keep their synthesised mode and adapt their routes; they no longer take part in the in-loop mode choice.
 4. The student in-commuters get the same pair (owner decision).
 5. Before iteration 0 the standalone initial mode choice (ADR-0178) leaves both subpopulations unchanged too: with
-   `cordon_enabled`, prepare passes them to the new runner option `standaloneModeChoice.excludedSubpopulations` of
+   `cordon_enabled`, prepare passes them (the list lives in `prepare._initial_mode_choice_excluded_subpopulations`,
+   which later also lists the injected freight subpopulation) to the new runner option `standaloneModeChoice.excludedSubpopulations` of
    eqasim-java-bs, which skips those persons and fails when the list matches nobody (owner decision 2026-11-05;
    behaviour in the feature record `initial_mode_choice`). The `OutsideFilter` alone does not keep their modes: the
    production tour finder splits at `home` and `outside`, so an in-commuter whose whole day lies inside the simulated
