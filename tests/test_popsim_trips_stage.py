@@ -1145,6 +1145,7 @@ def test_on_leaves_the_overnight_day_open(caplog):
                              keep_overnight_open_ends=True, overnight_answers=answers)
     assert not on["is_synthetic_closure"].any()
     assert len(on) == 2 and on["following_purpose"].iloc[-1] != "home"
+    assert "keeps_open_end" not in on.columns  # a build-time helper, not part of the stage output
     assert any("kept open" in r.getMessage() and "1/1" in r.getMessage() for r in caplog.records)
     # The same donor without an overnight trip is closed as before.
     persons, wege, answers = _overnight_fixture(1)

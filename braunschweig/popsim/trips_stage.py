@@ -939,9 +939,12 @@ def run(
         c for c in ("euclidean_distance", "trip_key")
         if c in table.columns
     ]
+    # KEEPS_OPEN_END_COLUMN is a build-time helper (the plan validation read it above); no
+    # downstream stage reads it, and the commute-day splice would only null it on replaced rows.
     remaining = [
         c for c in table.columns
         if c not in CONTRACT and c not in extras_ordered
+        and c != _overnight_open_end.KEEPS_OPEN_END_COLUMN
     ]
     return table[CONTRACT + extras_ordered + remaining]
 
