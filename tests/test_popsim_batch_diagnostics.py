@@ -205,7 +205,13 @@ def test_every_production_control_belongs_to_exactly_one_group():
     assert "education_flag" not in groups
     participation = group_targets(groups["education_participation"], spec, total)
     bands = group_targets(groups["education_band"], spec, total)
-    assert len(participation) == 2 and len(bands) == 2 * len(EDUCATION_AGE_BOUNDS)
+    # The education-by-age family: the three bands and the two student education entries that
+    # replace the adult band (A3, ADR-0211); every registry entry is rendered here.
+    student_education = [kreis_attribute_control.STUDENT_EDUCATION_18_29,
+                         kreis_attribute_control.STUDENT_EDUCATION_30PLUS]
+    registry = {c.name: c for c in kreis_attribute_control.REGISTRY}
+    assert len(participation) == 2 and len(bands) == 2 * len(EDUCATION_AGE_BOUNDS) + sum(
+        len(registry[name].categories) for name in student_education)
     assert not set(participation) & set(bands)
     assert all(t.startswith("education_participation_") for t in participation)
 
@@ -233,6 +239,17 @@ def test_hand_copied_universes_agree_with_their_owners():
         for target in group_targets(groups[name], spec, total):
             expression = spec.loc[spec["target"] == target, "expression"].iloc[0]
             assert expression.endswith(f"& (persons.HP_ALTER >= {min_age})"), target
+    # Owner 1b: the age range of the two soft student entries (A3), rendered as the min_age and
+    # max_age clauses. (The two student education entries belong to the education_band group.)
+    for name in (kreis_attribute_control.STUDENT_WORK_LEG, kreis_attribute_control.STUDENT_SEASON_TICKET):
+        lower, upper = kreis_attribute_control.STUDENT_AGE_BOUNDS[name]
+        clause = f"(persons.HP_ALTER >= {lower}) & (persons.HP_ALTER <= {upper})"
+        assert groups[name].universe == clause
+        targets = group_targets(groups[name], spec, total)
+        assert len(targets) == len(registry[name].categories)
+        for target in targets:
+            expression = spec.loc[spec["target"] == target, "expression"].iloc[0]
+            assert expression.endswith(f"& {clause}"), target
     # Owner 2: the catalog's employment grid; its universe is the common employed clause plus the
     # lower age bound of the youngest band (the other bands start above it).
     universe_clauses = groups["employed_grid"].universe.split("&")

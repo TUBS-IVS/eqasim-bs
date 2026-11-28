@@ -205,6 +205,14 @@ from braunschweig.resources import KEY_FAST_PATHS, KEY_STORE_POSITIVE_WEIGHT_ROW
 # changed threshold takes effect only when the stage executes.
 # ASSUMPTION-grade threshold, to be set from the first full run (design, issue #645).
 KEY_SOLVER_FALLBACK_ERROR_RATE = "braunschweig.population.popsim.solver_fallback_error_rate"
+# Smoke mode of the student design (ADR-0211, and the one-batch smoke manifest it names): with true the
+# stage runs as usual up to and including the writing of every batch folder, the input-consistency table,
+# the stage report and student_kreis_targets.csv, then raises AssembleBatchesOnlyStop BEFORE PopulationSim,
+# so synpp caches no stage output and one batch can be run by hand from the written folders. Default
+# false: the stage is unchanged. Volatile: it changes no result of a completed run (a run with it on never
+# completes), so declaring it does not change the stage hash.
+KEY_ASSEMBLE_BATCHES_ONLY = "braunschweig.population.popsim.assemble_batches_only"
+DEFAULT_ASSEMBLE_BATCHES_ONLY = False
 # Member completion (decision D3, mid source only): fill member-incomplete MiD
 # donor households by mirror-household sampling, in ONE pass on the attribute
 # donor tables that feeds BOTH the PopulationSim seed and the expansion.
@@ -552,6 +560,60 @@ DEFAULT_DONOR_MATCH_PASSENGER_ACCESS = True
 # mid_passenger_availability). Default ON; read ONLY by braunschweig.popsim.completed_donor.
 KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = "braunschweig.population.popsim.donor_match_lift_free_never_passenger"
 DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER = True
+# A1 of the student design (ADR-0211): a household with a student, a student member and a student person
+# target re-drawing a plan source prefer a student donor, a key relaxed last; every other target keeps its
+# candidate set and every call still draws once. Counted per match path as primary (student donor) versus
+# fallback (non-student donor). Default ON; read ONLY by braunschweig.popsim.completed_donor. OFF is
+# byte-identical to the build before A1.
+KEY_DONOR_MATCH_STUDENT_STATUS = "braunschweig.population.popsim.donor_match_student_status"
+DEFAULT_DONOR_MATCH_STUDENT_STATUS = True
+# Share of student targets relaxed to a non-student donor, per match path, above which the build logs a
+# WARNING. None = report only (no bound is set and the log says so): the bound comes from the one-batch smoke
+# of ADR-0211, never from a guess. Valid range: null or a share in [0, 1] (checked at DAG build by
+# completed_donor.validate_student_fallback_warn_share). Read ONLY by braunschweig.popsim.completed_donor, which
+# declares it volatile: it only sets a log level, so a changed bound rebuilds neither the donor nor
+# PopulationSim and takes effect the next time the stage executes. Whatever the bound, a path where no student
+# target got a student donor always logs a WARNING.
+KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = "braunschweig.population.popsim.donor_match_student_fallback_warn_share"
+DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE = None
+# A2 of the student design (ADR-0211): the employed target of the employment-grid groups 16_29 and
+# 30_39 is lowered, per Kreis and sex, by the students the Zensus counts as employed, read from the
+# committed student level table (braunschweig.popsim.student_level; its rules: ADR-0210, Decision 5).
+# The KREIS control "employed" and the KREIS employment families follow the lowered grid through
+# kreis_controls_follow_grids and the employment-level bridge. true/false, default true (on); false is
+# byte-identical to the stage before A2. With it on, the refusals and warnings are listed in the
+# docstring of braunschweig.popsim.stage._read_student_employment_config.
+KEY_STUDENT_EMPLOYMENT_CONCEPT = "braunschweig.population.popsim.student_employment_concept"
+DEFAULT_STUDENT_EMPLOYMENT_CONCEPT = True
+# The student KREIS entries of A3 (ADR-0211; kreis_attribute_control.STUDENT_ENTRY_NAMES), "on" / "off",
+# each default "on"; all "off" is byte-identical in the entry set and the stage tables to the stage
+# before A3. Their targets are counts built once per run from the student level table
+# (braunschweig.popsim.student_targets). The refusals are listed in the docstring of
+# braunschweig.popsim.stage.source_resolution._apply_student_entry_rules.
+#   student_education_kreis_control: the two hard entries (education leg by student status, ages 18 to
+#       29 and 30 or older). With it on they REPLACE education_18plus (dropped by name). A2 also reads it
+#       (see KEY_STUDENT_EMPLOYMENT_CONCEPT).
+#   student_work_leg_kreis_control: the soft work-leg entry.
+#   student_season_ticket_kreis_control: the soft season-ticket entry.
+KEY_STUDENT_EDUCATION_CONTROL = "braunschweig.population.popsim.student_education_kreis_control"
+DEFAULT_STUDENT_EDUCATION_CONTROL = "on"
+KEY_STUDENT_WORK_LEG_CONTROL = "braunschweig.population.popsim.student_work_leg_kreis_control"
+KEY_STUDENT_SEASON_TICKET_CONTROL = "braunschweig.population.popsim.student_season_ticket_kreis_control"
+# The home areas of the student entries (ADR-0211; the season-ticket share differs by area, A20), as
+# {area: [Kreis codes]}. Every Kreis of the study region (the Kreise of the student level table) except
+# Wolfsburg (03103, not surveyed by SrV) lies in exactly one area; Wolfsburg lies in none and takes the
+# SrV value of the region (A21). A run over fewer Kreise keeps these areas; its Kreise must lie in the
+# region. Checked by student_targets.area_of_kreis_from_home_areas, and the areas with their Kreise must equal
+# the ``# Home areas:`` header of the committed SrV table by area (student_targets.read_student_shares raises
+# otherwise: a Kreis moved between areas would silently take the other area's ticket share). Read only while a
+# student entry is on; Phase 4 reads the same key. The default equals
+# braunschweig.calibration.srv_student_reference.HOME_AREAS, which writes the SrV tables by area and that header
+# (a test compares them; the stage does not import the calibration module).
+KEY_STUDENT_HOME_AREA_KREISE = "braunschweig.population.popsim.student_home_area_kreise"
+DEFAULT_STUDENT_HOME_AREA_KREISE = {
+    "braunschweig": ["03101"],
+    "surrounding": ["03102", "03151", "03153", "03154", "03157", "03158"],
+}
 # Exclude rbW-only diaries (n_direct_legs == 0, n_rbw_legs > 0 -- the diary
 # consists ONLY of regelmaessige berufliche Wege summary legs, no individually
 # reported trip) from the realisable plan-source pool and remap persons
@@ -900,6 +962,11 @@ _KREIS_CONTROL_TOGGLE_KEY = {
     "education_0_5": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_6_17": KEY_EDUCATION_BY_AGE_CONTROL,
     "education_18plus": KEY_EDUCATION_BY_AGE_CONTROL,
+    # The two hard student entries share ONE toggle key (A3, ADR-0211).
+    "student_education_18_29": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": KEY_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": KEY_STUDENT_WORK_LEG_CONTROL,
+    "student_season_ticket": KEY_STUDENT_SEASON_TICKET_CONTROL,
 }
 
 # Shared default for the three education_by_age entries (Plan B, issue #368, ADR-0109):
@@ -939,6 +1006,12 @@ _KREIS_CONTROL_DEFAULT = {
     "education_0_5": _EDUCATION_BY_AGE_DEFAULT,
     "education_6_17": _EDUCATION_BY_AGE_DEFAULT,
     "education_18plus": _EDUCATION_BY_AGE_DEFAULT,
+    # A3 of the student design (ADR-0211): the two hard entries read the shared default of their
+    # one toggle, like the education-by-age family above.
+    "student_education_18_29": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_education_30plus": DEFAULT_STUDENT_EDUCATION_CONTROL,
+    "student_work_leg": "on",
+    "student_season_ticket": "on",
 }
 
 

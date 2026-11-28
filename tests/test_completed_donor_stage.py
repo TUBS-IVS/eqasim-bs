@@ -227,12 +227,18 @@ class _RecordingConfigureContext:
     with the default the stage declared, so a test can assert what a stage registers
     without depending on config values (there are none yet during configure). No
     ``stage()`` method: completed_donor.configure() never calls context.stage()."""
-    def __init__(self):
+    def __init__(self, values=None):
         self.calls = {}
+        self.volatile = set()
+        self._values = values or {}
 
-    def config(self, key, default=None):
+    def config(self, key, default=None, volatile=False):
+        # synpp's ConfigurationContext.config(option, default, volatile): returns the configured value
+        # (else the default) and marks a volatile option, which then stays out of the stage hash.
         self.calls[key] = default
-        return default
+        if volatile:
+            self.volatile.add(key)
+        return self._values.get(key, default)
 
 
 def test_completed_donor_configure_registers_diary_plan_match_keys():
@@ -282,3 +288,150 @@ def test_popsim_stage_consumes_completed_donor_stage():
 def test_popsim_stage_configure_registers_completed_donor_for_mid():
     src = inspect.getsource(popsim_stage.configure)
     assert "completed_donor" in src
+
+
+# --- A1: the student status key in the completed-donor build (ADR-0211) ------------------------------------
+
+def _write_student_fixture(tmp_path):
+    """Five households of two persons each (so member completion adds nobody and no donor is unfillable):
+    weekday HH1 (two workers), HH2 (student + worker), HH3 (two workers), HH5 (student without a diary + worker),
+    and the weekend HH4 (student + worker). Every person but the HH5 student has a realisable work diary."""
+    (tmp_path / "MiD2023_Haushalte.csv").write_text(
+        "H_ID,oek_status,hheink_gr1,H_ANZAUTO,H_ANZRAD,anzpedrad,H_ANZPED,RegioStaR7,hhgr_gr,H_GR,H_GEW,H_MIETE,haustyp\n"
+        + "".join(f"{h},3,4,1,2,2,0,73,2,2,1.0,{1 if h == 1 else 2},{1 if h == 1 else 2}\n" for h in (1, 2, 3, 4, 5)),
+        encoding="utf-8")
+    persons = [  # H_ID, P_ID, age, sex, P_TAET, anzwege1, kernwo
+        (1, 1, 40, 1, 1, 3, 1), (1, 2, 38, 2, 1, 2, 1),
+        (2, 1, 22, 2, 10, 3, 1), (2, 2, 41, 1, 1, 2, 1),
+        (3, 1, 40, 1, 1, 3, 1), (3, 2, 39, 2, 1, 2, 1),
+        (4, 1, 21, 2, 10, 3, 4), (4, 2, 40, 1, 1, 2, 4),
+        (5, 1, 23, 2, 10, 803, 1), (5, 2, 40, 1, 1, 2, 1),
+    ]
+    (tmp_path / "MiD2023_Personen.csv").write_text(
+        "H_ID,P_ID,HP_ALTER,HP_SEX,P_TAET,P_FSCHEIN,P_FKARTE,P_BKAT,alter_gr1,anzwege1,P_GEW,kernwo,mobil,mobil_diff,feiertag\n"
+        + "".join(f"{h},{p},{age},{sex},{taet},1,3,1,5,{anz},1.0,{kw},1,1,0\n"
+                  for h, p, age, sex, taet, anz, kw in persons),
+        encoding="utf-8")
+    rows = ["H_ID,P_ID,W_ID,W_ZWECK,hvm_imp,W_SZS,W_SZM,W_AZS,W_AZM,wegkm_imp,wegmin_imp1,W_RBW,W_SO1,HP_ALTER"]
+    for h, p, *_rest in persons:
+        if (h, p) == (5, 1):
+            continue
+        rows.append(f"{h},{p},1,1,4,7,0,7,30,10.0,30,0,1,40")
+        rows.append(f"{h},{p},2,8,4,17,0,17,30,10.0,30,0,809,40")
+    (tmp_path / "MiD2023_Wege.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def _sources(result):
+    persons = result.persons
+    return {(int(h), int(p)): (int(sh), int(sp)) for h, p, sh, sp in
+            zip(persons["H_ID"], persons["P_ID"], persons["source_H_ID"], persons["source_P_ID"])}
+
+
+def test_student_key_changes_only_student_targets_on_a_clean_fixture(tmp_path):
+    """A clean fixture (no unfillable donor, no weekend member in a weekday household, every re-drawn source
+    realisable): the draw count is the same with the key on, so the persons of households without a student
+    target and every person with a realisable own plan keep today's source, and the students re-drawn get
+    the only realisable student donor. The members of the weekend student's own household are the one
+    exception (they pair with the donor household's members) and are not asserted."""
+    _write_student_fixture(tmp_path)
+    student_donor = (2, 1)
+    off_student_source = set()
+    for seed in (1, 2, 3, 4, 5, 6, 7, 8):
+        off = cd.build_completed_donor(tmp_path, random_seed=seed, seed_day_filter=None, weekend_plan_match_on=True)
+        on = cd.build_completed_donor(tmp_path, random_seed=seed, seed_day_filter=None, weekend_plan_match_on=True,
+                                      donor_match_student_status=True)
+        s_off, s_on = _sources(off), _sources(on)
+        unchanged = [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2), (5, 2)]
+        assert {k: s_on[k] for k in unchanged} == {k: s_off[k] for k in unchanged}
+        assert s_on[(4, 1)] == student_donor and s_on[(5, 1)] == student_donor
+        off_student_source.add(s_off[(4, 1)])
+        assert on.weekend_report.student_counts["household_pairs"] == weekend_plan_match.StudentMatchCounts(1, 1, 0)
+        diary = on.diary_report.student_counts
+        assert diary.n_student_targets >= 1 and diary.n_non_student_donor == 0   # primary path only
+        assert off.weekend_report.student_counts is None and off.diary_report.student_counts is None
+    assert off_student_source != {student_donor}    # the key changes the weekend student's donor for some seed
+
+
+def test_student_switch_default_is_off_and_a_warn_bound_changes_nothing_when_off(tmp_path):
+    # Compares the function default with an explicit False (plus a warn bound) in the SAME code, so it
+    # proves the default and the bound's irrelevance when off, not identity with the build before A1. That
+    # identity is pinned by test_build_completed_donor_off_matches_pre_task_inline_pipeline (an inline
+    # reference pipeline that passes no student argument).
+    _write_student_fixture(tmp_path)
+    default = cd.build_completed_donor(
+        tmp_path, random_seed=3, seed_day_filter=None, weekend_plan_match_on=True,
+        trace_path=tmp_path / "w_default.parquet", diary_trace_path=tmp_path / "d_default.parquet")
+    explicit = cd.build_completed_donor(
+        tmp_path, random_seed=3, seed_day_filter=None, weekend_plan_match_on=True,
+        donor_match_student_status=False, student_fallback_warn_share=0.1,
+        trace_path=tmp_path / "w_off.parquet", diary_trace_path=tmp_path / "d_off.parquet")
+    pd.testing.assert_frame_equal(default.persons, explicit.persons)
+    pd.testing.assert_frame_equal(default.households, explicit.households)
+    assert default.weekend_report == explicit.weekend_report and default.diary_report == explicit.diary_report
+    for name in ("w", "d"):
+        assert (tmp_path / f"{name}_default.parquet").read_bytes() == (tmp_path / f"{name}_off.parquet").read_bytes()
+
+
+def _student_execute_config(tmp_path, **extra):
+    config = {
+        "braunschweig.population.popsim.mid_raw_path": str(tmp_path / "mid"),
+        "random_seed": 3, "braunschweig.population.popsim.seed_day_filter": "default",
+        "braunschweig.population.popsim.weekend_plan_match": True,
+        "braunschweig.population.popsim.diary_plan_match": True,
+        "braunschweig.population.popsim.exclude_holiday_plan_sources": True,
+        "braunschweig.population.popsim.exclude_rbw_legs": True,
+        "braunschweig.population.popsim.drop_leading_arrive_home_leg": True,
+    }
+    config.update(extra)
+    return config
+
+
+def test_student_counts_reach_the_run_info_only_when_the_switch_is_on(tmp_path):
+    from braunschweig.popsim.stage.config_keys import KEY_DONOR_MATCH_STUDENT_STATUS
+    (tmp_path / "mid").mkdir()
+    _write_student_fixture(tmp_path / "mid")
+    infos = {}
+    for state in (False, True):
+        cache = tmp_path / f"cache_{state}"
+        cache.mkdir()
+        ctx = _FakeContext(_student_execute_config(tmp_path, **{KEY_DONOR_MATCH_STUDENT_STATUS: state}), cache)
+        cd.execute(ctx)
+        infos[state] = {k: v for k, v in ctx.info.items() if k.startswith("donor_match_student_")}
+    assert infos[False] == {}
+    on = infos[True]
+    assert on["donor_match_student_household_pairs_targets"] == 1
+    assert on["donor_match_student_household_pairs_student_donor_share"] == 1.0
+    assert on["donor_match_student_household_pairs_fallback_share"] == 0.0
+    assert on["donor_match_student_person_fallback_targets"] == 0
+    assert on["donor_match_student_person_fallback_fallback_share"] is None      # no target: no share
+    assert on["donor_match_student_diary_plan_match_targets"] >= 1
+    assert set(on) == {f"donor_match_student_{p}_{suffix}" for p in cd.STUDENT_RUN_INFO_PATHS
+                       for suffix in ("targets", "student_donor_share", "fallback_share")}
+
+
+def test_completed_donor_configure_declares_the_student_keys():
+    from braunschweig.popsim.stage import config_keys
+    ctx = _RecordingConfigureContext()
+    cd.configure(ctx)
+    assert ctx.calls[config_keys.KEY_DONOR_MATCH_STUDENT_STATUS] is True
+    # the warn bound is declared (synpp needs it for execute); None = report only, no bound invented
+    assert config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE in ctx.calls
+    assert ctx.calls[config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE] is None
+    # the bound only sets a log level: volatile, so changing it rebuilds neither the donor nor PopulationSim;
+    # the student status key changes donors and must stay in the hash
+    assert config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE in ctx.volatile
+    assert config_keys.KEY_DONOR_MATCH_STUDENT_STATUS not in ctx.volatile
+
+
+@pytest.mark.parametrize("value, ok", [(None, True), (0, True), (0.4, True), (1, True),
+                                       (-0.01, False), (1.01, False), ("high", False), (float("nan"), False),
+                                       (True, False), (False, False)])   # a YAML boolean is not a share
+def test_completed_donor_configure_requires_a_student_warn_share_in_zero_one(value, ok):
+    from braunschweig.popsim.stage import config_keys
+    key = config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE
+    ctx = _RecordingConfigureContext({key: value})
+    if ok:
+        cd.configure(ctx)
+    else:
+        with pytest.raises(ValueError, match="donor_match_student_fallback_warn_share"):
+            cd.configure(ctx)

@@ -1,0 +1,4 @@
+batch,level,n_parents,first_optimal,first_feasible,first_infeasible,first_not_solved,retry_optimal,retry_feasible,retry_infeasible,retry_not_solved,sequential_fallback,no_infeasible_subzones,single_feasible_subzone,all_subzones_infeasible,infeasible_subzones,non_simultaneous
+batch_030,KREIS,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0
+batch_030,ZENSUS1km,4,1,3,0,0,0,0,0,0,0,0,0,0,0,0
+batch_030,ZENSUS100m,23,2,21,0,0,0,0,0,0,0,0,0,0,0,0

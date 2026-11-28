@@ -191,10 +191,13 @@ def test_active_kreis_entries_excludes_employment_status_when_off():
     # #368, ADR-0109) and REQUIRES employment_status to be active (its seed derivation
     # reads the employment_status column) -- active_kreis_entries raises otherwise. See
     # tests/test_participation_universe_controls.py for that contradiction guard on its
-    # own.
+    # own. The student entries (A3, ADR-0211) need employment_status too.
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_EMPLOYMENT_STATUS_KREIS_CONTROL: "off",
-                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off"}), "mid"
+                      stage.KEY_WORK_BY_EMPLOYMENT_CONTROL: "off",
+                      stage.KEY_STUDENT_EDUCATION_CONTROL: "off",
+                      stage.KEY_STUDENT_WORK_LEG_CONTROL: "off",
+                      stage.KEY_STUDENT_SEASON_TICKET_CONTROL: "off"}), "mid"
     )
     names = {c.name for c in active}
     assert "employment_status" not in names

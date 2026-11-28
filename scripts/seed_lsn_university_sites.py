@@ -2,13 +2,14 @@
 
 The values are pinned by hand from the LSN-Online table K3100101 (students per
 institution and site commune) in the constant ``SITE_ROWS`` below, then written to
-``OUTPUT_PATH``. Re-run to regenerate; do not hand-edit the CSV.
+``OUTPUT_PATH`` (``SEMESTER``) and ``CENSUS_YEAR_OUTPUT_PATH`` (``CENSUS_YEAR_SEMESTER``). Re-run to regenerate; do not hand-edit the CSV.
 
 Scope of the table: one row per (institution, site commune). ``scope`` is ``local``
 when the site lies in a Kreis of the study region (``ZGB_KREISE``), else
 ``surrounding``. Sachsen-Anhalt institutions are not in LSN and stay curated in
 ``scripts/seed_nds_hochschulen.py``, which this script does not touch (the existing
-``nds_hochschulen.csv`` keeps feeding the OFF path).
+``nds_hochschulen.csv`` keeps feeding the OFF path); their students are pinned in
+``OUTSIDE_LSN_STUDENTS``.
 
 Usage: python scripts/seed_lsn_university_sites.py
 """
@@ -29,11 +30,16 @@ from braunschweig.calibration.srv_distance_targets import ZGB_KREISE  # noqa: E4
 
 SOURCE_TABLE = "K3100101"
 OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/lsn_university_sites.csv"
+CENSUS_YEAR_OUTPUT_PATH = REPO_ROOT / "eqasim-data/data/braunschweig/schools/lsn_university_sites_ws2022_23.csv"
 
-# Filled together with SITE_ROWS (hand-read from LSN-Online); main() refuses to run
-# while any of the three is empty.
-SEMESTER = "WS 2024/25"
-ACCESS_DATE = "2026-11-25"
+# Filled together with SITE_ROWS and CENSUS_YEAR_SITE_ROWS (hand-read from LSN-Online); main()
+# refuses to run while any of SITE_ROWS, CENSUS_YEAR_SITE_ROWS, SEMESTER, CENSUS_YEAR_SEMESTER and
+# ACCESS_DATE is empty.
+SEMESTER = "WS 2025/26"
+ACCESS_DATE = "2026-11-27"
+# Winter semester 2022/23 stands for the census day (2022-05-15); the level is a winter-semester stock
+# and all institutions have a published figure for it (design decision of issue #140).
+CENSUS_YEAR_SEMESTER = "WS 2022/23"
 
 # (institution, site_commune_name, site_ags8, students_persons)
 #
@@ -45,25 +51,65 @@ ACCESS_DATE = "2026-11-25"
 # level Hochschulstandort. Institution names as in the table. An institution without site rows
 # in the table (one site) carries its institution total; sites shown as "-" are left out.
 SITE_ROWS: list[tuple[str, str, str, int]] = [
-    ("TU Braunschweig", "Braunschweig, Stadt", "03101000", 15632),
-    ("Hochsch. f. Bildende Künste Braunschweig", "Braunschweig, Stadt", "03101000", 902),
-    ("TU Clausthal", "Clausthal-Zellerfeld, Stadt", "03153018", 2759),
-    ("HS Braunschweig/Wolfenbüttel", "Salzgitter, Stadt", "03102000", 1669),
-    ("HS Braunschweig/Wolfenbüttel", "Wolfsburg, Stadt", "03103000", 2363),
-    ("HS Braunschweig/Wolfenbüttel", "Wolfenbüttel, Stadt", "03158037", 5092),
-    ("HS Braunschweig/Wolfenbüttel", "Suderburg", "03360023", 926),
-    ("Uni Hannover", "Hannover, Stadt", "03241001", 26074),
-    ("HS Hannover", "Hannover, Stadt", "03241001", 8441),
-    ("MHH Hannover", "Hannover, Stadt", "03241001", 4030),
-    ("TiHo Hannover", "Hannover, Stadt", "03241001", 2331),
-    ("Hochsch. f. Musik, Theater und Medien Hannover", "Hannover, Stadt", "03241001", 1365),
-    ("Uni Göttingen", "Göttingen, Stadt", "03159016", 26824),
-    ("Uni Hildesheim", "Hildesheim, Stadt", "03254021", 7784),
-    ("HS Hildesheim/Holzminden/Göttingen", "Göttingen, Stadt", "03159016", 2123),
-    ("HS Hildesheim/Holzminden/Göttingen", "Hildesheim, Stadt", "03254021", 2956),
-    ("HS Hildesheim/Holzminden/Göttingen", "Holzminden, Stadt", "03255023", 1048),
-    ("Uni Lüneburg", "Lüneburg, Stadt", "03355022", 9127),
+    ("TU Braunschweig", "Braunschweig, Stadt", "03101000", 15051),
+    ("Hochsch. f. Bildende Künste Braunschweig", "Braunschweig, Stadt", "03101000", 873),
+    ("TU Clausthal", "Clausthal-Zellerfeld, Stadt", "03153018", 2802),
+    ("HS Braunschweig/Wolfenbüttel", "Salzgitter, Stadt", "03102000", 1737),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfsburg, Stadt", "03103000", 2366),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfenbüttel, Stadt", "03158037", 5123),
+    ("HS Braunschweig/Wolfenbüttel", "Suderburg", "03360023", 983),
+    ("Uni Hannover", "Hannover, Stadt", "03241001", 25377),
+    ("HS Hannover", "Hannover, Stadt", "03241001", 8461),
+    ("MHH Hannover", "Hannover, Stadt", "03241001", 4085),
+    ("TiHo Hannover", "Hannover, Stadt", "03241001", 2306),
+    ("Hochsch. f. Musik, Theater und Medien Hannover", "Hannover, Stadt", "03241001", 1345),
+    ("Uni Göttingen", "Göttingen, Stadt", "03159016", 26855),
+    ("Uni Hildesheim", "Hildesheim, Stadt", "03254021", 7342),
+    ("HS Hildesheim/Holzminden/Göttingen", "Göttingen, Stadt", "03159016", 2249),
+    ("HS Hildesheim/Holzminden/Göttingen", "Hildesheim, Stadt", "03254021", 2767),
+    ("HS Hildesheim/Holzminden/Göttingen", "Holzminden, Stadt", "03255023", 990),
+    ("Uni Lüneburg", "Lüneburg, Stadt", "03355022", 9267),
 ]
+
+# The same 18 sites in the winter semester of the census year (the keys and their order equal
+# SITE_ROWS; a test pins both against the committed transcription of the LSN table).
+CENSUS_YEAR_SITE_ROWS: list[tuple[str, str, str, int]] = [
+    ("TU Braunschweig", "Braunschweig, Stadt", "03101000", 16809),
+    ("Hochsch. f. Bildende Künste Braunschweig", "Braunschweig, Stadt", "03101000", 937),
+    ("TU Clausthal", "Clausthal-Zellerfeld, Stadt", "03153018", 3024),
+    ("HS Braunschweig/Wolfenbüttel", "Salzgitter, Stadt", "03102000", 1877),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfsburg, Stadt", "03103000", 2516),
+    ("HS Braunschweig/Wolfenbüttel", "Wolfenbüttel, Stadt", "03158037", 5290),
+    ("HS Braunschweig/Wolfenbüttel", "Suderburg", "03360023", 1084),
+    ("Uni Hannover", "Hannover, Stadt", "03241001", 28022),
+    ("HS Hannover", "Hannover, Stadt", "03241001", 8911),
+    ("MHH Hannover", "Hannover, Stadt", "03241001", 3916),
+    ("TiHo Hannover", "Hannover, Stadt", "03241001", 2345),
+    ("Hochsch. f. Musik, Theater und Medien Hannover", "Hannover, Stadt", "03241001", 1435),
+    ("Uni Göttingen", "Göttingen, Stadt", "03159016", 27356),
+    ("Uni Hildesheim", "Hildesheim, Stadt", "03254021", 8060),
+    ("HS Hildesheim/Holzminden/Göttingen", "Göttingen, Stadt", "03159016", 1926),
+    ("HS Hildesheim/Holzminden/Göttingen", "Hildesheim, Stadt", "03254021", 3147),
+    ("HS Hildesheim/Holzminden/Göttingen", "Holzminden, Stadt", "03255023", 1175),
+    ("Uni Lüneburg", "Lüneburg, Stadt", "03355022", 9490),
+]
+
+# Students of the three institutions in Sachsen-Anhalt (no LSN rows): table semester -> name as in
+# _SURROUNDING of scripts/seed_nds_hochschulen.py -> (students, semester the figure is of).
+# Source: Statistisches Landesamt Sachsen-Anhalt, GENESIS-Online table 21311-0003, read 2026-11-27, and
+# for Magdeburg university in 2025/26 press release 186/2026 of 2026-07-17. Magdeburg-Stendal and Harz
+# have no published figure for WS 2025/26 yet: their last published winter semester, 2024/25, is
+# used (a counted fallback in the consumer: 2 of the 3 institutions outside the LSN table, which with the
+# 18 LSN sites make 21 sites of 16 institutions). These figures are not rows of the
+# site CSVs written below.
+OUTSIDE_LSN_STUDENTS: dict[str, dict[str, tuple[int, str]]] = {
+    "WS 2025/26": {"OVGU Magdeburg": (13121, "WS 2025/26"),
+                   "Hochschule Magdeburg-Stendal": (5169, "WS 2024/25"),
+                   "Hochschule Harz": (2779, "WS 2024/25")},
+    "WS 2022/23": {"OVGU Magdeburg": (12834, "WS 2022/23"),
+                   "Hochschule Magdeburg-Stendal": (5252, "WS 2022/23"),
+                   "Hochschule Harz": (3019, "WS 2022/23")},
+}
 
 _COLUMNS = ["institution", "site_commune", "site_ags8", "site_kreis_ars5", "scope",
             "students_persons", "semester"]
@@ -106,27 +152,40 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
-def main(argv=None) -> int:
-    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
-    if not SITE_ROWS or not SEMESTER or not ACCESS_DATE:
-        raise ValueError("SITE_ROWS, SEMESTER and ACCESS_DATE are empty: fill them from the "
-                         f"LSN-Online table {SOURCE_TABLE} before running this script")
-    frame = build_sites_frame(SITE_ROWS, SEMESTER)
+def _write_sites(rows, semester: str, output_path: Path) -> None:
+    """Write one site table (header with its semester, then the rows) to ``output_path``."""
+    frame = build_sites_frame(rows, semester)
     header = [
         f"# Source: LSN-Online {SOURCE_TABLE} (students per institution and site commune), "
-        f"{SEMESTER}, accessed {ACCESS_DATE}",
-        "# Script: scripts/seed_lsn_university_sites.py (values pinned in SITE_ROWS)",
+        f"{semester}, accessed {ACCESS_DATE}",
+        "# Script: scripts/seed_lsn_university_sites.py (values pinned in SITE_ROWS and "
+        "CENSUS_YEAR_SITE_ROWS)",
         "# Licence: dl-de/by-2-0 (Landesamt fuer Statistik Niedersachsen)",
-        "# Sachsen-Anhalt institutions are not in LSN and stay curated in "
+        "# Sachsen-Anhalt institutions are not in LSN: their students are pinned in "
+        "OUTSIDE_LSN_STUDENTS of the script, not rows of this file; the institutions stay curated in "
         "scripts/seed_nds_hochschulen.py",
         f"# Rows: {len(frame)}; local {int((frame.scope == 'local').sum())}, "
         f"surrounding {int((frame.scope == 'surrounding').sum())}",
     ]
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("\n".join(header) + "\n")
         frame.to_csv(handle, index=False, lineterminator="\n")
-    print(f"[seed_lsn_university_sites] wrote {_display_path(OUTPUT_PATH)} ({len(frame)} rows)")
+    print(f"[seed_lsn_university_sites] wrote {_display_path(output_path)} "
+          f"({len(frame)} rows, {semester})")
+
+
+def main(argv=None) -> int:
+    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args(argv)
+    if (not SITE_ROWS or not CENSUS_YEAR_SITE_ROWS or not SEMESTER or not CENSUS_YEAR_SEMESTER
+            or not ACCESS_DATE):
+        raise ValueError("SITE_ROWS, CENSUS_YEAR_SITE_ROWS, SEMESTER, CENSUS_YEAR_SEMESTER and "
+                         "ACCESS_DATE must all be filled; one is empty: fill them from the "
+                         f"LSN-Online table {SOURCE_TABLE} before running this script")
+    for rows, semester, output_path in ((SITE_ROWS, SEMESTER, OUTPUT_PATH),
+                                        (CENSUS_YEAR_SITE_ROWS, CENSUS_YEAR_SEMESTER,
+                                         CENSUS_YEAR_OUTPUT_PATH)):
+        _write_sites(rows, semester, output_path)
     return 0
 
 

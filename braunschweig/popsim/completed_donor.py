@@ -154,6 +154,8 @@ def build_completed_donor(
     precompute_matching: bool = True,
     donor_match_passenger_access: bool = True,
     donor_match_lift_free_never_passenger: bool = True,
+    donor_match_student_status: bool = False,
+    student_fallback_warn_share: Optional[float] = None,
 ) -> CompletedDonor:
     """Build the completed MiD donor frames (member completion + weekend match +
     diary plan match), and attach the plan-source diary facts.
@@ -251,6 +253,21 @@ def build_completed_donor(
         reports a lift themselves. The persons that keep a lift in another respondent's
         diary are counted and logged as a rate. Same rng contract: the assignment
         changes, the draw sequence does not.
+    donor_match_student_status:
+        When True (A1 of the student design, ADR-0211; the production config default is ON, this
+        function's own default is False so a bare call keeps the pre-A1 build), a household with a
+        student aged 18 or older, a student member and a student person target prefer a student
+        donor in the weekend match and the diary match, a key relaxed last. Every other target keeps
+        its candidate set and every call still draws exactly once, so only the donor of the student
+        targets (and of the other members of their household) changes, never the draw sequence. The
+        students re-drawn, the share with a student donor (primary) and the share relaxed to a
+        non-student donor (fallback) are counted per match path in the reports
+        (``student_counts``), logged, and published as run info by :func:`student_run_info`.
+    student_fallback_warn_share:
+        Share of student targets relaxed to a non-student donor, per path, above which the build
+        logs a WARNING. ``None`` (default) = no bound set; the log says so. A path on which no student target
+        got a student donor is a WARNING whatever the bound (the primary method is then broken). Ignored
+        without ``donor_match_student_status``.
 
     Notes
     -----
@@ -312,6 +329,16 @@ def build_completed_donor(
     car_passenger_diaries = (passenger_availability.car_passenger_diary_keys(wege)
                              if lift_free_never else None)
 
+    # The student arguments are passed ONLY when the key is on, so the call (and its test doubles) is exactly
+    # the pre-A1 call with the key off.
+    student_kwargs = (dict(student_key=True, student_fallback_warn_share=student_fallback_warn_share)
+                      if donor_match_student_status else {})
+    if donor_match_student_status:
+        logger.info("[completed_donor] donor_match_student_status on: student targets prefer a student donor "
+                    "in the weekend and the diary match; fallback warn bound %s",
+                    "not set (report only)" if student_fallback_warn_share is None
+                    else f"{student_fallback_warn_share:.3f}")
+
     weekend_report = None
     if weekend_plan_match_on:
         # completion_rng is DELIBERATELY shared with member completion above: the two
@@ -322,6 +349,7 @@ def build_completed_donor(
             precompute_matching=precompute_matching,
             passenger_key=passenger_key,
             car_passenger_diaries=car_passenger_diaries,
+            **student_kwargs,
         )
         if trace_path is not None:
             weekend_trace.to_parquet(trace_path)
@@ -357,6 +385,7 @@ def build_completed_donor(
             precompute_matching=precompute_matching,
             passenger_key=passenger_key,
             car_passenger_diaries=car_passenger_diaries,
+            **student_kwargs,
         )
         if diary_trace_path is not None:
             diary_trace.to_parquet(diary_trace_path)
@@ -384,6 +413,31 @@ def build_completed_donor(
         weekend_report=weekend_report,
         diary_report=diary_report,
     )
+
+
+#: The student match paths of :func:`student_run_info`, in report order: the three weekend paths, then the diary
+#: re-draw.
+STUDENT_RUN_INFO_PATHS = (*weekend_plan_match.STUDENT_PATHS_WEEKEND, "diary_plan_match")
+
+
+def student_run_info(weekend_report, diary_report) -> dict:
+    """Run info of the A1 student match counts (ADR-0211), per match path: ``donor_match_student_<path>_targets``,
+    ``..._student_donor_share`` (primary) and ``..._fallback_share``. A share is ``None`` when the path had no
+    student target. Empty when neither report carries ``student_counts`` (the switch is off), so the run info of
+    the OFF build is unchanged."""
+    by_path = {}
+    if weekend_report is not None and weekend_report.student_counts:
+        by_path.update(weekend_report.student_counts)
+    if diary_report is not None and diary_report.student_counts is not None:
+        by_path["diary_plan_match"] = diary_report.student_counts
+    info = {}
+    for path in STUDENT_RUN_INFO_PATHS:
+        if path in by_path:
+            counts = by_path[path]
+            info[f"donor_match_student_{path}_targets"] = counts.n_student_targets
+            info[f"donor_match_student_{path}_student_donor_share"] = counts.student_donor_share
+            info[f"donor_match_student_{path}_fallback_share"] = counts.fallback_share
+    return info
 
 
 def count_passenger_class_crossings(persons: pd.DataFrame, household_id: str = "H_ID") -> tuple:
@@ -448,6 +502,29 @@ def validate(context):
         stage_label=__name__ + ".validate()")
 
 
+def validate_student_fallback_warn_share(value):
+    """Check the A1 warn bound (``donor_match_student_fallback_warn_share``, ADR-0211) and return it as a float.
+
+    ``None`` (report only, no bound) passes unchanged; any other value must be a number in [0, 1] (a share of
+    student targets). Raises ``ValueError`` naming the key otherwise, so a bad YAML value fails the DAG build
+    instead of silently never (or always) warning."""
+    from braunschweig.popsim.stage.config_keys import KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE
+    if value is None:
+        return None
+    if isinstance(value, (bool, np.bool_)):   # YAML true would otherwise pass as 1.0
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got the boolean {value!r}")
+    try:
+        share = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got {value!r}") from None
+    if not 0.0 <= share <= 1.0:   # also refuses NaN
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got {value!r}")
+    return share
+
+
 def configure(context):
     """Declare the completed-donor config dependencies.
 
@@ -474,6 +551,8 @@ def configure(context):
         DEFAULT_DONOR_MATCH_FINE_CHILD_AGE_BANDS, DEFAULT_DONOR_MATCH_PASSENGER_ACCESS,
         KEY_DONOR_MATCH_PASSENGER_ACCESS, DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER,
         KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER,
+        DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, DEFAULT_DONOR_MATCH_STUDENT_STATUS,
+        KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, KEY_DONOR_MATCH_STUDENT_STATUS,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES,
         DEFAULT_EXCLUDE_RBW_LEGS, DEFAULT_SEED_DAY_FILTER, DEFAULT_WEEKEND_PLAN_MATCH,
     )
@@ -503,6 +582,14 @@ def configure(context):
     context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS, DEFAULT_DONOR_MATCH_PASSENGER_ACCESS)
     # ADR-0166: the lift-free preference changes which donor a "never" passenger draws.
     context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, DEFAULT_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER)
+    # ADR-0211 (A1): the student status key changes which donor a student target draws, so it belongs in THIS
+    # stage's config hash. The warn bound only changes a log level, so it is declared volatile (precedent:
+    # KEY_SOLVER_FALLBACK_ERROR_RATE in the popsim stage): changing it rebuilds neither the donor nor
+    # PopulationSim. Its range is checked here, at DAG-build time.
+    context.config(KEY_DONOR_MATCH_STUDENT_STATUS, DEFAULT_DONOR_MATCH_STUDENT_STATUS)
+    validate_student_fallback_warn_share(context.config(
+        KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, DEFAULT_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE,
+        volatile=True))
     context.config(KEY_PERFORMANCE_DONOR_MATCHING, True)
 
 
@@ -541,9 +628,13 @@ def execute(context) -> CompletedDonor:
     passenger_availability_enabled = bool(context.config(KEY_MID_PASSENGER_AVAILABILITY))
     from braunschweig.popsim.stage.config_keys import (
         KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER, KEY_DONOR_MATCH_PASSENGER_ACCESS,
+        KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE, KEY_DONOR_MATCH_STUDENT_STATUS,
     )
     donor_match_passenger_access = bool(context.config(KEY_DONOR_MATCH_PASSENGER_ACCESS))
     donor_match_lift_free_never_passenger = bool(context.config(KEY_DONOR_MATCH_LIFT_FREE_NEVER_PASSENGER))
+    donor_match_student_status = bool(context.config(KEY_DONOR_MATCH_STUDENT_STATUS))
+    student_fallback_warn_share = validate_student_fallback_warn_share(
+        context.config(KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE))
 
     result = build_completed_donor(
         mid_dir,
@@ -562,6 +653,8 @@ def execute(context) -> CompletedDonor:
         precompute_matching=precompute_matching,
         donor_match_passenger_access=donor_match_passenger_access,
         donor_match_lift_free_never_passenger=donor_match_lift_free_never_passenger,
+        donor_match_student_status=donor_match_student_status,
+        student_fallback_warn_share=student_fallback_warn_share,
     )
 
     # Surface the build reports as run info (also set on the consumer in popsim.stage
@@ -578,4 +671,6 @@ def execute(context) -> CompletedDonor:
                          result.diary_report.n_remapped_in_split_child_band)
         context.set_info("diary_plan_match_crossed_fine_child_age_band",
                          result.diary_report.n_crossed_fine_child_age_band)
+    for key, value in student_run_info(result.weekend_report, result.diary_report).items():
+        context.set_info(key, value)
     return result

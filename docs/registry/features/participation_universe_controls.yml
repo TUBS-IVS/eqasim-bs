@@ -39,6 +39,9 @@ production:
   - braunschweig.population.popsim.work_by_employment_kreis_control
   - braunschweig.population.popsim.education_by_age_kreis_control
   - braunschweig.population.popsim.diary_match_hard_employment
+  - braunschweig.population.popsim.student_education_kreis_control
+  - braunschweig.population.popsim.student_work_leg_kreis_control
+  - braunschweig.population.popsim.student_season_ticket_kreis_control
 introduced:
   issue: '#368'
   pr: null
@@ -49,6 +52,9 @@ code_paths:
 - braunschweig/popsim/mid/seed_loading.py
 - braunschweig/popsim/stage/
 - braunschweig/popsim/control_spec.py
+- braunschweig/popsim/student_targets.py
+- braunschweig/popsim/input_consistency.py
+- braunschweig/popsim/input_consistency_guard.py
 - braunschweig/popsim/diary_plan_match.py
 - braunschweig/popsim/weekend_plan_match.py
 - braunschweig/calibration/srv_participation_universe.py
@@ -60,6 +66,10 @@ evidence:
   - tests/test_participation_universe_controls.py
   - tests/test_participation_universe_targets.py
   - tests/test_srv_participation_universe.py
+  - tests/test_student_targets.py
+  - tests/test_kreis_attribute_control.py
+  - tests/test_popsim_input_consistency.py
+  - tests/test_popsim_input_consistency_guard.py
   - tests/test_kreis_control_stage_wiring.py
   - tests/test_weekend_plan_match.py
   - tests/test_diary_plan_match.py
@@ -263,6 +273,21 @@ assessment:
     employment-grid age shape) now sit on overlapping margins, and seed sparsity per Kreis x cell
     (non-employed with a work trip in a small Landkreis) is the cell most likely to be too thin.
 notes: >-
+  STUDENT ENTRIES (A3 of ADR-0211, issue #140): four KREIS entries by student status are registered in
+  kreis_attribute_control (STUDENT_ENTRY_NAMES), each behind its own "on"/"off" key
+  (student_education_kreis_control, student_work_leg_kreis_control, student_season_ticket_kreis_control,
+  all default on; the home areas of the season-ticket share: student_home_area_kreise). The two education
+  entries (hard, ages 18 to 29 and 30 or older) REPLACE education_18plus by name while on; the work leg
+  and the season ticket are soft. Their targets are counts built once per run from the committed
+  student_level_table and the SrV tables of the data record srv2023_student_reference
+  (braunschweig.popsim.student_targets; the stage writes student_kreis_targets.csv); the seed columns are
+  derived in mid.participation.derive_student_status_seed_columns. Consistency: the two age-range pairs
+  replace the 18-plus pair, the two at-most pairs follow (rules: docs/codebase/notes/popsim-input-consistency.md).
+  The realised fit is reported by participation_fit.student_participation_fit
+  (run_population_validation --student-targets), a fit to the targets, not a validation. The smoke key
+  braunschweig.population.popsim.assemble_batches_only (volatile; writes the batch folders and reports,
+  then stops before PopulationSim) serves the one-batch smoke of ADR-0211. Refusals, defaults and the
+  home areas: popsim/stage/config_keys.py.
   WHY production.flags lists three keys and not the five this package touches: the K2-production
   check requires every declared flag to resolve TRUTHY for production.enabled true, so the two
   RETIRED predecessors -- braunschweig.population.popsim.work_participation_kreis_control and

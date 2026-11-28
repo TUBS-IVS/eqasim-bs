@@ -1,0 +1,75 @@
+dataset: student_od_balance
+title: Student origin-destination table T(home Kreis, university site) and its balance (four
+  committed tables)
+provider: derived in-repo from the CHE origin table, the LSN site enrollment and the VG250 geometry
+vintage: CHE WS 2022/23 origins scaled to the LSN enrollment WS 2025/26 (the three institutions outside LSN at their own semester or their last published winter semester, a counted fallback)
+geography: |
+  T has one row per (home Kreis, local site) and per (region Kreis, surrounding site): the eight
+  Kreise of the study region (ZGB) as homes plus the in-commuters from the Kreise within the
+  maximum commuting distance of a local site. The three balance tables sum T by site, by
+  out-commuting site and by in-commuter origin.
+crs: EPSG:25832 (distances are straight lines between commune centroids; the three curated
+  sites outside the LSN table use their own coordinates; the tables carry km, no coordinates)
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: committed
+  source: |
+    Regenerate with: python scripts/build_student_balance.py balance --final --out-dir
+    eqasim-data --artifact-dir <run artifact dir> --weights 1,1,0.3 --mover-share 0.4
+    --mover-site-kreise 03158 --weights-source owner --sites <lsn_university_sites.csv, local-only> --vg250
+    <VG250 zip, local-only> --zensus-students <csv, local-only> --zensus-employed <csv,
+    local-only> --source-commit <sha> (the values shown are those of the committed tables). The
+    weight triple and the mover share are arguments with no default and --mover-site-kreise has a
+    default the final run does not use; each file's header names them, their source (calibrated
+    or owner) and the sha256 of every input.
+  script: scripts/build_student_balance.py
+storage:
+  expected_path: eqasim-data/data/braunschweig/schools/{student_od_table,student_balance_by_site,student_balance_out_commuters,student_balance_in_commuters_by_origin}.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the files are committed with the
+    checkout and no synpp stage reads them yet (Phase 3 and 4 of #140). The CLI end to end on
+    synthetic local-only inputs: tests/test_build_student_balance_cli.py. The path
+    eqasim-data/data/braunschweig/schools/student_*.csv is ignored by the catch-all
+    eqasim-data/* rule (checked with git check-ignore), so each file is committed with
+    git add -f; the .gitignore comment next to the CHE entry lists them.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: derived from CHE (committed by owner decision of 2026-11-25) and LSN (dl-de/by-2-0)
+  restricted: false
+  redistribution: allowed
+  notes: |
+    The CHE page names no licence; the origin table is committed by owner decision of
+    2026-11-25 and these tables are derived from it. The LSN site enrollment is licensed
+    dl-de/by-2-0 (Landesamt fuer Statistik Niedersachsen).
+limitations: |
+  The tables count heads (students by the Kreis they live in), never days. Assumptions A2 (a CHE
+  origin is the Kreis of the school-leaving certificate, not the residence), A6 (a student who
+  does not live in the origin Kreis lives in the Kreis of the site) are documented in
+  braunschweig/data/education/student_od_table.py, A10 (maximum commute distance) in
+  braunschweig/data/education/student_geometry.py and A16 (enrolled students versus students by
+  main activity) in braunschweig/calibration/student_level_table.py, the owners of the wording.
+  The rule that the students of a site come from the communes of a Kreis in proportion to
+  population is an owner decision of 2026-11-26 (ADR-0210), not an assumption id. The level of
+  the students is decided (ADR-0210, Decision 5): it is not scaled to SrV. The enrollment of the
+  three institutions in Sachsen-Anhalt (outside the LSN statistics) comes from
+  scripts/seed_lsn_university_sites.py; two of them are at WS 2024/25, their last published
+  winter semester (rate in the run manifest and in the Diagnostics line).
+
+  The header of every file names the source of the weight triple and the mover share (the
+  optimum of a decided calibration stage, or set by the owner): the values themselves are in
+  the headers and the run manifest, not repeated here. Cells below the tenth value of a CHE list
+  are censored; the counted censored bounds, the unscaled institutions and the other counted
+  fallbacks are in each file's "# Diagnostics:" line.
+notes: |
+  Phase 2 of the student layer (issue #140). The fifth committed table of the same run is the
+  student level table (record student_level_table).
+  Run manifest docs/runs/student-balance-2026-11-27.yml (every figure of this build; the weights decision is in docs/runs/student-balance-2026-11-26.yml) and ADR-0210 (table rules, weight curve, owner assumption of the weights, level decision).

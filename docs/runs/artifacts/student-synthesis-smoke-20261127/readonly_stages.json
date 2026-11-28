@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "braunschweig.popsim.completed_donor__9a4484652c142a313497bc34052fa36c": [],
+    "braunschweig.popsim.stage__52833eaa4f0c501ed4579bf7cbf1e197": [
+      "braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930",
+      "braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488",
+      "braunschweig.popsim.completed_donor__9a4484652c142a313497bc34052fa36c"
+    ]
+  },
+  "linked_from_source_cache": [
+    "braunschweig.data.bbsr.regiostar__6fdfd12307fe21a713de1a709c54e930",
+    "braunschweig.data.inkar.household_income__92804bcec93411709a8fb763f0a58488"
+  ],
+  "stages": [
+    "braunschweig.popsim.completed_donor__9a4484652c142a313497bc34052fa36c",
+    "braunschweig.popsim.stage__52833eaa4f0c501ed4579bf7cbf1e197"
+  ]
+}

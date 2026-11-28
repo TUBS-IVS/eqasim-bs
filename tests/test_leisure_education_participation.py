@@ -213,7 +213,9 @@ def test_legacy_on_path_activates_education_participation():
     from braunschweig.popsim import stage
     active = stage.active_kreis_entries(
         _FakeContext({stage.KEY_EDUCATION_PARTICIPATION_CONTROL: "on",
-                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off"}), "mid")
+                      stage.KEY_EDUCATION_BY_AGE_CONTROL: "off",
+                      # the student education entries need the family (A3, ADR-0211)
+                      stage.KEY_STUDENT_EDUCATION_CONTROL: "off"}), "mid")
     names = {c.name for c in active}
     assert "education_participation" in names
     assert not ({"education_0_5", "education_6_17", "education_18plus"} & names)

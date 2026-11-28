@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "run_name": "run",
+  "run_dir": "RUN_DIR",
+  "setup": {
+    "time": "2026-11-27T17:39:36+01:00",
+    "host": "<run server>",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73",
+    "repositories": {
+      "eqasim-bs": {
+        "shared_checkout": "<run server home>/eqasim-bs",
+        "ref": "measure/i140-by-area",
+        "bundle": "<run server home>/i140_byarea/measure_by_area.bundle",
+        "bundle_sha256": "40e8ebbdb6af1785708022864d23f1bbde62bdc2491533635cfe3078a5803097",
+        "bundle_ref": "refs/heads/measure/i140-by-area",
+        "namespaced_ref": "refs/isolated-runs/run/eqasim-bs",
+        "commit": "760bff86894de6e7a55e6910c6371a4b0f0f9e39",
+        "worktree": "RUN_DIR/eqasim-bs"
+      },
+      "eqasim-java-bs": {
+        "shared_checkout": "<run server home>/eqasim-java-bs",
+        "ref": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "bundle": null,
+        "bundle_sha256": null,
+        "bundle_ref": null,
+        "namespaced_ref": null,
+        "commit": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "worktree": "RUN_DIR/eqasim-java-bs"
+      }
+    },
+    "symlink_farm": {
+      "shared_data": "<run server home>/eqasim-bs/eqasim-data",
+      "links": 87,
+      "kept": 385,
+      "excluded": "51 top-level run-state entries of the shared data directory (list trimmed before commit: names of unrelated server work)"
+    },
+    "cache": null,
+    "shared_checkouts": {
+      "before": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "after": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "unchanged": true,
+      "changes": []
+    }
+  },
+  "overlay": {
+    "time": "2026-11-27T17:39:44+01:00",
+    "source": "RUN_DIR_overlay_students.yml",
+    "source_sha256": "55b3242495d2a885edbac2d73382bf833dba2d524f67df5e376bb9b43f0b6574",
+    "prefix": null,
+    "changes": [],
+    "output_dir": "RUN_DIR/output",
+    "run_yml_sha256": "6e790ec7efb519262d991fe0e11928423e8fd68ec2968cb129b5c76724af1486",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73"
+  }
+}

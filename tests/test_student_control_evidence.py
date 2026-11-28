@@ -16,10 +16,10 @@ import pytest
 from braunschweig.calibration import student_control_evidence as E
 from braunschweig.calibration.student_behaviour_labels import (
     BEHAVIOUR_COLUMNS, CONTROLS, NOT_STUDENT, UNIVERSE_ADULTS, UNIVERSE_STUDENTS)
+from tests.student_gate_inputs import ZGB
+from tests.student_gate_inputs import gate_inputs as _gate_inputs
 
 REPO = Path(__file__).resolve().parents[1]
-
-ZGB = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
 
 # Effective size of the ADULTS universe in every synthetic SrV frame: far above any students' size
 # used below, so a standard error over the adults instead of the students differs by a factor > 5.
@@ -194,62 +194,6 @@ def test_mismatched_labels_between_surveys_raise(survey):
 
 
 # --------------------------------------------------------------------------- level gate
-def _share_row(code, level, n_adults, n_students, share_adults, n_20_29, n_students_20_29,
-               share_20_29, se_20_29, students_weighted):
-    return {"code": code, "level": level, "n_adults": n_adults, "n_students": n_students,
-            "student_share_adults": share_adults, "n_effective_adults": float(n_adults),
-            "se_student_share_adults": 0.01, "n_20_29": n_20_29,
-            "n_students_20_29": n_students_20_29, "student_share_20_29": share_20_29,
-            "n_effective_20_29": float(n_20_29), "se_student_share_20_29": se_20_29,
-            "students_weighted_persons": students_weighted, "presence_share": np.nan,
-            "n_effective_presence": np.nan, "se_presence_share": np.nan}
-
-
-def _gate_inputs():
-    """Hand-built inputs; the expected values of the gate tests follow from these numbers.
-
-    Census: 03101 has 500 students of 4000 persons aged 20-29; every other covered Kreis 100 of
-    2000; Wolfsburg (03103, not surveyed by SrV) 300 of 3000; Land 03 8000 of 100000 (8 %);
-    Germany DG 100000 of 1000000 (10 %). MiD student share 20-29: DE 0.12, Land 03 0.10. So the
-    Germany ratio is 0.12 / 0.10 = 1.2 and the Land ratio 0.10 / 0.08 = 1.25.
-    """
-    shares = []
-    for code in ZGB:
-        if code == "03101":
-            shares.append(_share_row(code, "kreis", 300, 60, 0.2, 80, 20, 0.25, 0.05, 12000.0))
-        elif code == "03103":
-            shares.append(_share_row(code, "kreis", 0, 0, np.nan, 0, 0, np.nan, np.nan, 0.0))
-        else:
-            shares.append(_share_row(code, "kreis", 100, 5, 0.05, 30, 3, 0.1, 0.06, 900.0))
-    shares.append(_share_row("03ZGB", "total", 900, 90, 0.1, 260, 38, 0.15, 0.02, 20000.0))
-    srv = pd.DataFrame(shares)
-
-    census_rows = []
-    for code in ZGB:
-        students, persons = {"03101": (500, 4000), "03103": (300, 3000)}.get(code, (100, 2000))
-        census_rows.append((code, "Kreis " + code, "kreis", "20-29", students, persons))
-    census_rows.append(("03", "Niedersachsen", "land", "20-29", 8000, 100000))
-    census_rows.append(("DG", "Deutschland", "germany", "20-29", 100000, 1000000))
-    census = pd.DataFrame(census_rows, columns=["region", "region_name", "region_level",
-                                                "age_group", "students_nonemployed_persons",
-                                                "all_persons"])
-
-    mid = pd.DataFrame({"region": ["DE", "03", "06"], "n_unweighted": [5000, 400, 300],
-                        "share_pupils": [0.05, 0.05, 0.05],
-                        "share_students": [0.12, 0.10, 0.30],
-                        "share_pupils_and_students": [0.17, 0.15, 0.35]})
-
-    sites = pd.DataFrame(
-        [("Uni A", "A", "03101000", "03101", "local", 1000, "WS 2099/00"),
-         ("Art school", "A", "03101000", "03101", "local", 200, "WS 2099/00"),
-         ("HS B", "W", "03103000", "03103", "local", 400, "WS 2099/00"),
-         ("HS B", "F", "03158037", "03158", "local", 300, "WS 2099/00"),
-         ("Uni H", "H", "03241001", "03241", "surrounding", 5000, "WS 2099/00")],
-        columns=["institution", "site_commune", "site_ags8", "site_kreis_ars5", "scope",
-                 "students_persons", "semester"])
-    return srv, census, mid, sites
-
-
 def test_level_gate_estimates_by_hand():
     srv, census, mid, sites = _gate_inputs()
     gate = E.build_level_gate(srv, census, mid, sites)
@@ -292,6 +236,38 @@ def test_level_gate_keeps_wolfsburg_with_nan_srv_columns():
     # the census estimate and the enrollment exist without SrV
     assert wolfsburg["census_estimate_students_20_29_persons"] == pytest.approx(300 * 1.2)
     assert wolfsburg["enrollment_local_sites_persons"] == 400
+
+
+def test_build_level_gate_fills_the_reserved_column_and_keeps_nan_by_default():
+    srv, census, mid, sites = _gate_inputs()
+    default = E.build_level_gate(srv, census, mid, sites)
+    assert default["residents_implied_by_enrollment_persons"].isna().all()
+    # None is the Phase 0 call: byte-identical to leaving the argument out
+    pd.testing.assert_frame_equal(
+        default, E.build_level_gate(srv, census, mid, sites, residents_implied=None))
+
+    # distinct hand-picked values: 03101 = 1000, Wolfsburg 03103 = 400, the six others 100 each
+    implied = {code: {"03101": 1000.0, "03103": 400.0}.get(code, 100.0) for code in ZGB}
+    gate = E.build_level_gate(srv, census, mid, sites, residents_implied=implied).set_index("code")
+    assert gate.loc["03101", "residents_implied_by_enrollment_persons"] == 1000.0
+    assert gate.loc["03103", "residents_implied_by_enrollment_persons"] == 400.0
+    # the pooled row sums the seven surveyed Kreise only: Wolfsburg's 400 is not in it
+    assert gate.loc["03ZGB", "residents_implied_by_enrollment_persons"] == 1000.0 + 6 * 100.0
+    # every other column is untouched by the new argument
+    other = [c for c in E.LEVEL_GATE_COLUMNS if c != "residents_implied_by_enrollment_persons"]
+    pd.testing.assert_frame_equal(gate.reset_index()[other], default[other])
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (lambda d: {k: v for k, v in d.items() if k != "03154"}, "03154"),
+    (lambda d: {**d, "03999": 5.0}, "03999"),
+    (lambda d: {**d, "03101": -1.0}, "03101"),
+    (lambda d: {**d, "03102": float("nan")}, "03102")])
+def test_build_level_gate_refuses_bad_residents_implied(mutate, match):
+    srv, census, mid, sites = _gate_inputs()
+    implied = mutate({code: 100.0 for code in ZGB})
+    with pytest.raises(ValueError, match=match):
+        E.build_level_gate(srv, census, mid, sites, residents_implied=implied)
 
 
 @pytest.mark.parametrize("table, region", [("census", "03154"), ("census", "DG"),
@@ -380,3 +356,131 @@ def test_cli_writes_gate_and_rule_tables(tmp_path):
     comparison = pd.read_csv(out / "student_comparison_only.csv", comment="#")
     assert set(comparison["variable"]) == set(E.COMPARISON_ONLY)
     assert set(comparison["source_table"]) == {"srv2023_student_comparison.csv"}
+
+
+# ------------------------------------------------------------------ Phase 3: area rule (A3 rule 2)
+def _by_area(cell_values):
+    """A by-area table of one cell (season_ticket, flatrate): per area the label and the other
+    label with their respondents, the flatrate share and a standard error of 0.1."""
+    rows = []
+    for area, (n_label, n_other, share) in cell_values.items():
+        for label, count, value in (("flatrate", n_label, share),
+                                    ("no_flatrate", n_other, 1.0 - share)):
+            rows.append({"area": area, "group": "mobility_tools", "parameter": "season_ticket",
+                         "base": "students_present", "label": label, "n_unweighted": count,
+                         "weight_sum": float(count), "share": value, "n_effective": 50.0,
+                         "se_share": 0.1})
+    return pd.DataFrame(rows)
+
+
+_ONE_CELL = (("season_ticket", "students_present", "flatrate"),)
+
+
+def _two_areas(bs, um, z):
+    """Braunschweig (n_label, n_other) and surrounding (n_label, n_other) with the flatrate-share
+    difference that gives ``z`` standard errors (both se 0.1)."""
+    share_um = 0.3
+    share_bs = share_um + z * math.hypot(0.1, 0.1)
+    return _by_area({"braunschweig": (*bs, share_bs), "surrounding": (*um, share_um)})
+
+
+@pytest.mark.parametrize("bs, um, z, enough, value", [
+    ((50, 49), (50, 50), 3.0, False, False),     # 99 respondents in one base
+    ((9, 91), (50, 50), 3.0, False, False),      # 100 in the base but 9 with the label
+    ((91, 9), (50, 50), 3.0, False, False),      # 9 without the label
+    ((50, 50), (10, 90), 2.01, True, True),      # 100 / 10 on both sides, just above 2 se
+    ((50, 50), (10, 90), 1.99, True, False),     # just below
+    ((10, 90), (90, 10), -2.5, True, True),      # the sign does not matter
+])
+def test_area_rule_needs_100_in_the_base_and_10_on_each_side(bs, um, z, enough, value):
+    table = E.area_rule_table(_two_areas(bs, um, z), cells=_ONE_CELL)
+    assert len(table) == 1
+    row = table.iloc[0]
+    assert row["difference_in_se"] == pytest.approx(z)
+    assert bool(row["enough_respondents"]) is enough
+    assert bool(row["area_value"]) is value
+    assert (row["n_base_braunschweig"], row["n_label_braunschweig"],
+            row["n_other_braunschweig"]) == (sum(bs), bs[0], bs[1])
+    assert (row["n_base_surrounding"], row["n_other_surrounding"]) == (sum(um), um[1])
+
+
+def test_area_rule_cells_use_the_real_parameter_bases():
+    from braunschweig.calibration import student_parameters as SP
+    assert E.MIN_RESPONDENTS_PER_AREA == 100 and E.MIN_RESPONDENTS_EACH_SIDE == 10
+    for parameter, base, label in E.AREA_RULE_CELLS:
+        assert label in SP.PARAMETERS[parameter].labels
+        assert base in (SP.PARAMETERS[parameter].base, *SP.EXTRA_BASES.get(parameter, ()))
+    rows = []
+    for area in ("braunschweig", "surrounding"):
+        for parameter, base, label in E.AREA_RULE_CELLS:
+            for name in SP.PARAMETERS[parameter].labels:
+                rows.append({"area": area, "group": "g", "parameter": parameter, "base": base,
+                             "label": name, "n_unweighted": 60, "weight_sum": 60.0,
+                             "share": 0.5, "n_effective": 60.0, "se_share": 0.06})
+    table = E.area_rule_table(pd.DataFrame(rows))
+    assert list(table["parameter"]) == [cell[0] for cell in E.AREA_RULE_CELLS]
+    assert list(table.columns) == E.AREA_RULE_COLUMNS
+    assert not table["area_value"].any() and table["enough_respondents"].all()
+
+
+def _control_diagnostics(work, education):
+    """By-area diagnostics keys of the control-definition legs: per area (n_with, n_without,
+    share, se) for the work leg and the education leg."""
+    diagnostics = {}
+    for name, values in (("work_leg", work), ("education_leg", education)):
+        for area, (n_with, n_without, share, se) in values.items():
+            diagnostics.update({
+                "%s_%s_share_control_definition" % (area, name): share,
+                "%s_%s_n_with_control_definition" % (area, name): n_with,
+                "%s_%s_n_without_control_definition" % (area, name): n_without,
+                "%s_%s_se_share_control_definition" % (area, name): se})
+    return diagnostics
+
+
+def test_area_rule_evaluates_the_control_definition_legs_from_the_diagnostics():
+    """The control-definition work leg is its own row: Braunschweig 0.05 (3 of 100), surrounding
+    0.20 (20 of 100), both se 0.03 -> z = -0.15 / (0.03 sqrt 2) = -3.54 with 100 / 3 / 20 counts:
+    only 3 respondents with the leg, so no area value although z is large. The education leg
+    (0.4 vs 0.4) has z 0. The harmonised rows stay as given."""
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (3, 97, 0.05, 0.03), "surrounding": (20, 80, 0.20, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    table = E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                              control_diagnostics=diagnostics)
+    assert list(table["parameter"]) == ["season_ticket", "education_leg_control_definition",
+                                        "work_leg_control_definition"]
+    assert list(table.columns) == E.AREA_RULE_COLUMNS
+    work = table.set_index("parameter").loc["work_leg_control_definition"]
+    assert (work["n_base_braunschweig"], work["n_label_braunschweig"],
+            work["n_other_braunschweig"]) == (100, 3, 97)
+    assert (work["n_label_surrounding"], work["n_other_surrounding"]) == (20, 80)
+    assert work["difference_in_se"] == pytest.approx(-0.15 / (0.03 * math.sqrt(2)))
+    assert work["base"] == "students_present" and not bool(work["enough_respondents"])
+    assert not bool(work["area_value"])
+    education = table.set_index("parameter").loc["education_leg_control_definition"]
+    assert bool(education["enough_respondents"]) and not bool(education["area_value"])
+
+
+def test_area_rule_control_definition_gives_an_area_value_when_all_counts_suffice():
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (12, 98, 0.10, 0.03), "surrounding": (30, 80, 0.28, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    table = E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                              control_diagnostics=diagnostics)
+    work = table.set_index("parameter").loc["work_leg_control_definition"]
+    assert bool(work["enough_respondents"]) and bool(work["area_value"])
+
+
+def test_area_rule_control_definition_refuses_a_missing_diagnostic():
+    diagnostics = _control_diagnostics(
+        work={"braunschweig": (3, 97, 0.05, 0.03), "surrounding": (20, 80, 0.20, 0.03)},
+        education={"braunschweig": (40, 60, 0.4, 0.05), "surrounding": (40, 60, 0.4, 0.05)})
+    del diagnostics["surrounding_work_leg_n_with_control_definition"]
+    with pytest.raises(ValueError, match="work_leg_n_with_control_definition"):
+        E.area_rule_table(_two_areas((50, 50), (50, 50), 0.0), cells=_ONE_CELL,
+                          control_diagnostics=diagnostics)
+
+
+def test_area_rule_refuses_a_missing_cell():
+    with pytest.raises(ValueError, match="season_ticket"):
+        E.area_rule_table(_by_area({"braunschweig": (50, 50, 0.3)}), cells=_ONE_CELL)

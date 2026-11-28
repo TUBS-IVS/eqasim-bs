@@ -602,7 +602,9 @@ class _Ctx:
 def test_default_configuration_activates_the_new_and_drops_the_replaced_controls():
     from braunschweig.popsim.stage.source_resolution import active_kreis_entries
     names = {e.name for e in active_kreis_entries(_Ctx({}), "mid")}
-    assert {"work_by_employment", "education_0_5", "education_6_17", "education_18plus",
+    # education_18plus is itself replaced by the student education entries under the default
+    # switches (A3, ADR-0211; pinned by test_student_education_entries_replace_education_18plus).
+    assert {"work_by_employment", "education_0_5", "education_6_17",
             "employment_status"} <= names
     assert not ({"work_participation", "education_participation"} & names)
 
@@ -631,9 +633,13 @@ def test_contradictory_toggles_raise_naming_both_keys(overrides, keys):
 
 
 def test_legacy_configuration_is_unchanged(tmp_path):
-    """New toggles off + old ones on = exactly today's active set (OFF path)."""
+    """New toggles off + old ones on = exactly today's active set (OFF path). The student
+    entries (A3, ADR-0211) need the Plan B entries, so the legacy configuration has them off."""
     from braunschweig.popsim.stage.source_resolution import active_kreis_entries
     ctx = _Ctx({"braunschweig.population.popsim.work_by_employment_kreis_control": "off",
+                "braunschweig.population.popsim.student_education_kreis_control": "off",
+                "braunschweig.population.popsim.student_work_leg_kreis_control": "off",
+                "braunschweig.population.popsim.student_season_ticket_kreis_control": "off",
                 "braunschweig.population.popsim.education_by_age_kreis_control": "off",
                 "braunschweig.population.popsim.work_participation_kreis_control": "on",
                 "braunschweig.population.popsim.education_participation_kreis_control": "on"})
@@ -725,8 +731,8 @@ def test_production_load_columns_cover_every_active_universe_denominator(tmp_pat
     # Guard the guard: if the REGISTRY ever stops declaring age universes, an empty loop
     # below would pass while asserting nothing.
     assert {entry.name for entry, _, _ in universe_entries} >= {
-        "employment_status", "work_by_employment",
-        "education_0_5", "education_6_17", "education_18plus"}
+        "employment_status", "work_by_employment", "education_0_5", "education_6_17",
+        *_STUDENT_ENTRY_NAMES}
 
     cells = pd.DataFrame({name: [1.0, 2.0] for name in load_cols})
     kreis = pd.Series(["03101", "03102"])
@@ -880,7 +886,7 @@ def test_the_band_map_reproduces_the_previous_inline_formula_for_every_productio
     # Guard the guard: the production registry really does declare age universes, so the
     # comparison above is not two empty dicts.
     assert set(bands) >= {"employment_status", "work_by_employment",
-                          "education_0_5", "education_6_17", "education_18plus"}
+                          "education_0_5", "education_6_17", *_STUDENT_ENTRY_NAMES}
 
 
 def test_the_cells_parquet_footer_is_read_once_when_both_grids_are_on(tmp_path, monkeypatch):
@@ -1336,6 +1342,8 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
         popsim_stage.KEY_MOVE_PERSONS_OF_HOUSEHOLD_LESS_CELLS: False,
         popsim_stage.KEY_HOUSEHOLD_LESS_CELL_MAX_PERSONS: 20.0,
         popsim_stage.KEY_FAMILY_CONTROLS: "zensus_family5",
+        # A2 of the student design (ADR-0211); off, so the stubbed grid step needs no level table.
+        popsim_stage.KEY_STUDENT_EMPLOYMENT_CONCEPT: False,
     }
     context = _StrictExecuteContext(values)
 
@@ -1445,3 +1453,271 @@ def test_execute_forwards_the_purpose_correctness_flags_to_build_populationsim_s
     assert isinstance(captured["seed_fill_rng"], np.random.RandomState)
     # The contract mode reaches the check (the call site after the seed build is live).
     assert contract_kwargs["mode"] == "warn"
+
+
+# --------------------------------------------------------------------------- #
+# A3a of the student design: the student status seed columns on BOTH seed paths
+# --------------------------------------------------------------------------- #
+
+# (person id, age, P_TAET, P_BKAT, P_FKARTE, W_ZWECK of the one leg or None). P_TAET 10 =
+# student. P_FKARTE 3 = Deutschlandticket, 1 = single ticket, 6 = job/semester ticket, 8 =
+# never. W_ZWECK 3 = education, 1 = a DIRECT work leg.
+_STUDENT_FIXTURE = (
+    (21, 22, 10, 7, 3, 3),     # student, education leg, flat rate, no work leg
+    (22, 24, 10, 7, 1, 1),     # student, work leg, no flat rate
+    (23, 40, 1, 1, 6, 1),      # employed, work leg
+    (24, 35, 10, 7, 3, 3),     # older student with an education leg
+    (25, 50, 2, 1, 6, 3),      # other adult with an education leg
+    (26, 27, 1, 1, 8, None),   # employed, no leg at all
+)
+_STUDENT_ENTRY_NAMES = (
+    "student_education_18_29", "student_education_30plus", "student_work_leg",
+    "student_season_ticket")
+
+
+def _student_entries(*, names=_STUDENT_ENTRY_NAMES, only_what_students_need=False):
+    """The prerequisite entries plus the ad hoc student entries (not registered yet).
+
+    ``only_what_students_need`` keeps just ``employment_status`` and ``pt_ticket_group4``
+    (which have their own triggers) and drops ``work_by_employment`` and the education-by-age
+    entries, so the student entries alone must trigger the Wege load and both flag derivations
+    (``education_18plus`` is absent either way: the student entries replace it).
+    """
+    from braunschweig.popsim import attributes
+    from braunschweig.popsim import kreis_attribute_control as kac
+    categories = {
+        kac.STUDENT_EDUCATION_18_29: kac.STUDENT_EDUCATION_18_29_CATEGORIES,
+        kac.STUDENT_EDUCATION_30PLUS: kac.STUDENT_EDUCATION_30PLUS_CATEGORIES,
+        kac.STUDENT_WORK_LEG: kac.STUDENT_WORK_LEG_CATEGORIES,
+        kac.STUDENT_SEASON_TICKET: kac.STUDENT_SEASON_TICKET_CATEGORIES,
+    }
+    base = _universe_entries()[:1] if only_what_students_need else _universe_entries()
+    entries = base + [
+        _universe_entry("pt_ticket_group4", "pt_ticket_group4", attributes.PT_TICKET_GROUPS4)]
+    for name in names:
+        lo, hi = kac.STUDENT_AGE_BOUNDS[name]
+        entries.append(_universe_entry(name, name, categories[name], min_age=lo, max_age=hi))
+    return entries
+
+
+def _write_student_mid(directory: Path, fixture=_STUDENT_FIXTURE, *, string_ids: bool) -> None:
+    """The fixture as a raw MiD delivery (numeric ids) or as completed-donor Wege (string ids)."""
+    hh_id = (lambda p: f"h{p}") if string_ids else str
+    per_id = (lambda p: f"p{p}") if string_ids else str
+    directory.mkdir(parents=True, exist_ok=True)
+    if not string_ids:
+        (directory / "MiD2023_Haushalte.csv").write_text(
+            "H_ID;H_GEW;RegioStaR7;H_GR;H_MIETE;haustyp\n"
+            + "".join(f"{p[0]};1.0;71;1;1;1\n" for p in fixture), encoding="utf-8")
+        (directory / "MiD2023_Personen.csv").write_text(
+            "P_ID;H_ID;P_GEW;HP_ALTER;HP_SEX;kernwo;anzwege1;alter_gr1;P_BKAT;P_TAET;P_FKARTE\n"
+            + "".join(f"{p[0]};{p[0]};1.0;{p[1]};1;1;1;5;{p[3]};{p[2]};{p[4]}\n" for p in fixture),
+            encoding="utf-8")
+    (directory / "MiD2023_Wege.csv").write_text(
+        "H_ID;P_ID;W_ID;W_ZWECK;hvm_imp;W_SZS;W_SZM;W_AZS;W_AZM;wegkm_imp;wegmin_imp1;W_RBW;W_SO1;HP_ALTER\n"
+        + "".join(f"{hh_id(p[0])};{per_id(p[0])};{p[0]}01;{p[5]};4;8;0;8;30;5.0;30;0;1;{p[1]}\n"
+                  for p in fixture if p[5] is not None), encoding="utf-8")
+
+
+def _student_seed_both_paths(tmp_path, fixture=_STUDENT_FIXTURE, entries=None):
+    """(load_mid_seed persons, project_completed_seed persons) for the same fixture."""
+    from braunschweig.popsim.mid import load_mid_seed
+    entries = _student_entries() if entries is None else entries
+    mid_dir = tmp_path / "raw"
+    _write_student_mid(mid_dir, fixture, string_ids=False)
+    _hh, via_load, _rep = load_mid_seed(
+        mid_dir, day_filter_values=(), kreis_control_entries=entries,
+        kreis_seed_rng=np.random.RandomState(0),
+        escort_passive_education=False, exclude_rbw_legs=True)
+    donor_dir = tmp_path / "donor"
+    _write_student_mid(donor_dir, fixture, string_ids=True)
+    cols, households, persons = _completed_donor_frames()
+    households = pd.DataFrame({
+        cols.household_id: [f"h{p[0]}" for p in fixture], cols.household_weight: 1.0,
+        "H_GR": 1, "H_MIETE": 1, "haustyp": 1, "RegioStaR7": 71})
+    persons = pd.DataFrame({
+        cols.person_household_id: [f"h{p[0]}" for p in fixture],
+        cols.person_id: [f"p{p[0]}" for p in fixture], cols.person_weight: 1.0,
+        cols.age: [p[1] for p in fixture], cols.sex: 1, "anzwege1": 1, "alter_gr1": 5,
+        "P_BKAT": [p[3] for p in fixture], "P_TAET": [p[2] for p in fixture],
+        "P_FKARTE": [p[4] for p in fixture]})
+    _hh, via_project = mid.project_completed_seed(
+        households, persons, cols, kreis_control_entries=entries,
+        kreis_seed_rng=np.random.RandomState(0), mid_dir=donor_dir,
+        escort_passive_education=False, exclude_rbw_legs=True)
+    return via_load, via_project
+
+
+_EXPECTED_STUDENT_LABELS = {
+    "student_education_18_29": ["student_edu", "student_noedu", "other_noedu",
+                                "student_edu", "other_edu", "other_noedu"],
+    "student_education_30plus": ["student", "student", "other_noedu",
+                                 "student", "other_edu", "other_noedu"],
+    # The labels follow the student status alone; the entry's age universe (18 to 29)
+    # decides later whom they constrain, so the 35-year-old student is labelled too.
+    "student_work_leg": ["student_nowork", "student_work", "not_student",
+                         "student_nowork", "not_student", "not_student"],
+    "student_season_ticket": ["student_flatrate", "student_no_flatrate", "not_student",
+                              "student_flatrate", "not_student", "not_student"],
+}
+
+
+@pytest.mark.parametrize("only_what_students_need", [False, True])
+def test_student_seed_labels_follow_status_flags_and_agree_on_both_seed_paths(
+        tmp_path, only_what_students_need):
+    """Each label set is one seed column; the two seed paths derive it identically.
+
+    With ``only_what_students_need`` the configuration holds no ``work_by_employment`` and no
+    education-by-age entry (``education_18plus`` is replaced): the student entries themselves
+    must trigger the Wege load and the ``education_flag`` / ``work_by_employment`` derivations.
+    """
+    via_load, via_project = _student_seed_both_paths(
+        tmp_path, entries=_student_entries(only_what_students_need=only_what_students_need))
+    for persons in (via_load, via_project):
+        for column, labels in _EXPECTED_STUDENT_LABELS.items():
+            assert persons[column].tolist() == labels, column
+    # The student columns are one block of the seed, and nothing else differs between paths.
+    pd.testing.assert_frame_equal(
+        via_load[list(_EXPECTED_STUDENT_LABELS)].reset_index(drop=True),
+        via_project[list(_EXPECTED_STUDENT_LABELS)].reset_index(drop=True))
+
+
+@pytest.mark.parametrize("names", [
+    _STUDENT_ENTRY_NAMES,
+    ("student_education_18_29", "student_education_30plus"),   # education entries only
+])
+def test_an_adult_student_with_an_employed_status_is_an_error(tmp_path, names):
+    """A student aged 18 or older with employment status vollzeit (P_BKAT 1) is employed, for
+    ANY active student entry (A2 relies on it too), not only the work entry."""
+    fixture = ((21, 22, 10, 1, 3, 3), (23, 40, 1, 1, 6, 1))
+    with pytest.raises(ValueError, match=r"1 student.*employment_status.*vollzeit.*p?21"):
+        _student_seed_both_paths(tmp_path, fixture, entries=_student_entries(names=names))
+
+
+def test_a_student_under_18_with_an_employed_status_is_no_error(caplog):
+    """The check covers the universes of the entries (18 or older); a minor is only logged."""
+    from braunschweig.popsim.mid.participation import derive_student_status_seed_columns
+    persons = pd.DataFrame({
+        "P_TAET": [10, 1], "HP_ALTER": [17, 40], "employment_status": ["teilzeit", "vollzeit"],
+        "education_flag": ["noedu", "noedu"]})
+    with caplog.at_level(logging.INFO):
+        out = derive_student_status_seed_columns(
+            persons, active_entry_names={"student_education_18_29"})
+    assert out["student_education_18_29"].tolist() == ["student_noedu", "other_noedu"]
+    assert "1 student(s) under 18" in caplog.text
+
+
+def test_student_seed_columns_are_absent_when_no_student_entry_is_active(tmp_path):
+    """OFF path: no student entry -> no student column, every other column as before."""
+    plain = [e for e in _student_entries() if not e.name.startswith("student_")]
+    with_students = _student_seed_both_paths(tmp_path / "on")
+    without = _student_seed_both_paths(tmp_path / "off", entries=plain)
+    for persons_off, persons_on in zip(without, with_students):
+        assert not [c for c in persons_off.columns if c.startswith("student_")]
+        pd.testing.assert_frame_equal(
+            persons_off.reset_index(drop=True),
+            persons_on.drop(columns=list(_STUDENT_ENTRY_NAMES)).reset_index(drop=True))
+
+
+def test_student_seed_without_its_source_column_names_it():
+    from braunschweig.popsim.mid.participation import derive_student_status_seed_columns
+    persons = pd.DataFrame({"P_TAET": [10, 1], "HP_ALTER": [22, 40],
+                            "education_flag": ["edu", "noedu"]})
+    with pytest.raises(KeyError, match="work_by_employment"):
+        derive_student_status_seed_columns(
+            persons, active_entry_names={"student_work_leg"})
+
+
+# --------------------------------------------------------------------------- #
+# A3c of the student design (ADR-0211): the four student entries in the active set
+# --------------------------------------------------------------------------- #
+
+_P = "braunschweig.population.popsim."
+
+
+def test_student_education_entries_replace_education_18plus():
+    """Default switches: the two hard student entries replace education_18plus by name; the
+    other two bands of the education-by-age family and the two soft entries stay."""
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    names = {e.name for e in active_kreis_entries(_Ctx({}), "mid")}
+    assert "education_18plus" not in names
+    assert {"education_0_5", "education_6_17", *_STUDENT_ENTRY_NAMES} <= names
+
+
+@pytest.mark.parametrize("overrides, keys", [
+    # the education-by-age family off: the hard entries would leave the ages 0 to 17 unsteered
+    ({_P + "education_by_age_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "education_by_age_kreis_control")),
+    # the legacy all-ages education entry on (family off, so the Plan B guard does not fire first)
+    ({_P + "education_participation_kreis_control": "on", _P + "education_by_age_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "education_participation_kreis_control")),
+    # the work entry reads the work flag of work_by_employment
+    ({_P + "work_by_employment_kreis_control": "off"},
+     (_P + "student_work_leg_kreis_control", _P + "work_by_employment_kreis_control")),
+    # the ticket entry reads the flat-rate groups of pt_ticket_group4
+    ({_P + "pt_ticket_never_group": "off"},
+     (_P + "student_season_ticket_kreis_control", _P + "pt_ticket_never_group")),
+    # every student seed derivation checks the student against the employment_status column
+    ({_P + "employment_status_kreis_control": "off", _P + "work_by_employment_kreis_control": "off"},
+     (_P + "student_education_kreis_control", _P + "employment_status_kreis_control")),
+])
+def test_student_entry_refusals(overrides, keys):
+    from braunschweig.popsim.stage.source_resolution import active_kreis_entries
+    with pytest.raises(ValueError) as excinfo:
+        active_kreis_entries(_Ctx(overrides), "mid")
+    for key in keys:
+        assert key in str(excinfo.value), (key, str(excinfo.value))
+
+
+@pytest.mark.parametrize("apportionment, refused", [("population", True), ("universe", False)])
+def test_student_entries_refuse_the_population_split(apportionment, refused):
+    """Under the population split a batch part would get the Kreis-average share of the
+    students (the fault of spec section 2): refused before the cell load, naming both keys."""
+    from braunschweig.popsim import stage
+    settings = stage.KreisConsistencySettings(apportionment, True, "zensus", 0.05, 1000)
+    call = lambda: settings.require_run_support(  # noqa: E731
+        has_kreis_table=True, employment_grid_on=True,
+        student_entry_names=("student_work_leg",))
+    if not refused:
+        call()
+        return
+    with pytest.raises(ValueError) as excinfo:
+        call()
+    for key in (stage.KEY_KREIS_BATCH_APPORTIONMENT, stage.KEY_STUDENT_WORK_LEG_CONTROL):
+        assert key in str(excinfo.value)
+
+
+_REGION = ("03101", "03102", "03103", "03151", "03153", "03154", "03157", "03158")
+
+
+def test_student_home_area_default_is_the_srv_home_areas():
+    """The config default is typed once in config_keys; the SrV tables are built by area from
+    srv_student_reference.HOME_AREAS. Both must be the same partition, or the stage would give
+    a Kreis the season-ticket share of the other area."""
+    from braunschweig.calibration.srv_student_reference import HOME_AREAS
+    from braunschweig.popsim import student_targets as ST
+    from braunschweig.popsim.stage import config_keys as ck
+    default = ck.DEFAULT_STUDENT_HOME_AREA_KREISE
+    assert {area: tuple(kreise) for area, kreise in default.items()} == HOME_AREAS
+    area_of = ST.area_of_kreis_from_home_areas(default, _REGION)
+    assert area_of == {**{k: "surrounding" for k in _REGION}, "03101": "braunschweig", "03103": None}
+    # A one-Kreis run (configs/overlays/test.yml) keeps the default areas of the study region.
+    assert ST.area_of_kreis_from_home_areas(default, _REGION, ["03101"]) == {"03101": "braunschweig"}
+
+
+@pytest.mark.parametrize("home_areas, run, message", [
+    ({"braunschweig": ["03101"], "surrounding": ["03101", "03102"]}, None, "more than one"),
+    ({"braunschweig": ["03101", "03103"], "surrounding": ["03102"]}, None, "03103"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102", "09162"]}, None, "09162"),
+    ({"braunschweig": ["03101"], "surrounding": ["03102"]}, None, "no home area"),
+    ({"braunschweig": "03101"}, None, "list"),
+    # a run Kreis outside the study region has no student level and no area
+    ({"braunschweig": ["03101"], "surrounding": ["03102", "03151"]}, ["03101", "09162"], "09162"),
+])
+def test_student_home_areas_are_refused_when_not_a_partition_of_the_surveyed_region(
+        home_areas, run, message):
+    from braunschweig.popsim import student_targets as ST
+    from braunschweig.popsim.stage import config_keys as ck
+    with pytest.raises(ValueError, match=message) as excinfo:
+        ST.area_of_kreis_from_home_areas(home_areas, ("03101", "03102", "03103", "03151"), run)
+    assert ck.KEY_STUDENT_HOME_AREA_KREISE in str(excinfo.value)

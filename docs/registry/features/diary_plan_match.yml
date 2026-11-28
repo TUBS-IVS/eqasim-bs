@@ -34,6 +34,7 @@ production:
   - braunschweig.population.popsim.donor_match_fine_child_age_bands
   - braunschweig.population.popsim.donor_match_passenger_access
   - braunschweig.population.popsim.donor_match_lift_free_never_passenger
+  - braunschweig.population.popsim.donor_match_student_status
 introduced:
   issue: '#365'
   pr: null
@@ -54,6 +55,7 @@ evidence:
   - tests/test_trip_class_seed_closure.py::test_forbid_no_diary_sources_keeps_immobile_803_source
   - tests/test_completed_donor_diary_match.py::test_kept_immobile_803_source_survives_the_seed_guard_and_seeds_class_zero
   - tests/test_weekend_plan_match.py
+  - tests/test_weekend_plan_match_integration.py
   - tests/test_weekend_plan_match.py::test_match_person_with_empty_hard_keys_reproduces_todays_draw_sequence
   - tests/test_weekend_plan_match.py::test_match_person_never_relaxes_a_hard_key
   - tests/test_diary_plan_match.py::test_reassign_reports_zero_crossings_with_hard_employment_and_counts_them_without
@@ -162,6 +164,20 @@ validation:
     float-typed column sent all holiday remaps to the "any" pool instead of the "mobile" pool.
     Whether the production column was float-typed is unknown; the
     [diary_plan_match.holiday_source_anzwege1] log line of a later run counts the unknown counts.
+notes: >-
+    Student donor key (A1 of ADR-0211, issue #140), switched by
+    braunschweig.population.popsim.donor_match_student_status (default on; off is byte-identical to the
+    build before A1; read only by braunschweig.popsim.completed_donor, so it enters that stage's hash).
+    A re-drawn plan source of a student target (a household with a student aged 18 or older, a student
+    member, a student person target) prefers a student donor in all three weekend match paths and in this
+    diary match, a key relaxed last; every other target keeps its candidate set and every call still
+    draws once. Primary (student donor) versus fallback (non-student donor) is counted per path and
+    published by completed_donor.student_run_info. The warn bound
+    braunschweig.population.popsim.donor_match_student_fallback_warn_share is unset by default
+    (report only; a path with no student donor at all always warns); it is volatile and does not
+    enter the completed_donor hash (see the stage record braunschweig.popsim.completed_donor). The key binds student
+    targets only. Meaning and rejected options: ADR-0211; the measured counts per path belong to the
+    one-batch smoke manifest, not here.
 assessment:
   status: pending
   by: null

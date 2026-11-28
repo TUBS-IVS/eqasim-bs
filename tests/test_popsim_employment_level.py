@@ -326,3 +326,58 @@ def test_run_popsim_mid_rejects_an_unknown_employment_level_source(tmp_path):
             _cells(), EMPLOYED, _controls_df(), pd.DataFrame({"H_ID": [1]}),
             pd.DataFrame({"H_ID": [1], "P_ID": [1]}), work_dir=tmp_path, settings_yaml="x: 1\n",
             logging_yaml="version: 1\n", max_cells=10, run_one=None, employment_level_source="bogus")
+
+
+# --------------------------------------------------------------------------- #
+# Students counted as employed (design A2, issue #140, ADR-0211)
+# --------------------------------------------------------------------------- #
+
+def test_kreis_employed_and_families_follow_the_lowered_grid(tmp_path):
+    """A2 lowers the grid only; the KREIS control and the families follow it, the guard holds.
+
+    Toy numbers: Kreis 03101 has 100 employed men and 100 women, Kreis 03158 50 and 50, all in
+    the grid groups 16_29 / 30_39 (half each). Students counted as employed: 20 men 16_29 and
+    6 men 30_39 in 03101, 10 men 16_29 in 03158. Grid sum: 200 - 26 = 174 and 100 - 10 = 90.
+    The two cells of 03101 hold equal persons, so every per-cell target is a whole number and the
+    written tables carry the sums exactly.
+    """
+    from braunschweig.popsim.input_consistency_guard import ConsistencyRecorder
+
+    cells = _cells().drop(columns=EMPLOYED)
+    for prefix in "MF":
+        cells[f"{prefix}_AGE_20"] = [1.0, 1.0, 2.0]   # P1, P2 (03101) and P3 (03158)
+        cells[f"{prefix}_AGE_35"] = [1.0, 1.0, 2.0]
+    census = pd.DataFrame({"ARS_kreis": ["03101", "03158"],
+                           "ERWERBSTAT_KURZ_STP__11_M": [100.0, 50.0],
+                           "ERWERBSTAT_KURZ_STP__11_W": [100.0, 50.0]})
+    shape = {"16_29": 0.5, "30_39": 0.5, "40_49": 0.0, "50_59": 0.0, "60plus": 0.0}
+    shapes = {"03101": shape, "03158": shape}
+    students = {("03101", "M", "16_29"): 20.0, ("03101", "M", "30_39"): 6.0,
+                ("03158", "M", "16_29"): 10.0}
+    for kreis in ("03101", "03158"):
+        for key in ((kreis, "F", "16_29"), (kreis, "F", "30_39"), (kreis, "M", "30_39")):
+            students.setdefault(key, 0.0)
+    kreis_of = cells[ARS].str[:5]
+    grid = employment_grid.add_employment_grid_columns(
+        cells.assign(KREIS=kreis_of), census, shapes, students_employed_by_group=students)
+    grid_sum = grid[EMPLOYED].sum(axis=1).groupby(kreis_of).sum()
+    assert grid_sum.to_dict() == pytest.approx({"03101": 174.0, "03158": 90.0})
+
+    table, controls_map = _kreis_inputs(_controls_df())
+    recorder = ConsistencyRecorder(tmp_path / "consistency.csv", check_grid_pairs=True,
+                                   check_age_pairs=False, age_tolerance=0.05, min_persons=1000)
+    batch_folders.assemble_batch_folder(
+        tmp_path / "b", grid.drop(columns="KREIS"), EMPLOYED, _controls_df(),
+        pd.DataFrame({"H_ID": [1]}), pd.DataFrame({"H_ID": [1], "P_ID": [1]}),
+        settings_yaml="x: 1\n", logging_yaml="version: 1\n", kreis_table=table,
+        kreis_controls_map=controls_map, kreis_follow_grids=True, employed_bridge=0.8,
+        consistency_recorder=recorder)
+    kreis = pd.read_csv(tmp_path / "b" / "data" / "control_totals_KREIS.csv",
+                        dtype={"KREIS": str}).set_index("KREIS")
+    for code, total in (("03101", 174.0), ("03158", 90.0)):
+        assert kreis.loc[code, "employed_KREIS"] == pytest.approx(total)            # follows the grid
+        for family in employment_level.EMPLOYMENT_FAMILIES:
+            assert kreis.loc[code, _employed_columns(family)].sum() == pytest.approx(0.8 * total)
+    summary = pd.read_csv(recorder.csv_path, dtype={"key": str})
+    employed = summary[(summary["scope"] == "kreis") & (summary["check"] == "employed")]
+    assert len(employed) == 2 and employed["amount"].abs().max() <= 1e-6       # the guard pair holds

@@ -1,0 +1,41 @@
+dataset: lsn_population_20_29_by_kreis
+title: LSN population aged 20 to 29 per Kreis on 31 December of four years (A100001K, hand-read)
+provider: LSN
+vintage: 31 December of four years up to 2025-12-31 (territory of 2021-11-01)
+geography: |
+  Niedersachsen and the eight Kreise of the study region; per Kreis and date all persons and the
+  persons aged 20 to 29, by sex and the foreign nationals among them.
+crs: null
+roles:
+- reference_table
+used_by: []
+acquisition:
+  method: manual_download
+  source: LSN-Online table A100001K (https://www1.nls.niedersachsen.de/statistik/), read by hand on 2026-11-27
+  script: null
+storage:
+  expected_path: eqasim-data/data/braunschweig/popsim/lsn_population_20_29_by_kreis.csv
+  committed: true
+  local_only: false
+verification:
+  verifier_entry: null
+  notes: |
+    Not listed in scripts/verify_braunschweig_inputs.py: the file is committed with the checkout.
+    The path is ignored by the catch-all eqasim-data/* rule, so it is committed with git add -f; the
+    .gitignore comment next to the CHE entry lists it. Pinned by tests/test_seed_student_reference_tables.py.
+requirements:
+  synthesis: not_needed
+  matsim: not_needed
+  production: optional
+licensing:
+  license: dl-de/by-2-0
+  restricted: false
+  redistribution: allowed
+  notes: Reproduction with the source named is permitted (note on the LSN table).
+limitations: |
+  Hand-read table, no script regenerates it. The persons aged 20 to 29 are the sum of the ten single years.
+notes: |
+  Read by scripts/build_student_balance.py (assumption A19 of braunschweig/calibration/student_level_table.py carries
+  the census pattern to the model year with the ratio of two dates). The data rows equal the copy the decision aid
+  of issue #140 read, docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_population_20_29_by_kreis.csv,
+  which stays where it is.

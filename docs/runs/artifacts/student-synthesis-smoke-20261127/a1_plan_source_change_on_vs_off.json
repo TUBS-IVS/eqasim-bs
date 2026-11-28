@@ -1,0 +1,20 @@
+{
+  "n_changed": 82922,
+  "n_other_persons": 470102,
+  "n_other_persons_changed": 77104,
+  "n_other_persons_changed_elsewhere": 71017,
+  "n_other_persons_changed_in_student_ladder_households": 6087,
+  "n_other_persons_in_student_ladder_households": 6683,
+  "n_persons_after": 485709,
+  "n_persons_before": 485709,
+  "n_persons_compared": 485709,
+  "n_persons_without_trace_row": 0,
+  "n_students": 15607,
+  "n_students_changed": 5818,
+  "share_other_persons_changed": 0.16401546898332703,
+  "share_students_changed": 0.37278144422374576,
+  "source_columns": [
+    "source_H_ID",
+    "source_P_ID"
+  ]
+}

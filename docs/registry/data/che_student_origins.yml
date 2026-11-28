@@ -34,22 +34,21 @@ licensing:
   notes: |
     The CHE page names no licence. Committed by owner decision of 2026-11-25.
 limitations: |
-  Origin is the Kreis of the school leaving certificate, not the place of residence (an
-  assumption of the design of this work, issue #140, to be recorded in an ADR in the next
-  phase). Cells below the tenth value are censored by the source; abroad and other rows carry
+  Origin is the Kreis of the school leaving certificate, not the place of residence (assumption
+  A2, documented in braunschweig/data/education/student_od_table.py). Cells below the tenth value are censored by the source; abroad and other rows carry
   the remainder.
 
   Omission: the art academy in Braunschweig (Hochschule fuer Bildende Kuenste Braunschweig), a
   local institution of the site table lsn_university_sites, has no origin list. The CHE
   institution view lists only institutions with at least 1,000 students and its institution
   selector does not offer this one (checked 2026-11-25); it appears only as a destination in the
-  Kreis view. No list is invented; Phase 1 needs an explicit rule for the origins of its
-  students (reason also in the INSTITUTION_ORIGINS comment of scripts/seed_che_student_origins.py).
-
-  Note for the next phase: no key joins the institution names of the site table
-  (lsn_university_sites, LSN short names) to the CHE institution names yet; Phase 1 needs that
-  mapping before the two tables can be combined.
+  Kreis view. No list is invented (reason also in the INSTITUTION_ORIGINS comment of
+  scripts/seed_che_student_origins.py). The rule for its origins (its Kreis-view cells, the
+  rest of its LSN enrollment as locals) and the crosswalk from the LSN short names of the site
+  table to the CHE institution names (INSTITUTION_CROSSWALK, OUTSIDE_LSN_CROSSWALK) are in
+  braunschweig/data/education/student_od_table.py; ADR-0210 records the rule.
 notes: |
-  used_by stays empty until the stage that reads this table is wired in (Phase 1 of #140).
+  used_by lists synpp stages and stays empty: the script scripts/build_student_balance.py (Phase 2 of #140) reads
+  this table, no stage does yet.
   The list of origin Kreise to read comes from
   python scripts/seed_che_student_origins.py --list-required-kreise.

@@ -1,0 +1,65 @@
+# Table: nrw_census_students_18_26.csv (issue #140, Phase 2, decision aid for the student level).
+# Students aged 18 to 26 by district of residence in Nordrhein-Westfalen and the employed among them, Zensus 2022
+#   (reference day 2022-05-15): the only published census count of students by residence found. Students by their
+#   own statement on their current activity; employed by the labour-force concept (at least one hour of paid work
+#   in the reference week); without persons in collective accommodation.
+# Source: Information und Technik Nordrhein-Westfalen, press release 091/25 of 2025-04-02, table 'Erwerbstaetige
+#   Studierende im Alter von 18 bis 26 Jahren in Kreisen/kreisfreien Staedten in Nordrhein-Westfalen - Ergebnisse
+#   des Zensus 2022', https://www.it.nrw/system/files/media/document/file/91_25.pdf (read on 2026-11-27; every row
+#   checked against the printed share of the employed; the 53 rows sum to the printed total of the Land within the
+#   publisher's rounding).
+# district_ars5: code of the census database for the district of that name (Staedteregion Aachen = 05334).
+district_ars5,district_name,students_18_26_persons,employed_students_18_26_persons
+05111,"Kreisfreie Stadt Düsseldorf",21680,11000
+05112,"Kreisfreie Stadt Duisburg",13110,6750
+05113,"Kreisfreie Stadt Essen",17260,10520
+05114,"Kreisfreie Stadt Krefeld",5680,3120
+05116,"Kreisfreie Stadt Mönchengladbach",6020,3320
+05117,"Kreisfreie Stadt Mülheim an der Ruhr",4810,2560
+05119,"Kreisfreie Stadt Oberhausen",3790,2180
+05120,"Kreisfreie Stadt Remscheid",2370,1490
+05122,"Kreisfreie Stadt Solingen",3090,1880
+05124,"Kreisfreie Stadt Wuppertal",9920,5750
+05154,"Kreis Kleve",5760,3010
+05158,"Kreis Mettmann",10320,5760
+05162,"Rhein-Kreis Neuss",10750,5080
+05166,"Kreis Viersen",5340,3060
+05170,"Kreis Wesel",7220,4180
+05314,"Kreisfreie Stadt Bonn",19130,10000
+05315,"Kreisfreie Stadt Köln",43940,27030
+05316,"Kreisfreie Stadt Leverkusen",2990,1610
+05334,"Städteregion Aachen",37140,17420
+05358,"Kreis Düren",5110,3020
+05362,"Rhein-Erft-Kreis",10000,6080
+05366,"Kreis Euskirchen",3230,1830
+05370,"Kreis Heinsberg",4140,2350
+05374,"Oberbergischer Kreis",4760,2570
+05378,"Rheinisch-Bergischer Kreis",6170,3850
+05382,"Rhein-Sieg-Kreis",14320,8260
+05512,"Kreisfreie Stadt Bottrop",1970,1110
+05513,"Kreisfreie Stadt Gelsenkirchen",5860,2820
+05515,"Kreisfreie Stadt Münster",26270,17020
+05554,"Kreis Borken",4920,3280
+05558,"Kreis Coesfeld",3460,2150
+05562,"Kreis Recklinghausen",12330,6660
+05566,"Kreis Steinfurt",7140,4290
+05570,"Kreis Warendorf",4450,2690
+05711,"Kreisfreie Stadt Bielefeld",11080,6500
+05754,"Kreis Gütersloh",6550,3670
+05758,"Kreis Herford",4510,2720
+05762,"Kreis Höxter",2130,1180
+05766,"Kreis Lippe",7430,4110
+05770,"Kreis Minden-Lübbecke",5490,2700
+05774,"Kreis Paderborn",10980,6230
+05911,"Kreisfreie Stadt Bochum",15880,8730
+05913,"Kreisfreie Stadt Dortmund",20160,11660
+05914,"Kreisfreie Stadt Hagen",4370,2190
+05915,"Kreisfreie Stadt Hamm",3760,2000
+05916,"Kreisfreie Stadt Herne",3660,1860
+05954,"Ennepe-Ruhr-Kreis",7520,4670
+05958,"Hochsauerlandkreis",4170,2070
+05962,"Märkischer Kreis",6500,3860
+05966,"Kreis Olpe",2290,1350
+05970,"Kreis Siegen-Wittgenstein",7750,4730
+05974,"Kreis Soest",5460,2860
+05978,"Kreis Unna",7220,3960

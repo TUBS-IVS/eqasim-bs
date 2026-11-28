@@ -408,6 +408,62 @@ def test_land_must_come_from_a_column_that_exists_and_is_valid():
         M.build_share_20_29_table(persons.assign(BLAND=[17]), None)   # outside the 16 Laender
 
 
+def _age_sex_persons():
+    """MiD-shaped persons for the age-by-sex table: (weight, age, sex, P_TAET, RegioStaR7).
+
+    Students of the universe: (2, 19, 2, 10, 72), (1, 22, 2, 10, 72), (1, 27, 2, 10, 73),
+    (3, 23, 1, 10, 73), (1, 35, 1, 10, 72), (1, 26, 1, 10, missing). Outside it: a non-student
+    (5, 22, 1, 1, 72), a student under 18 (4, 17, 2, 10, 72) and a student with sex code 3
+    (2, 24, 3, 10, 72). Also outside it, students without a valid age: a missing age
+    (6, nan, 1, 10, 72) and an age above 120 (7, 130, 2, 10, 72).
+    """
+    rows = [(2, 19, 2, 10, 72), (1, 22, 2, 10, 72), (1, 27, 2, 10, 73), (3, 23, 1, 10, 73),
+            (1, 35, 1, 10, 72), (1, 26, 1, 10, np.nan), (5, 22, 1, 1, 72),
+            (4, 17, 2, 10, 72), (2, 24, 3, 10, 72),
+            (6, np.nan, 1, 10, 72), (7, 130, 2, 10, 72)]
+    frame = pd.DataFrame(rows, columns=["P_GEW", "HP_ALTER", "HP_SEX", "P_TAET", "RegioStaR7"])
+    frame.insert(0, "P_ID", 1)
+    frame.insert(0, "H_ID", range(1, len(frame) + 1))
+    return frame
+
+
+def test_age_sex_table_by_hand():
+    table, diagnostics = M.build_age_sex_table(_age_sex_persons())
+    assert list(table.columns) == M.AGE_SEX_COLUMNS and len(table) == 96
+    de = table[table["area"] == "DE"].set_index(["sex", "age_group"])
+    assert de.loc[("female", "18_19"), "share_within_sex"] == pytest.approx(0.5)
+    assert de.loc[("female", "18_19"), "share_of_adult_students"] == pytest.approx(2 / 9)
+    assert de.loc[("male", "20_24"), "share_within_sex"] == pytest.approx(0.6)
+    assert de.loc[("male", "25_29"), "share_of_adult_students"] == pytest.approx(1 / 9)
+    assert de.loc[("all", "20_24"), "share_of_adult_students"] == pytest.approx(4 / 9)
+    assert de.loc[("female", "20_24"), "n_effective"] == pytest.approx(16 / 6)
+    joint = de.loc[["female", "male"], "share_of_adult_students"]
+    assert joint.sum() == pytest.approx(1.0)
+    city = table[table["area"] == "regiostar7_72"].set_index(["sex", "age_group"])
+    assert city.loc[("all", "18_19"), "share_within_sex"] == pytest.approx(0.5)
+    assert city.loc[("male", "30plus"), "share_within_sex"] == pytest.approx(1.0)
+    empty = table[table["area"] == "regiostar7_71"]
+    assert (empty["n_unweighted"] == 0).all() and empty["share_within_sex"].isna().all()
+    assert diagnostics["n_students_under_18"] == 1
+    assert diagnostics["n_students_without_valid_age"] == 2
+    assert diagnostics["n_students_excluded_sex"] == 1
+    assert diagnostics["n_students_without_regiostar7"] == 1
+
+
+def test_age_sex_labels_are_the_level_table_labels():
+    from braunschweig.calibration import student_level_table as LV
+    table, _ = M.build_age_sex_table(_age_sex_persons())
+    assert tuple(dict.fromkeys(table["age_group"])) == LV.AGE_LABELS
+    assert set(table["sex"]) == {*LV.SEXES, "all"}
+
+
+def test_age_sex_requires_sex_and_regiostar7_columns():
+    with pytest.raises(ValueError, match="HP_SEX"):
+        M.build_age_sex_table(_age_sex_persons().drop(columns=["HP_SEX"]))
+    with pytest.raises(ValueError, match="RegioStaR7"):
+        M.build_age_sex_table(_age_sex_persons().drop(columns=["RegioStaR7"]))
+
+
 def _load_script():
     path = REPO / "scripts" / "extract_mid_student_reference.py"
     spec = importlib.util.spec_from_file_location("extract_mid_student_reference", path)
@@ -429,7 +485,8 @@ def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
     raw = tmp_path / "mid_raw"
     raw.mkdir()
     # this delivery's persons file carries BLAND itself (no household join needed)
-    persons = persons.assign(BLAND=persons["H_ID"].map({1: 3, 2: 3, 3: 6, 4: 6, 5: 6, 6: 6}))
+    persons = persons.assign(BLAND=persons["H_ID"].map({1: 3, 2: 3, 3: 6, 4: 6, 5: 6, 6: 6}),
+                             HP_SEX=[1, 2] * 8, RegioStaR7=[71 + i % 7 for i in range(16)])
     persons.to_csv(raw / "MiD2023_Personen.csv", index=False)
     trips.assign(HP_ID=1).to_csv(raw / "MiD2023_Wege.csv", index=False)
     out = tmp_path / "out"
@@ -443,6 +500,7 @@ def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
         M.DISTANCE_MODE_TABLE: M.DISTANCE_MODE_COLUMNS,
         M.SHARE_20_29_TABLE: M.SHARE_20_29_COLUMNS,
         M.BEHAVIOUR_TABLE: M.BEHAVIOUR_COLUMNS,
+        M.AGE_SEX_TABLE: M.AGE_SEX_COLUMNS,
     }
     tables = {}
     for name, columns in expected_columns.items():
@@ -451,14 +509,73 @@ def test_cli_writes_all_tables_with_headers(mid_frames, tmp_path):
         header = [line for line in text.splitlines() if line.startswith("#")]
         assert sum(line.startswith("# Exclusions:") for line in header) == 1
         assert any("abc1234" in line for line in header)
-        assert any("exclude_rbw_legs" in line for line in header)
         assert any("P_GEW" in line for line in header)
-        assert any("ST_WOTAG" in line for line in header)
+        if name == M.AGE_SEX_TABLE:
+            assert not any("MiD2023_Wege.csv" in line or "exclude_rbw_legs" in line
+                           for line in header)
+        else:
+            assert any("exclude_rbw_legs" in line for line in header)
+            assert any("ST_WOTAG" in line for line in header)
         # every table restricted to the reporting day names its holiday filter
-        assert any("feiertag" in line for line in header) == (name != M.SHARE_20_29_TABLE)
+        assert any("feiertag" in line for line in header) == (
+            name not in (M.SHARE_20_29_TABLE, M.AGE_SEX_TABLE))
         tables[name] = pd.read_csv(out / name, comment="#", dtype={"region": str})
         assert list(tables[name].columns) == list(columns)
     assert len(tables[M.STATUS_TABLE]) == 12
+    assert len(tables[M.AGE_SEX_TABLE]) == 96
     assert len(tables[M.BEHAVIOUR_TABLE]) == sum(2 * len(labels) + 1
                                                   for labels in CONTROLS.values())
     assert set(tables[M.SHARE_20_29_TABLE]["region"]) >= {M.REGION_GERMANY, "03", "06"}
+
+
+def test_cli_tables_option_writes_only_the_asked_table(mid_frames, tmp_path):
+    persons, trips = mid_frames
+    raw = tmp_path / "mid_raw"
+    raw.mkdir()
+    persons = persons.assign(BLAND=3, HP_SEX=[1, 2] * 8,
+                             RegioStaR7=[71 + i % 7 for i in range(16)])
+    persons.to_csv(raw / "MiD2023_Personen.csv", index=False)
+    trips.assign(HP_ID=1).to_csv(raw / "MiD2023_Wege.csv", index=False)
+    out = tmp_path / "out"
+    out.mkdir()
+    sentinels = {name: "# sentinel %s\n" % name for name in
+                 (M.STATUS_TABLE, M.DISTANCE_MODE_TABLE, M.SHARE_20_29_TABLE, M.BEHAVIOUR_TABLE)}
+    for name, text in sentinels.items():
+        (out / name).write_text(text, encoding="utf-8")
+    module = _load_script()
+
+    assert module.main(["--raw", str(raw), "--out-dir", str(out),
+                        "--source-commit", "abc1234", "--tables", "age_sex"]) == 0
+
+    for name, text in sentinels.items():
+        assert (out / name).read_text(encoding="utf-8") == text
+    text = (out / M.AGE_SEX_TABLE).read_text(encoding="utf-8")
+    header = [line for line in text.splitlines() if line.startswith("#")]
+    assert sum(line.startswith("# Exclusions:") for line in header) == 1
+    assert any("abc1234" in line for line in header)
+    assert any("A9" in line for line in header)
+    table = pd.read_csv(out / M.AGE_SEX_TABLE, comment="#")
+    assert list(table.columns) == M.AGE_SEX_COLUMNS and len(table) == 96
+
+
+def test_cli_rejects_an_unknown_table_name(tmp_path):
+    module = _load_script()
+    with pytest.raises(SystemExit):
+        module.main(["--raw", str(tmp_path), "--out-dir", str(tmp_path),
+                     "--source-commit", "abc1234", "--tables", "age_sex,nonsense"])
+
+
+def test_cli_age_sex_needs_no_trips_file(mid_frames, tmp_path):
+    persons, _ = mid_frames
+    raw = tmp_path / "mid_raw"
+    raw.mkdir()
+    persons = persons.assign(HP_SEX=[1, 2] * 8, RegioStaR7=[71 + i % 7 for i in range(16)])
+    persons.to_csv(raw / "MiD2023_Personen.csv", index=False)
+    out = tmp_path / "out"
+    module = _load_script()
+
+    assert module.main(["--raw", str(raw), "--out-dir", str(out),
+                        "--source-commit", "abc1234", "--tables", "age_sex"]) == 0
+
+    assert not (raw / "MiD2023_Wege.csv").exists()
+    assert sorted(path.name for path in out.iterdir()) == [M.AGE_SEX_TABLE]

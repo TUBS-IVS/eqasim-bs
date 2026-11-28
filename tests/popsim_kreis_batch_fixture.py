@@ -93,14 +93,44 @@ def make_cells() -> pd.DataFrame:
     return pd.concat([cells, pd.DataFrame(new_columns)], axis=1)
 
 
-def _controls_and_base_columns() -> tuple[pd.DataFrame, list[str], list]:
-    """The controls frame and base columns with every KREIS attribute control, grids on."""
-    names = [ctl.name for ctl in kac.REGISTRY]
+_STUDENT_EDUCATION_ENTRIES = frozenset({kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS})
+
+
+def kreis_entries(student_entries=()) -> list:
+    """The KREIS attribute entries of the folders, in registry order.
+
+    By default every entry except the student entries (A3, ADR-0211): the frozen golden holds the
+    tables before them, and their production targets are counts from the student level table. Their
+    batch split is pinned by
+    tests/test_popsim_kreis_universe_apportionment.py::test_student_entries_are_split_by_their_own_age_universe.
+    ``student_entries`` adds the named student entries with the fixture's SYNTHETIC rotated shares
+    (for the input-consistency guard, not for target values); a student education entry replaces
+    ``education_18plus``, as ``source_resolution.active_kreis_entries`` does.
+    """
+    unknown = set(student_entries) - kac.STUDENT_ENTRY_NAMES
+    if unknown:
+        raise ValueError(f"not student entries: {sorted(unknown)}")
+    drop = {"education_18plus"} if _STUDENT_EDUCATION_ENTRIES & set(student_entries) else set()
+    return [ctl for ctl in kac.REGISTRY
+            if (ctl.name not in kac.STUDENT_ENTRY_NAMES or ctl.name in student_entries)
+            and ctl.name not in drop]
+
+
+def entry_names(student_entries=()) -> list[str]:
+    """Names of :func:`kreis_entries` (what the stage passes to ``open_recorder``)."""
+    return [ctl.name for ctl in kreis_entries(student_entries)]
+
+
+def _controls_and_base_columns(student_entries=()) -> tuple[pd.DataFrame, list[str], list]:
+    """The controls frame and base columns with the KREIS attribute controls of
+    :func:`kreis_entries`, grids on."""
+    entries = kreis_entries(student_entries)
+    names = [ctl.name for ctl in entries]
     controls_df, base_cols = stage._build_control_frame(
         base_fixture.CONTROL_SOURCE, None, base_fixture.SEED_NAME, CONTROL_TIERS, True, names,
         base_fixture.IMPORTANCE_PROFILE, fine_teen_age_bands=base_fixture.FINE_TEEN_AGE_BANDS,
         ownership_grid_on=True)
-    return controls_df, base_cols, list(kac.REGISTRY)
+    return controls_df, base_cols, entries
 
 
 def _kreis_tables(cells: pd.DataFrame, active_entries: list) -> tuple[pd.DataFrame, dict, set]:
@@ -149,17 +179,19 @@ def _kreis_tables(cells: pd.DataFrame, active_entries: list) -> tuple[pd.DataFra
 
 
 def build_batch_folders(work_dir: Path, settings=None, recorder=None,
-                        employed_bridge: float | None = None) -> dict[str, Path]:
+                        employed_bridge: float | None = None,
+                        student_entries=()) -> dict[str, Path]:
     """Assemble the two batch folders under ``work_dir`` and return ``{batch: data directory}``.
 
     ``settings`` (a ``stage.KreisConsistencySettings``, #658 Task A6) and ``recorder`` (its
     ``ConsistencyRecorder``) switch on the Part A options the way the stage hands them to
     ``run_popsim_mid``; ``employed_bridge`` is passed to every batch as given (the bridge itself
-    needs a real seed). All ``None`` (default) -> the legacy folders of the golden tables.
+    needs a real seed). ``student_entries``: see :func:`kreis_entries`. All ``None`` / empty
+    (default) -> the legacy folders of the golden tables.
     """
     work_dir = Path(work_dir)
     cells = make_cells()
-    controls_df, base_cols, active_entries = _controls_and_base_columns()
+    controls_df, base_cols, active_entries = _controls_and_base_columns(student_entries)
     cells = stage._add_aggregated_control_columns(
         cells, base_fixture.CONTROL_SOURCE, base_fixture.SEED_NAME, CONTROL_TIERS,
         **base_fixture.AGGREGATE_KWARGS)

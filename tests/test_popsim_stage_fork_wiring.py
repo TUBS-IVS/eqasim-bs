@@ -328,6 +328,41 @@ def test_execute_runs_the_gate_after_the_batches_and_passes_the_settings_on(
     assert seen["gate"] == (str(tmp_path / "work"), 0.2, "controlled", "search")
 
 
+# --- execute: assemble_batches_only (smoke mode, ADR-0211) -------------------------------
+
+def test_assemble_batches_only_stops_before_populationsim_with_a_named_error(
+        monkeypatch, tmp_path):
+    # The batch loop is replaced by one that, like batch.run_batches, hands every folder to the
+    # run_one it was given. With the key on that callable must be the stop, never PopulationSim.
+    calls = []
+    _stub_execute_up_to_the_batches(monkeypatch, tmp_path, calls)
+    real_runner_calls = []
+    monkeypatch.setattr(
+        stage, "_prepare_batch_runner",
+        lambda *a, **k: (lambda folder: real_runner_calls.append(folder)))
+    monkeypatch.setattr(stage, "_purge_stale_batches_for_changed_config", lambda *a, **k: None)
+
+    def batches(context, cells, base_cols, controls_df, hh, persons, work_dir, settings_path,
+                logging_path, max_cells, run_one, *args, **kwargs):
+        run_one(str(Path(work_dir) / "batch_000"))
+        raise AssertionError("run_one returned: PopulationSim would have run")
+
+    monkeypatch.setattr(stage, "_run_populationsim_batches", batches)
+    monkeypatch.setattr(
+        stage.solver_path_gate, "check_solver_paths",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("the gate ran after the stop")))
+
+    with pytest.raises(stage.AssembleBatchesOnlyStop, match="smoke mode") as caught:
+        stage.execute(_context(
+            _values(**{stage.KEY_ASSEMBLE_BATCHES_ONLY: True}), stage_path=tmp_path))
+
+    assert str(tmp_path / "work") in str(caught.value)
+    assert real_runner_calls == []
+    # The reports of the stage are written on the way out (the stage report file is the
+    # consistency report's home).
+    assert (tmp_path / stage.CENSUS_FILTERED_REPORT_FILE).exists()
+
+
 # --- execute: controlled rounding needs a fork release that has it (issue #646) -----------
 
 def test_execute_refuses_controlled_rounding_for_an_old_fork_before_any_batch(

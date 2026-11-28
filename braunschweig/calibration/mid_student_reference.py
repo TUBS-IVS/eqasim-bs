@@ -2,7 +2,7 @@
 
 Pure builders over already-loaded MiD person / trip / household frames (no I/O, no synpp).
 ``scripts/extract_mid_student_reference.py`` is the only caller that touches the restricted raw
-microdata; it owns the CLI and the provenance headers of the four committed tables:
+microdata; it owns the CLI and the provenance headers of the five committed tables:
 
 * :func:`build_status_by_age_table` -- who the persons with an education trip on a core weekday
   are (student, pupil, apprentice, other) per age band;
@@ -12,7 +12,10 @@ microdata; it owns the CLI and the provenance headers of the four committed tabl
   olds, Germany and per Land (a status share, so over ALL reporting days);
 * :func:`build_behaviour_seed_table` -- the candidate behaviour cells of
   :mod:`braunschweig.calibration.student_behaviour_labels` on the MiD side, the mirror of
-  :func:`srv_student_reference.build_behaviour_table`.
+  :func:`srv_student_reference.build_behaviour_table`;
+* :func:`build_age_sex_table` -- the joint share of (sex, age group) among the adult students,
+  Germany (the rows the student level table uses) and per RegioStaR 7 type (evidence only), a
+  status share like :func:`build_share_20_29_table` (no weekday and no holiday filter).
 
 Every builder returns ``(table, diagnostics)``.
 
@@ -130,9 +133,10 @@ from braunschweig.calibration.commute_day_state_reference import MID_TRIP_LENGTH
 from braunschweig.calibration.student_behaviour_labels import (
     ARRIVAL_HOUR_EDGES, BEHAVIOUR_COLUMNS, CONTROLS, MAX_EXCLUSION_RATE, MIN_ADULT_AGE,
     NOT_STUDENT, STUDENT_DISTANCE_EDGES_KM, STUDENT_DISTANCE_LABELS, TRIP_CLASS_EDGES,
-    UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows)
+    UNIVERSE_ADULTS, UNIVERSE_STUDENTS, behaviour_rows, effective_sample_size,
+    share_standard_error)
 from braunschweig.popsim.attributes import (FKARTE_TO_CATEGORY, PT_TICKET_DEUTSCHLANDTICKET,
-                                            PT_TICKET_OTHER_FLATRATE)
+                                            PT_TICKET_OTHER_FLATRATE, STUDENT_TAET)
 from braunschweig.popsim.diary_facts import compute_diary_facts
 from braunschweig.popsim.diary_plan_match import MID_HOLIDAY, NO_DIARY_CODES, _own_diary_reason
 from braunschweig.popsim.mid.participation import PARTICIPATION_W_ZWECK
@@ -146,11 +150,12 @@ STATUS_TABLE = "mid2023_student_status_by_age.csv"
 DISTANCE_MODE_TABLE = "mid2023_student_education_distance_mode.csv"
 SHARE_20_29_TABLE = "mid2023_student_share_20_29_by_land.csv"
 BEHAVIOUR_TABLE = "mid2023_student_behaviour_seed.csv"
+AGE_SEX_TABLE = "mid2023_student_age_sex.csv"
 
 # MiD P_TAET ("Taetigkeit der Person"), MiD 2023 codebook B1 as quoted in popsim/attributes.py:
 # 8 in Ausbildung, 9 Schueler/in, 10 Student/in; 1-17 are the documented substantive codes and
 # 99 is "keine Angabe".
-STUDENT_P_TAET = 10
+STUDENT_P_TAET = STUDENT_TAET  # owned by popsim.attributes (ADR-0211)
 PUPIL_P_TAET = 9
 APPRENTICE_P_TAET = 8
 P_TAET_CODES = frozenset(range(1, 18))
@@ -228,6 +233,20 @@ DISTANCE_MODE_COLUMNS = ["distance_band", "mode", "n_unweighted", "share_of_band
                          "share_of_all"]
 SHARE_20_29_COLUMNS = ["region", "n_unweighted", "share_pupils", "share_students",
                        "share_pupils_and_students"]
+
+# Age-by-sex table of the adult students. The four groups are the age labels of the student level
+# table (``student_level_table.AGE_LABELS``, guarded by a test); bounds are inclusive whole years.
+AGE_SEX_GROUPS = (("18_19", MIN_ADULT_AGE, 19), ("20_24", 20, 24), ("25_29", 25, 29),
+                  ("30plus", 30, MAX_VALID_AGE_YEARS))
+SEX_COLUMN = "HP_SEX"
+REGIOSTAR7_COLUMN = "RegioStaR7"
+SEX_BY_CODE = {2: "female", 1: "male"}
+SEX_ALL = "all"
+REGIOSTAR7_CODES = tuple(range(71, 78))
+AREA_REGIOSTAR7_PREFIX = "regiostar7_"
+AGE_SEX_PERSON_COLUMNS = PERSON_COLUMNS + [SEX_COLUMN, REGIOSTAR7_COLUMN]
+AGE_SEX_COLUMNS = ["area", "sex", "age_group", "n_unweighted", "weight_sum", "share_within_sex",
+                   "share_of_adult_students", "n_effective", "se_share_within_sex"]
 
 
 # --------------------------------------------------------------------------- helpers
@@ -544,6 +563,78 @@ def build_share_20_29_table(persons: pd.DataFrame,
     table = pd.DataFrame(rows, columns=SHARE_20_29_COLUMNS)
     logger.info("%s share 20-29 table: %d persons aged %d-%d, %d Laender", _LOG_TAG, len(band),
                 AGE_BAND_20_29[0], AGE_BAND_20_29[1], len(LAND_CODES))
+    return table, diagnostics
+
+
+def build_age_sex_table(persons: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Joint (sex, age group) shares of the adult students, Germany and per RegioStaR 7 type.
+
+    A status share, so over ALL reporting days (no ``ST_WOTAG`` and no holiday filter). Universe:
+    valid positive ``P_GEW``, readable ``P_TAET`` equal to :data:`STUDENT_P_TAET`, age
+    ``MIN_ADULT_AGE`` to :data:`MAX_VALID_AGE_YEARS`, ``HP_SEX`` 1 (male) or 2 (female). Counted:
+    students under 18, students without a valid age, students with another or a missing sex code
+    and students without a RegioStaR 7 code 71 to 77 (the last stay in the ``DE`` rows).
+
+    Rows (every one emitted, 8 x 3 x 4 = 96): areas :data:`REGION_GERMANY` and
+    ``regiostar7_71`` to ``regiostar7_77``, sexes female / male / all, the four
+    :data:`AGE_SEX_GROUPS`. ``share_within_sex`` is the weighted share of the age group in the
+    (area, sex) base; ``share_of_adult_students`` the cell weight over the weight of all students
+    of the area (female plus male), so on the ``all`` rows the age margin. ``n_effective`` is the
+    Kish size of the (area, sex) base and ``se_share_within_sex = sqrt(p (1 - p) / n_effective)``.
+    A base without respondents has ``n_unweighted`` 0 and NaN shares.
+    """
+    people, diagnostics = _prepare_persons(persons, AGE_SEX_PERSON_COLUMNS, "persons",
+                                           core_weekdays=False)
+    people, unreadable = _drop_unreadable_activity(people, "all persons")
+    diagnostics.update(unreadable)
+    students = people[(people["taet"] == STUDENT_P_TAET).to_numpy()]
+    diagnostics["n_students"] = int(len(students))
+    no_age = students["age"].isna()
+    under_18 = (students["age"] < MIN_ADULT_AGE).to_numpy()
+    _log_exclusion("valid student age (0 to %d)" % MAX_VALID_AGE_YEARS, int(no_age.sum()),
+                   len(students))
+    _log_exclusion("student aged %d or more" % MIN_ADULT_AGE, int(under_18.sum()),
+                   len(students) - int(no_age.sum()))
+    diagnostics["n_students_without_valid_age"] = int(no_age.sum())
+    diagnostics["n_students_under_18"] = int(under_18.sum())
+    adults = students[(students["age"] >= MIN_ADULT_AGE).to_numpy()]
+    bad_sex = ~adults[SEX_COLUMN].isin(list(SEX_BY_CODE))
+    _log_exclusion("adult student with HP_SEX 1 or 2", int(bad_sex.sum()), len(adults))
+    diagnostics["n_students_excluded_sex"] = int(bad_sex.sum())
+    adults = adults[~bad_sex.to_numpy()].copy()
+    no_type = ~adults[REGIOSTAR7_COLUMN].isin(REGIOSTAR7_CODES)
+    _log_exclusion("student with RegioStaR 7 code %d to %d (else only in the %s rows)"
+                   % (REGIOSTAR7_CODES[0], REGIOSTAR7_CODES[-1], REGION_GERMANY),
+                   int(no_type.sum()), len(adults))
+    diagnostics["n_students_without_regiostar7"] = int(no_type.sum())
+    diagnostics["n_students_in_universe"] = int(len(adults))
+    adults["sex_label"] = adults[SEX_COLUMN].map(SEX_BY_CODE)
+
+    areas = [(REGION_GERMANY, adults)] + [
+        ("%s%d" % (AREA_REGIOSTAR7_PREFIX, code), adults[adults[REGIOSTAR7_COLUMN] == code])
+        for code in REGIOSTAR7_CODES]
+    rows = []
+    for area, group in areas:
+        area_weight = group["weight"].sum()
+        for sex in (*SEX_BY_CODE.values(), SEX_ALL):
+            base = group if sex == SEX_ALL else group[group["sex_label"] == sex]
+            base_weight = base["weight"].sum()
+            n_effective = effective_sample_size(base["weight"].to_numpy(dtype=float))
+            for label, low, high in AGE_SEX_GROUPS:
+                cell = base[base["age"].between(low, high)]
+                cell_weight = float(cell["weight"].sum())
+                share = cell_weight / base_weight if base_weight > 0 else float("nan")
+                rows.append({
+                    "area": area, "sex": sex, "age_group": label,
+                    "n_unweighted": int(len(cell)), "weight_sum": cell_weight,
+                    "share_within_sex": share,
+                    "share_of_adult_students": (cell_weight / area_weight if area_weight > 0
+                                                else float("nan")),
+                    "n_effective": n_effective,
+                    "se_share_within_sex": share_standard_error(share, n_effective)})
+    table = pd.DataFrame(rows, columns=AGE_SEX_COLUMNS)
+    logger.info("%s age-by-sex table: %d adult students in the universe, %d rows", _LOG_TAG,
+                len(adults), len(table))
     return table, diagnostics
 
 

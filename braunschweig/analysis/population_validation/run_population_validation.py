@@ -28,6 +28,7 @@ import geopandas as gpd
 import pandas as pd
 
 from braunschweig.analysis import spatial
+from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.analysis.population_validation import (
     control_validation as CV,
     controls as C,
@@ -43,6 +44,17 @@ from braunschweig.analysis.population_validation import (
 LOGGER = logging.getLogger("braunschweig.analysis.population_validation")
 REPO_ROOT = spatial.REPO_ROOT
 DATA_PATH = str(REPO_ROOT / "eqasim-data" / "data")
+#: File of the student targets the popsim stage writes into its stage directory while a student
+#: entry is active (owner: ``braunschweig.popsim.stage.STUDENT_TARGETS_FILE``). Restated, not
+#: imported, so the stage package does not enter the import closure (and the source hash) of the
+#: analysis stages that run this module; tests/test_run_population_validation.py pins it to the owner.
+STUDENT_TARGETS_FILE = "student_kreis_targets.csv"
+#: synpp cache directory of the popsim stage (``<stage module>__<hash>.cache``; the module is
+#: ``braunschweig.popsim.stage``, pinned by the same test).
+POPSIM_STAGE_CACHE_GLOB = "braunschweig.popsim.stage__*.cache"
+#: The student entries that replace ``education_18plus`` (as in
+#: ``popsim.input_consistency.kreis_pairs``); only their presence removes its universe-fit rows.
+_STUDENT_EDUCATION_ENTRIES = frozenset({kac.STUDENT_EDUCATION_18_29, kac.STUDENT_EDUCATION_30PLUS})
 
 
 def _attach_home_geometry_to_vehicles(vehicles, persons, home_geom):
@@ -108,10 +120,59 @@ def _parse_args(argv):
     # byte-identical.
     ap.add_argument("--escort-passive-from-adult", dest="escort_passive_from_adult",
                     action="store_true", default=False)
+    # Student entries (A3 of the student design, ADR-0211): the long target table of the popsim
+    # stage. Default: the file of the one popsim stage directory under --sim-cache
+    # (_student_targets_path). Without it the
+    # student fit is skipped with a WARNING and education_18plus stays in the universe fit.
+    ap.add_argument("--student-targets", dest="student_targets", default=None)
     ns = ap.parse_args(argv)
     if (ns.run_output_dir is None) == (ns.sim_cache is None):
         ap.error("pass exactly ONE of --run-output-dir / --sim-cache")
     return ns
+
+
+def _student_targets_path(ns) -> Path | None:
+    """The student targets file of the run: ``--student-targets`` when given, else the
+    :data:`STUDENT_TARGETS_FILE` of the ONE popsim stage directory under ``--sim-cache``, else
+    ``None``.
+
+    The default must belong to the run whose persons are validated. The cache holds one directory
+    per popsim configuration (:data:`POPSIM_STAGE_CACHE_GLOB`), so with exactly one of them the
+    persons can only come from that stage. With several, the file of any of them may be stale (an
+    earlier configuration with student entries next to a newer one without): the default is
+    refused with a WARNING asking for ``--student-targets``. A modification-time rule is not used:
+    the stage writes the file BEFORE the later stages write the persons, and copying a cache
+    without preserving times reorders the files.
+    """
+    if ns.student_targets is not None:
+        return Path(ns.student_targets)
+    if ns.sim_cache is None:
+        return None
+    stage_dirs = sorted(p for p in Path(ns.sim_cache).rglob(POPSIM_STAGE_CACHE_GLOB) if p.is_dir())
+    if len(stage_dirs) > 1:
+        LOGGER.warning(
+            "%d popsim stage directories under %s (%s): their %s cannot be matched to the validated "
+            "persons, so none is used; pass --student-targets <the stage file of this run>.",
+            len(stage_dirs), ns.sim_cache, [p.name for p in stage_dirs], STUDENT_TARGETS_FILE)
+        return None
+    if not stage_dirs:
+        return None
+    return stage_dirs[0] / STUDENT_TARGETS_FILE
+
+
+def _load_student_targets(ns) -> pd.DataFrame | None:
+    """Read the student targets (:func:`_student_targets_path`); ``None`` with a WARNING when there
+    are none (no student entry in the run, or not found), so the student fit is skipped loudly."""
+    path = _student_targets_path(ns)
+    if path is None or not path.is_file():
+        LOGGER.warning(
+            "No student targets (%s; pass --student-targets or a --sim-cache holding the popsim "
+            "stage's %s): the student participation fit is skipped and education_18plus stays in "
+            "the universe fit. Expected when the run has no student entry.",
+            path if path is not None else "none given", STUDENT_TARGETS_FILE)
+        return None
+    LOGGER.info("Student targets: %s", path)
+    return pd.read_csv(path, dtype={"ars5": str})
 
 
 def _git_commit() -> str:
@@ -218,6 +279,24 @@ def _participation_universe_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
         ["person_id", "ars5", "employment_status", "age"]]
     targets_dir = Path(data_path) / "braunschweig" / "targets"
     return PF.universe_participation_fit(trips, persons_kreis, targets_dir)
+
+
+def _student_participation_fit_report(persons: pd.DataFrame, geo: pd.DataFrame,
+                                      trips: pd.DataFrame, student_targets: pd.DataFrame) -> pd.DataFrame:
+    """Realised-vs-target fit of the student entries of the run (A3 of the student design,
+    ADR-0211), which replace ``education_18plus``.
+
+    Same ``ars5``-via-``geo`` join and drop of persons without a Kreis as
+    :func:`_participation_universe_fit_report`; the persons need ``age``, ``P_TAET`` and, for the
+    ticket entry, ``has_pt_subscription`` (a missing column raises ``KeyError`` here). HONESTY
+    CAVEAT: these targets steer the raking, so this is a FIT CHECK, not independent validation.
+    Returns the columns of :func:`participation_fit.student_participation_fit`.
+    """
+    columns = [c for c in ("person_id", "household_id", "age", "P_TAET", "has_pt_subscription")
+               if c != "has_pt_subscription" or c in persons.columns]
+    persons_kreis = persons[columns].merge(geo[["household_id", "ars5"]], on="household_id", how="left")
+    persons_kreis = persons_kreis.dropna(subset=["ars5"]).drop(columns="household_id")
+    return PF.student_participation_fit(trips, persons_kreis, student_targets)
 
 
 def _interpretation_markdown(quality: pd.DataFrame) -> str:
@@ -430,11 +509,25 @@ def run(ns) -> dict:
     # 'employment_status' or 'age' (both required for these controls' universes
     # but not for the purpose-only participation_fit) fails only this block and
     # never discards the participation_fit evidence already produced.
+    # Student entries (A3, ADR-0211): the student fit below lists the entries of the stage's student
+    # targets; when they include a student education entry, that entry replaced education_18plus in
+    # the run, so its rows leave the universe fit.
+    student_targets = None
+    try:
+        student_targets = _load_student_targets(ns)
+    except Exception:
+        LOGGER.exception("Reading the student targets failed; the student fit is skipped.")
     participation_universe_json = None
     if frames.trips is not None:
         try:
             participation_universe = _participation_universe_fit_report(
                 frames.persons, geo, frames.trips, DATA_PATH)
+            if student_targets is not None and set(student_targets["control"]) & _STUDENT_EDUCATION_ENTRIES:
+                replaced = participation_universe["control"] == "education_18plus"
+                LOGGER.info("Universe participation fit: %d education_18plus row(s) left out, the "
+                            "student entries replace it (student_participation_fit.csv).",
+                            int(replaced.sum()))
+                participation_universe = participation_universe[~replaced].reset_index(drop=True)
             participation_universe.to_csv(out / "participation_universe_fit.csv", index=False)
             participation_universe_json = participation_universe.to_dict(orient="records")
             if participation_universe.empty:
@@ -466,6 +559,34 @@ def run(ns) -> dict:
         LOGGER.info(
             "No %strips.csv at the source; universe participation fit skipped "
             "(it is derived from the realised trips).", frames.prefix)
+
+    # Student entries (A3, ADR-0211): their OWN try block, so a source without P_TAET or a broken
+    # targets file loses only this block's evidence.
+    student_json = None
+    if frames.trips is not None and student_targets is not None:
+        try:
+            student_fit = _student_participation_fit_report(
+                frames.persons, geo, frames.trips, student_targets)
+            student_fit.to_csv(out / "student_participation_fit.csv", index=False)
+            student_json = student_fit.to_dict(orient="records")
+            if student_fit.empty:
+                LOGGER.warning("Student participation fit produced NO (Kreis, control, category) "
+                               "cells; check the 'age' and 'P_TAET' columns and the targets' Kreise.")
+            else:
+                worst = student_fit.sort_values("abs_error", ascending=False).head(1)
+                LOGGER.info(
+                    "Student participation fit (FIT CHECK against the steering targets, not "
+                    "independent validation): %d (Kreis, control, category) cells, mean |error| "
+                    "%.2f pp, worst %s/%s in %s at %.2f pp over %d person(s).",
+                    len(student_fit), 100 * student_fit["abs_error"].mean(),
+                    worst["control"].iloc[0], worst["category"].iloc[0], worst["ars5"].iloc[0],
+                    100 * worst["abs_error"].iloc[0], int(worst["n_persons"].iloc[0]))
+        except Exception:
+            LOGGER.exception("Student participation fit failed; continuing without it.")
+            student_json = None
+    elif frames.trips is None:
+        LOGGER.info("No %strips.csv at the source; student participation fit skipped "
+                    "(it is derived from the realised trips).", frames.prefix)
 
     # Feature B: vehicle age × economic-status validation panel.
     # Data-absent-safe: skips gracefully when vehicles is None or lacks columns.
@@ -544,6 +665,9 @@ def run(ns) -> dict:
         # targets (see _participation_universe_fit_report), not independent
         # validation.
         "participation_universe_fit": participation_universe_json,
+        # A3 of the student design (ADR-0211): FIT CHECK of the student entries, which replace
+        # education_18plus; None when the run has no student targets (logged as a WARNING).
+        "student_participation_fit": student_json,
         "geo_outputs": {k: str(v) for k, v in geo_paths.items()},
         "fleet_evaluation": _fe_paths,
         "minor_employment": minor_emp,

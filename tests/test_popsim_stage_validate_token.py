@@ -672,6 +672,16 @@ def test_validate_token_follows_committed_data_file_content_not_line_endings(dat
         target_relpaths[0]}
 
 
+def test_the_student_entry_inputs_are_hashed():
+    """The student entries (A3, ADR-0211) read the level table and three SrV tables at execute()
+    time under the paths their readers own; the literal list must name those very paths, or a
+    changed table would not devalidate a warm cache."""
+    from braunschweig.popsim import student_level, student_targets
+    files = set(stage._committed_data_file_digests(_DATA_ROOT))
+    assert {student_level.STUDENT_LEVEL_TABLE_RELPATH, student_targets.REGIONAL_RELPATH,
+            student_targets.AREA_RELPATH, student_targets.OTHER_ADULTS_RELPATH} <= files
+
+
 @pytest.mark.parametrize("relpath", (
     _registry_target_relpaths()[0],                      # derived from the control registry
     "braunschweig/mid/mid2023_cars_by_rs7_haustyp.csv",  # a listed table outside the registry

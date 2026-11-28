@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "run_name": "smoke",
+  "run_dir": "RUN_DIR",
+  "setup": {
+    "time": "2026-11-27T18:56:37+01:00",
+    "host": "<run server>",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73",
+    "repositories": {
+      "eqasim-bs": {
+        "shared_checkout": "<run server home>/eqasim-bs",
+        "ref": "smoke/i140-synthesis",
+        "bundle": "RUN_DIR.bundle",
+        "bundle_sha256": "7a6d73a376d74c50b832aefb03b575353d568ab92a9baa4c2925682ef5a3c8e7",
+        "bundle_ref": "refs/heads/smoke/i140-synthesis",
+        "namespaced_ref": "refs/isolated-runs/smoke/eqasim-bs",
+        "commit": "553058ffa43a5fe978b3ffd3625c9c4c6fbc65d4",
+        "worktree": "RUN_DIR/eqasim-bs"
+      },
+      "eqasim-java-bs": {
+        "shared_checkout": "<run server home>/eqasim-java-bs",
+        "ref": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "bundle": null,
+        "bundle_sha256": null,
+        "bundle_ref": null,
+        "namespaced_ref": null,
+        "commit": "cb7e81fa3851c1338cfd80921c9d55aaeef2e600",
+        "worktree": "RUN_DIR/eqasim-java-bs"
+      }
+    },
+    "symlink_farm": {
+      "shared_data": "<run server home>/eqasim-bs/eqasim-data",
+      "links": 87,
+      "kept": 385,
+      "excluded_count": 51
+    },
+    "cache": null,
+    "shared_checkouts": {
+      "before": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "after": {
+        "eqasim-bs": {
+          "branch": "main",
+          "head": "68ee8df873fe6c71627a14f3c03992dfc4393f52",
+          "dirty": 0
+        },
+        "eqasim-java-bs": {
+          "branch": "main",
+          "head": "c5343300e02d51f0247fa494080c5a9b536409f4",
+          "dirty": 0
+        }
+      },
+      "unchanged": true,
+      "changes": []
+    }
+  },
+  "overlay": {
+    "time": "2026-11-27T18:56:51+01:00",
+    "source": "<run server home>/i140_byarea/run_overlay_smoke.yml",
+    "source_sha256": "65364f9852193197914d338ec81d30fccad477ca35a6c67db31c9eafaaac37b2",
+    "prefix": null,
+    "changes": [],
+    "output_dir": "RUN_DIR/output",
+    "run_yml_sha256": "014cb80001b313392d44019b9244ef6b8d83255b064c9b4448ed0a2cf4fc5f56",
+    "tool_blob": "64c9fa8240fb3e01fb1b51cb8495c837acb90c73"
+  }
+}

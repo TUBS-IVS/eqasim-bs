@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import os
 import pathlib
 from dataclasses import dataclass, field
 
@@ -89,6 +90,17 @@ class Reader:
     #: True where ``execute`` tolerates a missing archive (it renders without the per-Kreis parts):
     #: validate must then warn and carry no digest instead of failing.
     tolerant: bool = False
+    #: ``data_path -> paths`` of the further input files whose digests ``validate`` adds next to the
+    #: archive's (created as placeholders, so validate reaches the archive part), or None.
+    input_files: object = None
+
+
+def _students_vs_srv_inputs(data_path):
+    """The committed SrV student tables and the Zensus file that ``students_vs_srv.validate`` digests."""
+    from braunschweig.analysis.synthesis import students_vs_srv
+    paths = [students_vs_srv.srv_table_path(data_path, name) for name in students_vs_srv.SRV_TABLES]
+    paths.append(students_vs_srv.zensus_path(data_path))
+    return [os.path.relpath(path, data_path) for path in paths]
 
 
 _CORDON_ON = {"cordon_enabled": True}
@@ -116,6 +128,8 @@ READERS = (
     Reader("braunschweig.analysis.synthesis.work_participation_by_kreis", hashes_source=True,
            repo_anchored=True),
     Reader("braunschweig.analysis.synthesis.plan_structure_vs_srv", hashes_source=True, repo_anchored=True),
+    Reader("braunschweig.analysis.synthesis.students_vs_srv", hashes_source=True, repo_anchored=True,
+           input_files=_students_vs_srv_inputs),
     Reader("braunschweig.analysis.analysis_suite", {"analysis_suite_enabled": True},
            off=({"analysis_suite_enabled": False},), hashes_source=True, repo_anchored=True, tolerant=True),
     Reader("braunschweig.analysis.simwrapper_export", {"simwrapper_export_enabled": True},
@@ -136,6 +150,9 @@ def _prepare(reader, config, data_path, monkeypatch):
         from braunschweig.analysis import spatial
         monkeypatch.setattr(spatial, "VG250_ZIP", pathlib.Path(data_path) / VG250_ARCHIVE)
         monkeypatch.setattr(spatial, "REGIOSTAR_XLSX", pathlib.Path(data_path) / REGIOSTAR_SHEET)
+    if reader.input_files is not None:
+        for path in reader.input_files(str(data_path)):
+            _create(data_path, path)
     module_name = reader.module
     common = {
         "data_path": str(data_path), "random_seed": 0, "sampling_rate": 1.0,

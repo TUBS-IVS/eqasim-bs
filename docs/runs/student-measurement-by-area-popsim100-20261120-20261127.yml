@@ -1,0 +1,169 @@
+id: student-measurement-by-area-popsim100-20261120-20261127
+date: '2026-11-27'
+repository:
+  commit: 967583cd
+  branch: claude/i140-student-synthesis-2ddca2
+  notes: >-
+    Task 1 of docs/superpowers/plans/2026-11-27-student-layer-phase3-synthesis.md. Code state 967583cd (Task 1 commits
+    85b9d725, bbb1d49d, cd6ad153, b2ef4a3e, 74ce7d46, 967583cd). The run executed the measurement ref
+    760bff86894de6e7a55e6910c6371a4b0f0f9e39 (local branch measure/i140-by-area, not pushed; bundle sha256
+    40e8ebbdb6af1785708022864d23f1bbde62bdc2491533635cfe3078a5803097). That ref is the Phase 1 measurement ref
+    0681e38be157032619b8a88067f6df71cca55633 (run commit 1041849c243c71859c95275447a24363ee1aa358 of
+    popsim100_20261120 plus the Phase 1 stage) with the measurement modules, the two stage test files and the four SrV
+    tables taken unchanged from 967583cd. The Java side is eqasim-java-bs cb7e81fa3851c1338cfd80921c9d55aaeef2e600.
+    Measurement on the cached population of run popsim100_20261120 (see docs/runs/popsim-full-rerun-20261120.yml); the
+    run directory, host and user are not recorded in tracked files.
+configuration:
+  base: configs/base_bs.yml
+  overlays:
+  - configs/overlays/test_100pct.yml (run list and paths replaced by the run overlay below)
+  - docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/run.yml
+  notes: >-
+    Production values of the run commit, unchanged. The overlay (run.yml, written by scripts/isolated_run.py overlay
+    from the Phase 1 overlay run_overlay_students.yml of student-measurement-popsim100-20261120-20261126) only replaces
+    the run list with the analysis stage braunschweig.analysis.synthesis.students_vs_srv. No model value was changed.
+sampling:
+  rate: 1.0
+  scope: >-
+    the cached full population of run popsim100_20261120 (the full model area, ZGB-8). The SrV side covers the seven
+    surveyed Kreise; the home areas are braunschweig (03101 only), surrounding (the six other surveyed Kreise, 03102 included) and
+    wolfsburg (03103, not surveyed by SrV, model-only with empty SrV columns).
+  notes: >-
+    Universes as in student-measurement-popsim100-20261120-20261126: shares of attributes over present adult students,
+    the away-all-day share over all adult students; students are SrV V_ERW 7 and model P_TAET 10, adults are 18 and
+    older. Model counts are sample counts at sampling_rate 1.0, unweighted; SrV shares are weighted with
+    GEWICHT_P_ZENSUS. The standard errors are SrV ones only; the model sampling error is not included.
+pipeline:
+  targets:
+  - braunschweig.analysis.synthesis.students_vs_srv
+  notes: >-
+    Deviation from the Phase 1 run, and why: the run server had less free disk (55 GB) than the 64 GB cache copy that
+    scripts/isolated_run.py setup --cache-from makes, so setup ran WITHOUT a cache copy (git worktrees, symlink farm,
+    run.json). The overlay came from isolated_run.py overlay (run list = the one analysis stage). Then
+    scripts/explain_stale_stages.py configs/base_bs.yml ../run.yml --working-directory <run cache of
+    popsim100_20261120> reported 41 stages, 40 HIT and 1 STALE (students_vs_srv, the target; explain_readonly.log).
+    The committed driver scripts/run_stage_readonly.py (in the artifacts directory) then executed the stage through
+    synpp's ExecuteContext, reading the dependency pickles of that cache read-only (readonly_dependencies.json lists
+    them) and writing its own cache path and outputs elsewhere. Afterwards no file of the source cache was newer than
+    the driver (find -newer, empty) and its pipeline.json kept its modification time of 2026-11-20; evidence in
+    source_cache_readonly_check.txt. Both logs (explain_readonly.log, run_readonly.log) are force-added although *.log is
+    gitignored. Log
+    run_readonly.log: exit 0, 2026-11-27, about two minutes. Artifacts were copied to
+    docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/ with run directory, host and user
+    replaced by placeholders (RUN_DIR, <run server home>, <run server>); run.json lists the 51 excluded unrelated server
+    entries as a count only. Output sha256 (line endings normalised to LF): student_behaviour_vs_srv.csv
+    92613e3f5cf2e69a58f789a7689f0274d80e92e74ac241dbec39d812fc67ce52, student_level_by_kreis.csv
+    5ffb3390ff45758f7d9e4d2d85a95668ac9b07274da663bfa90f668d952b4bd2, student_plan_source.csv
+    5c3ed93a6c110f303008df6acada8ac09d63903db4bd1a7aac269a75e03f8d8d, student_work_class.csv
+    708d28cd8be91257adfa8353f02d08f970a5f8ad1f77a2696af9fca6ce9ae9db, young_adult_status_by_kreis.csv
+    01937e3c3aa791d8e3aaf2bdf0e79a13cfe2bb7c71a59b2791f512c4feb18916 (these five equal their Phase 1 files byte for
+    byte), and the new or changed student_behaviour_by_area.csv
+    e5bb769f9b2f6c59338c3665d7d2c755b5371a52ff4730e44a13eff4aa2527fc, education_leg_by_student_status.csv
+    00241b7606df9b8aedfc214d6764cd1d374726589d2f6aa75c06c796fdc563a9, students_vs_srv_report.json
+    05daec69914b1ea04dcdf4660cdb7cfb2b695529ca65fbb35639f94c9630651e, summary.md
+    56dee75cde314a5278f4d7df9d5e8ac2bb718783ee51e822e3673fe61e521c7c, provenance.json
+    65af66edf2cbe8ca7fa6a0bfe3a16160742eff4481524f4f3d3cdcdaad309bd2, run.json
+    aa23e852bf86088936cd8b8cbcb44acbfe204fb09b05e43b2c23922b2d1b7939, run.yml
+    db8b3d5e1c64a27e1fa1f88e358b6f19a829d2fbcdb6292e797319fd39a1217b, explain_readonly.log
+    e546df124e68fbc90a5196e098f7c5fbe546c46c9b2e25193012b385ced8cc0a, run_readonly.log
+    98101389c91c0a15ea09e820a3994561fabfd4f317b92c573b1e98776d661ced, readonly_dependencies.json
+    1c483e2c06f6ef31c39068c4e833fc4c2c5e8475279df73de2792e47aaba5b3b, scripts/run_stage_readonly.py
+    4b31e584438be2fca146f803d1067b396cd635cadcef3772896d8f43a8bfab44 (docstring updated after the run, code unchanged), source_cache_readonly_check.txt 554ae8aedfe4e7ed144d6b8399a9cdaf7bdac74a65b753909f220d463ceba7f7. Inputs (sha256 as in provenance.json, LF
+    normalised): srv2023_student_parameters_by_area.csv 064a22e6aa2609f3c6d38ad0ce930caeb2a184122dcbb13a941a155606d66cd8,
+    srv2023_education_leg_by_student_status.csv 4c2deec204afd738994f829a61b12793702383df3ac8df88658d4cd6261f66b3,
+    srv2023_student_parameters.csv 865f5d697a98e89951608b18203f7c3e57fd9d190a513765458343249919e459,
+    srv2023_student_share_by_kreis.csv addfa1a3e70ca2d42021f410c2775b21955759fd5863141884534bf09fb32934,
+    srv2023_young_adult_status_by_kreis.csv e75b95e1b8a3eabfe318a5e6dc875a0287d2f02b33b28f01ce9e19b6eac2f24e, and the
+    committed rule table srv2023_student_area_rule.csv
+    03bb281329a6ae9a2eab370ed0db7e28dd629f073f3d26d8d1798567ccc45b37. Provenance note on the site table: the headers of
+    these Task 1 tables cite the sha256 of lsn_university_sites.csv c5225919253d42ff4653d9974c5dc95548503a6b2211a72bb64f13e955bd739d,
+    the older Phase 1 tables cite f3285926...; Phase 2 pinned new enrollment values in the seeding script (commit
+    a247054a). The site Kreise are the same.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    Classified smoke because the run-manifest schema has no measurement class: a measurement on a cached population,
+    not a validation. No reference is compared; the SrV tables are a survey, not ground truth. The run records what the
+    model produces and how far it lies from the survey in SrV standard errors; it says nothing about the model matching
+    reality.
+validation:
+- metric: the two rules of design A3 on the committed SrV tables (which share gets an area value, which stays regional)
+  reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
+  result: >-
+    Read from eqasim-data/data/braunschweig/srv/srv2023_student_area_rule.csv (braunschweig against surrounding;
+    z = difference_in_se of the difference of the two shares; the rule needs more than 2.0 standard errors and at least
+    100 respondents per base and 10 per label and rest; these thresholds are designer assumptions, design A14 and A20).
+    AREA VALUE: season_ticket / students_present / flatrate: braunschweig share 0.9330748615 (n_base 222, n_label 203),
+    surrounding share 0.7698927212 (n_base 216, n_label 161), difference_in_se 3.622914114, area_value True;
+    away_all_day / students_all / yes: braunschweig share 0.0869729022 (n_base 248, n_label 26), surrounding share
+    0.1729445122 (n_base 263, n_label 47), difference_in_se -2.124241066, area_value True. STAYS REGIONAL: education_leg
+    / students_present / yes: braunschweig 0.403320269 (222, 88), surrounding 0.3226027933 (216, 68), difference_in_se
+    1.238874695, area_value False; work_leg / students_present / yes: braunschweig 0.194638224 (222, 52), surrounding
+    0.1532654836 (216, 33), difference_in_se 0.800930003, area_value False; the control-definition rows
+    education_leg_control_definition and work_leg_control_definition carry the same values and the same verdicts (the two
+    definitions agree on the SrV data of this run). All six rows have enough_respondents True.
+- metric: model adult students by home area against SrV, rule 1 (beyond two SrV standard errors with at least 30 respondents)
+  reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
+  result: >-
+    Read from docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/student_behaviour_by_area.csv
+    (columns beyond_two_se and srv_cell_ok; rule 1 = both True; present students, away_all_day over all students;
+    model_n_base of braunschweig 9408 present and 10179 all, of surrounding 13004 and 14094, of wolfsburg 2731 and
+    2940). Across all rows of the table 31 rows (label rows; complementary labels counted separately) meet rule 1: Braunschweig 11, surrounding 20, Wolfsburg 0. The listing below is a selection of the nine cells named in the plan, not the full set of those rows. BRAUNSCHWEIG meets rule 1: season_ticket / flatrate model
+    0.8267431973 against SrV 0.9330748615 (srv_n 203), difference_in_se -4.123323072; work_leg / yes model 0.102997449
+    against 0.194638224 (srv_n 52), -2.242935666; lives_with_person_18_years_older / yes model 0.262542517 against
+    0.1718692499 (srv_n 44), 2.32899392. BRAUNSCHWEIG does not meet it: education_leg / yes model 0.4144345238 against
+    0.403320269 (srv_n 88), 0.2195443775; car_access / yes model 0.5680272109 against 0.5339849533 (srv_n 116),
+    0.661289323; household_type / alone model 0.3238732993 against 0.4030293691 (srv_n 43), -1.56378495; away_all_day /
+    yes model 0.07574417919 against 0.0869729022 (srv_n 26, srv_cell_ok False), -0.4122794479. Beyond two standard errors
+    but with too few respondents (srv_cell_ok False, so not rule 1): household_type / with_children model 0.1108630952
+    against 0.02575021903 (srv_n 6), 5.207236246; age_group / 30plus model 0.1540178571 against 0.05410142031 (srv_n 18),
+    4.280041253. SURROUNDING meets rule 1: lives_with_person_18_years_older / yes model 0.4923869579 against
+    0.7236185075 (srv_n 167), -5.893216047; car_access / yes model 0.6814057213 against 0.8379583635 (srv_n 187),
+    -4.842286221; work_leg / yes model 0.0775915103 against 0.1532654836 (srv_n 33), -2.394226925; away_all_day / yes
+    model 0.07733787427 against 0.1729445122 (srv_n 47), -3.193684849. SURROUNDING does not meet it: season_ticket /
+    flatrate model 0.7703014457 against 0.7698927212 (srv_n 161), 0.01106789373; education_leg / yes model 0.3571977853
+    against 0.3226027933 (srv_n 68), 0.8434746931. Beyond two standard errors but with too few respondents:
+    household_type / alone model 0.2377729929 against 0.1108188531 (srv_n 11), 4.609560332; household_type /
+    with_children model 0.1681021224 against 0.1040742445 (srv_n 26), 2.389879747; age_group / 30plus model 0.1409566287
+    against 0.07032630249 (srv_n 19), 3.148340042. WOLFSBURG is model-only (SrV columns empty, no rule applies): season_ticket /
+    flatrate 0.7696814354, work_leg / yes 0.08714756499, education_leg / yes 0.3859392164, away_all_day / yes
+    0.07108843537, lives_with_person_18_years_older / yes 0.3954595386, car_access / yes 0.6576345661, household_type /
+    alone 0.2629073599, household_type / with_children 0.166605639, age_group / 30plus 0.1768582937. The SrV standard
+    error is the SrV one only; the model sampling error is not included.
+- metric: adult education-leg share by student status, model against SrV (present adults; per Kreis, region, and the region split by age range)
+  reference: SrV 2023 aggregates of this branch (a survey, not ground truth)
+  result: >-
+    Read from docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/education_leg_by_student_status.csv
+    (model_share = model_n_present_with_leg / model_n_present; srv_n = respondents; Wolfsburg 03103 model-only). Student,
+    age 18plus: 03101 model 0.4144345238 (9408 present) against SrV 0.403320269 (srv_n 222), difference_in_se 0.2195443775;
+    03102 0.3754631536 (2429) against 0.2865304487 (40), 1.046659224; 03103 0.3859392164 (2731) model-only; 03151
+    0.4224719101 (2670) against 0.3100861249 (43), 1.164295485; 03153 0.2799389779 (2622) against 0.3067944336 (33),
+    -0.2847055702; 03154 0.2091310751 (1358) against 0.0920502751 (12), 0.9833205204; 03157 0.4108641975 (2025) against
+    0.5268135347 (48), -1.419150547; 03158 0.3973684211 (1900) against 0.2353569443 (40), 1.751335067; region 03ZGB
+    0.3812243441 (22412) against 0.3705664224 (438), 0.3112270188. Other adults, age 18plus: 03101 0.04124988981 (192849)
+    against 0.03046876096 (3236), 2.359401417; 03102 0.03684589843 (77702) against 0.0398274859 (1386), -0.4348085438;
+    03103 0.03725296955 (96395) model-only; 03151 0.04456811806 (131529) against 0.04950681284 (2745), -0.6450577666;
+    03153 0.0212312339 (101313) against 0.02249612742 (1792), -0.294714182; 03154 0.01775688919 (70001) against
+    0.02007141521 (1358), -0.414338012; 03157 0.04332698363 (102892) against 0.03653077169 (1809), 1.222509823; 03158
+    0.03030402738 (91176) against 0.0299330218 (1424), 0.06039877392; region 03ZGB 0.0355652788 (767462) against
+    0.03331247078 (13750), 0.9888476129. Region 03ZGB by age range: students 18_29 model 0.3995818087 (19130) against
+    0.3716710426 (srv_n 401), 0.778005584; students 30plus 0.2742230347 (3282) against 0.3534685835 (37), -0.7824031864;
+    other adults 18_29 0.1201133945 (99123) against 0.2090707238 (1086), -5.204342573; other adults 30plus 0.02302573993
+    (668339) against 0.01407815434 (12664), 5.704976897. The small student cells of the Kreise (srv_n 12 to 48) are
+    shown with their respondent counts, not pooled.
+issues:
+- '#140'
+decisions: []
+notes: >-
+  This is a measurement on a cached population, not a validation; the SrV aggregates are a survey, not ground truth,
+  and no target value is stated here. Wolfsburg (03103) is not surveyed by SrV: its rows are model-only. Small cells are
+  shown with their number of respondents, not pooled (owner decision, 2026-11-26). Rule 1 and the area rule are
+  designer-set measurement rules (assumptions), not sourced thresholds. The other stage outputs (student_level_by_kreis,
+  student_plan_source, student_behaviour_vs_srv, student_work_class, young_adult_status_by_kreis) are identical to
+  the Phase 1 manifest student-measurement-popsim100-20261120-20261126 and are not restated here; its numbers stay the
+  owner of those tables.
+source: >-
+  braunschweig.analysis.synthesis.students_vs_srv over the inputs under pipeline.notes; outputs committed under
+  docs/runs/artifacts/student-measurement-by-area-popsim100-20261120-20261127/ and eqasim-data/data/braunschweig/srv.

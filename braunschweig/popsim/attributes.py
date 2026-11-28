@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 # (5 Elternzeit and 7 FSJ/Wehrdienst are NOT erwerbstätig per the MiD `erwerb` variable.)
 EMPLOYED_TAET = frozenset({1, 2, 3, 4, 6, 8})
 
+# MiD P_TAET 10 = Student/in (see the code list above): the status class the donor matches key on for
+# student targets (A1 of the student design, ADR-0211). Owned here, next to EMPLOYED_TAET, so the
+# hashed donor build and the calibration reference read ONE value.
+STUDENT_TAET = 10
+
 # MiD P_BKAT (Umfang der Erwerbstaetigkeit; MiD 2023 Codeplan B1, Personen col
 # 121; VERIFIED against the raw MiD2023_Personen.csv cross-tab with `erwerb`:
 # codes 1-6 all erwerb=1, code 7 erwerb=0). P9's seven reference columns are the
@@ -733,6 +738,21 @@ def map_pt_subscription_type(
     return out
 
 
+def pt_ticket_group4_of(category: pd.Series) -> np.ndarray:
+    """The :data:`PT_TICKET_GROUPS4` label of each resolved ticket category (pure, no logging).
+
+    The one place the four-group collapse is written: :func:`map_pt_ticket_group` uses it for
+    the ``pt_ticket_group4`` column, and a caller that needs the group labels of a set of
+    categories (e.g. the flat-rate groups of ``PT_TICKET_FLATRATE``) calls it on that set
+    instead of re-deriving them. ``category`` holds ``PT_TICKET_CATEGORIES`` strings.
+    """
+    return np.where(
+        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
+        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
+                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
+                          "occasional_ticket")))
+
+
 def map_pt_ticket_group(
     persons: pd.DataFrame, *, type_col: str = "pt_subscription_type",
 ) -> pd.DataFrame:
@@ -776,11 +796,7 @@ def map_pt_ticket_group(
     # Four-group variant (issue #329): the not_flatrate mass split into never_pt and
     # occasional_ticket. Derived from the SAME resolved category, so it collapses onto
     # pt_ticket_group exactly (ADR-0087's rule: never re-resolve the raw P_FKARTE).
-    out["pt_ticket_group4"] = np.where(
-        category == PT_TICKET_DEUTSCHLANDTICKET, PT_TICKET_DEUTSCHLANDTICKET,
-        np.where(category.isin(PT_TICKET_OTHER_FLATRATE), "other_flatrate",
-                 np.where(category == PT_TICKET_NEVER, PT_TICKET_NEVER,
-                          "occasional_ticket")))
+    out["pt_ticket_group4"] = pt_ticket_group4_of(category)
     n = len(out)
     if n:
         counts = out["pt_ticket_group"].value_counts()

@@ -61,3 +61,16 @@ def test_behavioural_sanity_computes_trips_per_person_per_cohort():
     tpp = dict(zip(out["donor_day_type"], out["trips_per_person"]))
     assert tpp["weekday"] == 2.0
     assert tpp["weekend"] == 0.5  # (1 + 0) / 2
+
+
+def test_hh_match_level_funnel_separates_the_student_ladder_when_the_trace_marks_it():
+    trace = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4], "P_ID": [1, 1, 1, 1],
+        "resolution": ["hh_match"] * 4,
+        "match_level": [2, 2, 2, 6],
+        "hh_student_ladder": [False, True, True, True],
+    })
+    funnel = wpv.hh_match_level_funnel(trace)
+    rows = {(bool(r.hh_student_ladder), int(r.match_level)): int(r.n) for r in funnel.itertuples()}
+    # level 2 of the short ladder and level 2 of the student ladder are different rows
+    assert rows == {(False, 2): 1, (True, 2): 2, (True, 6): 1}

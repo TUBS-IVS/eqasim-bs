@@ -32,9 +32,11 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 48 (+12 production-reachable stages without a token, repository audit C2, group 1).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 61 (+13, group 2 of the production-reachable stages without a token, repository audit C2).
 #: 2026-11-12 on branch fix/audit-c2-c3-stage-tokens: 69 (+8 production stages that run declared stages as libraries, ADR-0194).
-#: 2026-11-26 on branch feature/i688-emissions: 73 (+4 post-run emissions stages = braunschweig.data.hbefa,
-#: braunschweig.emissions.inputs, braunschweig.emissions.events, braunschweig.emissions.summary, ADR-0209).
-EXPECTED_SOURCE_HASHING_STAGES = 73
+#: 2026-11-26 on branch claude/i140-student-measurement-47cf6f: 70 (+1 braunschweig.analysis.synthesis.students_vs_srv, #140).
+#: 2026-11-26 on branch feature/i688-emissions: +4 post-run emissions stages = braunschweig.data.hbefa,
+#: braunschweig.emissions.inputs, braunschweig.emissions.events, braunschweig.emissions.summary, ADR-0209;
+#: 74 after merging both into claude/i140-student-synthesis-2ddca2.
+EXPECTED_SOURCE_HASHING_STAGES = 74
 
 #: Stages whose token holds a non-source part (data files, sizes) next to the module digests.
 _COMPOSITE_STAGES = {
@@ -67,6 +69,9 @@ _COMPOSITE_STAGES = {
     "braunschweig.freight.extraction_tool",
     "eqasim_common.data.osm.chunked",
     "matsim.runtime.eqasim",
+    # Holds the VG250 / RegioStaR digests and the digests of the committed SrV student tables and
+    # the Zensus employed-by-age file next to the module digests (#140).
+    "braunschweig.analysis.synthesis.students_vs_srv",
 }
 
 

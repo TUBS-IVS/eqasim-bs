@@ -1,0 +1,419 @@
+id: student-balance-2026-11-26
+date: '2026-11-26'
+repository:
+  commit: '0a352955'
+  branch: claude/i140-student-balance-3b6cbe
+  notes: >-
+    Code state of every table of this run: d800ccdc (written in the header of each committed table, calibration artifact,
+    option table and the decision aid). Commit 0a352955 holds the tables of that re-run (the five committed tables and every
+    run artifact); the sha256 values under pipeline.notes are those of the blobs at 0a352955. The commits of the phase are
+    listed by git log bd7844f7..HEAD. The run directory, host and user are not recorded in tracked files.
+configuration:
+  base: configs/base_bs.yml
+  notes: >-
+    No model configuration. No synpp stage reads the tables yet (Phases 3 and 4 of #140). The settings of the build are
+    CLI arguments (weights, mover share, weight rule, max_commute_km); the values used are in the Weights and Weight rule
+    lines of every table header.
+sampling:
+  rate: not applicable (head-count tables from published aggregates)
+  scope: >-
+    Study region ZGB (eight Kreise as homes), the 21 sites of 16 institutions of the choice set (two distance-learning institutions are dropped), CHE origins WS 2022/23 scaled to LSN
+    enrollment WS 2024/25, SrV 2023 destination reference of the seven surveyed Kreise (Wolfsburg 03103 is not surveyed).
+  notes: The table rules (two CHE views, censored cells, art academy, distance learning) are in ADR-0210.
+pipeline:
+  targets:
+  - scripts/build_student_balance.py
+  notes: |-
+    Commands (local-only inputs are named by file name and sha256, never by path). Calibration: python -X utf8 scripts/build_student_balance.py calibrate
+    --sites lsn_university_sites.csv --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --source-commit d800ccdc --out-dir <run artifact dir>
+    (the comparison run adds --weight-rule centroid_bands).
+    Final tables (option C, the five committed tables): python -X utf8 scripts/build_student_balance.py balance --sites lsn_university_sites.csv
+    --vg250 vg250-ew_12-31.utm32s.gpkg.ebenen.zip --zensus-students zensus2022_students_20_29_kreis.csv --zensus-employed zensus2022_employed_by_age_kreis.csv
+    --weights 1,1,0.3 --mover-share 0.4 --mover-site-kreise 03158 --weights-source owner --source-commit d800ccdc
+    --artifact-dir <run artifact dir> --final --out-dir eqasim-data
+    (--mover-site-kreise has a default, 03102,03103,03158, that the final run does NOT use.)
+    Option runs (options/<label>/): the same call with --label <option> instead of --final --out-dir; the weights, mover share, mover site Kreise and
+    source of each option are in the Weights line of its table headers (A: 1,1,0.95 and 0, calibrated; B: 1,1,0.55 and 0.15, calibrated; C: as the final run;
+    comparison_centroid_bands: --weight-rule centroid_bands with 1,1,0.5 and 0.2, calibrated; A, B and the comparison use the default mover site Kreise).
+    The decision aid is weights_decision/analyse_weight_candidates.py in the artifact directory (arguments in its docstring).
+    The level decision aid is level_decision/analyse_student_level.py in the artifact directory (arguments in its docstring;
+    its inputs and their sha256 are in the headers of its tables).
+    Inputs as written in the table headers (committed text files are hashed LF-normalised, as git stores them; local-only files by raw bytes):
+    che_origins: eqasim-data/data/braunschweig/schools/che_student_origins_ws2022_23.csv sha256 a283078c026e9ef348c24d70e9ebe18593297ed95786b272553a0ba249dea38d;
+    lsn_site_table: lsn_university_sites.csv (local-only) sha256 f32859264909aa7a94fd5b5fd537f9cf5aab532630a796f20ca9c8893b9b4946;
+    vg250_archive: vg250-ew_12-31.utm32s.gpkg.ebenen.zip (local-only) sha256 51a31279653edc1488c98484ddbc346dcd9f77cf0b1d6a75cd2179da57ed962f;
+    curated_sites_script: scripts/seed_nds_hochschulen.py sha256 700ec813e27eba1548be6129386d7d440d3e077e70a1efc4a2de6c81fca2d467;
+    srv_destination_reference: eqasim-data/data/braunschweig/srv/srv2023_student_education_destination.csv sha256 5602294f4b5c4f5907a59a5cdf3e1ec546e57f244bced8efcbcbaa9cc756af56;
+    srv_student_share: eqasim-data/data/braunschweig/srv/srv2023_student_share_by_kreis.csv sha256 addfa1a3e70ca2d42021f410c2775b21955759fd5863141884534bf09fb32934;
+    srv_student_parameters: eqasim-data/data/braunschweig/srv/srv2023_student_parameters.csv sha256 3fe372df63f25b22047a404db048282602af06ee9765f7fe86fce8f11acdb685;
+    srv_education_distance: eqasim-data/data/braunschweig/srv/srv2023_student_education_distance_by_kreis.csv sha256 ae1cace657c90ca2c0b113e02edd73debc50efc29060ee09fca97347aba75e23;
+    mid_student_share: eqasim-data/data/braunschweig/mid/mid2023_student_share_20_29_by_land.csv sha256 491150d7dda6fabf872c1d1a7472c98602a7a1a4dd65bc25c92b0c801e54a8c2;
+    mid_education_distance: eqasim-data/data/braunschweig/mid/mid2023_student_education_distance_mode.csv sha256 73e8a2efc0d9b8725f10a789f500394e0ef5bb4b2b4cffb29c08150dfc6b958d;
+    mikrozensus_school_distance: mikrozensus2024_school_distance_by_type.csv (local-only) sha256 fe2c8dbd22ac164cd8bea8374ef68c7b92f63dcec558c565d8d21a7a87bfb527;
+    zensus_students: zensus2022_students_20_29_kreis.csv (local-only) sha256 fb14b58cd731b56c13873b66046c8150ddaa18e65e719f36cc2b22ee4061dcb7;
+    zensus_employed: zensus2022_employed_by_age_kreis.csv (local-only) sha256 43d64e5d0f8bfb417385290dcb96ed94b1b1992dcd550afd82235b2c70ebb586;
+    model_level: docs/runs/artifacts/student-measurement-popsim100-20261120-20261126/student_level_by_kreis.csv sha256 5ffb3390ff45758f7d9e4d2d85a95668ac9b07274da663bfa90f668d952b4bd2.
+    Logs in the artifact directory: calibration_logs.txt, balance_option_logs.txt, balance_logs.txt, weights_decision/decision_logs.txt, level_decision/level_decision_logs.txt.
+    sha256 of the committed blobs at commit 0a352955 (the hash of the weights_decision script is that of its unchanged file):
+    eqasim-data/data/braunschweig/popsim/student_level_table.csv: ab58b0cb61f4247e70b1a490b9d5441b4c77243b0e7985ebdc03217c294def96
+    eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: 1b2759f84f7137492bfb14168d87f1259efc219de9247c76e7e7c28c5d863967
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv: 15b7a10b8f2f44d681c62709c2f656774944c4005f900e6c5f86f7d548e68de4
+    eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv: c77888a24a47d55fd27824de90eecd83e8cbba8d9469e63fce9ad11fdcb75e47
+    eqasim-data/data/braunschweig/schools/student_od_table.csv: e9eacaa1ba9a18d08cf8db4cb1abfbbfaa380c39baa1a4df17c124f5461c422f
+    docs/runs/artifacts/student-balance-2026-11-26/balance_logs.txt: 8353db8b3235d50249032dca2a46e603d568bf5e1aadb3ea113923e0d46fb60e
+    docs/runs/artifacts/student-balance-2026-11-26/balance_option_logs.txt: f8a35c3fb50a2470e0ff3ef33d2bc9dd829487830f08a5a08ffb2f17b9d862c6
+    docs/runs/artifacts/student-balance-2026-11-26/calibration_logs.txt: 2387feabd16327ce4253dcb665cd3e5258de2f9063c3eadcb4e470d038fff9e7
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_calibration.csv: 4fb0fdbf7ee2c24b33662386bb2a336e52dd13bd35c46a901cd9a9b8321ce17f
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_context.csv: abdc22980c9a73704ea024e08686f4f3edcac5dbf10b8a211c65f6928a1a2305
+    docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_fit.csv: 1de7abccca4d32a10b695c2529896cf07995150017f1eea0e5cac5cee88cec91
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_by_site.csv: 39c0cc233bbb111eb3c081e0e91da54a9d70979b133912a9472ab5345125186e
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_in_commuters_by_origin.csv: 2b6d512c4e281f35703aa35da3219da9e29970f0a7625388f2678a0e0aea9da5
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_balance_out_commuters.csv: 2f01b2ff2bebe199e95533fdd683d8a8adbab849cf8e53d5f2a99708d2344135
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_employed_target_precheck.csv: 14aa0fc0aa19cc61eb165765d14b4f36059575c6a83a4b63cb8bed3c3e8f0bc0
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_gate.csv: c65b4fd06137dabe52aeaebb01d24046faa46e7714768811e1ec8e8569e06871
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_level_table.csv: ea98c185d3a1a5f22f36b3ae282b6ad99b2c678f604cffa8ed246e9f6445a10e
+    docs/runs/artifacts/student-balance-2026-11-26/options/comparison_centroid_bands/student_od_table.csv: 99a702f551c9c8f4a12af2b39eafcc2b79093d8134ab3a685b2862ce971e2bd2
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_by_site.csv: 992676679beff84800192fe5f45f99c4229c371e1b1e8452b4dc4407113d7fe8
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_in_commuters_by_origin.csv: fa99684f583c98be2fe309483f0d605d14e82acce6c6ad23ec8d54f3d175e5ed
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_balance_out_commuters.csv: ac2def4879197e37f42151551ed58a48267ce270ad1c49c0a804cbe7db11cb2a
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_employed_target_precheck.csv: a51e4af4eb062df6a5532f87e2589ecd390c4346e9992e4ca7b3d0988e50bbb6
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_gate.csv: 136d8c346092fdf00cb1987e785339f809e3a5729b4f55e96a97947ae5d87b7b
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_level_table.csv: 0b1ebd4dc52b608617e64629727da52e2d888aee323219951239edb1f3778971
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_a_weights_optimum_undecided/student_od_table.csv: bea271d7b0dbbd20c2690c0ec2eebb0a4f0704da9bf9e07eb528291fe708444d
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_by_site.csv: 147ca9ff302d40e8e61285839586e939c571d0609f4e472da1d9fa515020ea2e
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_in_commuters_by_origin.csv: 4a310eb37505dd882396e52d558033a23b18a483bcab0c85604714222042c7fe
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_balance_out_commuters.csv: 8083daf097050ce18d2164fc448001a0d59e444e89548e6091ff497d1d95875c
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_employed_target_precheck.csv: 971714c8fc4fc5c9659c6fcfc9fbce8a64087e1bc161fd874e7a212e74fc778a
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_gate.csv: df3e098894a17221c1381c2ce43b764f9215ff2f18bb27a017e9e704f62a434f
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_level_table.csv: 75b16b68fa2aa0bf7cb80db8c44a09f5cc68f2eb6633bcf71d048dd6fcb363e8
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_b_weights_and_movers_optimum_undecided/student_od_table.csv: 60ce0627af74087d3a04f4f3861c8a8b03aa3c02d50c01e012015552df89d8bf
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_by_site.csv: 1b2759f84f7137492bfb14168d87f1259efc219de9247c76e7e7c28c5d863967
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_in_commuters_by_origin.csv: 15b7a10b8f2f44d681c62709c2f656774944c4005f900e6c5f86f7d548e68de4
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_balance_out_commuters.csv: c77888a24a47d55fd27824de90eecd83e8cbba8d9469e63fce9ad11fdcb75e47
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_employed_target_precheck.csv: 92b2be1e54e4eb9e65639d6670e2186353e9bbd077a755f9344f40d0a5d874bc
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_gate.csv: b81785f640134bfbc90ed1540cd1d2d25c0a87b589cf5a8f2d5a633dee191761
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_level_table.csv: ab58b0cb61f4247e70b1a490b9d5441b4c77243b0e7985ebdc03217c294def96
+    docs/runs/artifacts/student-balance-2026-11-26/options/option_c_lead_recommendation_pending_owner/student_od_table.csv: e9eacaa1ba9a18d08cf8db4cb1abfbbfaa380c39baa1a4df17c124f5461c422f
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_calibration.csv: 08efc43827b6612a64a351c1baae346c16093d10497f888017a771d128d088a2
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_context.csv: 07c6ebb3b1d702d314b0e7fc2984073b79d7d223515f711505e5b1903e30984a
+    docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_fit.csv: bc0c7087fb8a79511bde67ed60a7696f6c4b3f11884344c2859be2e5af68502d
+    docs/runs/artifacts/student-balance-2026-11-26/student_employed_target_precheck.csv: 92b2be1e54e4eb9e65639d6670e2186353e9bbd077a755f9344f40d0a5d874bc
+    docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv: b81785f640134bfbc90ed1540cd1d2d25c0a87b589cf5a8f2d5a633dee191761
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/analyse_weight_candidates.py: bb022b94d39a3cca8b5c4704fa9ebd17d0822425a6e95dc4051b09c3cf8cb5ae
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/decision_logs.txt: 8bd65412c82c43769bb44f8a7570027413035d8b6e0509390664a60c50c245b6
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv: ae87fbf583a6ae1d34d935807091acccb46445191f7520d86685ac039fb512df
+    sha256 of the committed blobs of the level decision aid at commit 48c3ab83:
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/analyse_student_level.py: c54de7df5fc3d260a2ff050a3e817178985aaf7302dc3dba4c25c17d7b3c4f31
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/census_pattern_check_nrw.csv: 78ea2dcc65e200ea3a5d0799e37aa343cd2a153e1d3fd7e6fffd29415c8e3ff2
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/destatis_students_by_age_ws2022_23.csv: 55ade64e1285d2c7153b62217f19e8cd41d7d2710177f7b86f9297e34edbb788
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/entrance_qualifications_by_school_district.csv: db24b14d486a5d1243e1c42e6528e54bf9c8ddd1d3656b2a0db2dce290c4fb19
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/level_decision_logs.txt: 2859a7a5e78d97d6a39582110229f92a1c877d0f14abeb829ec4bd6cf015d491
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_enrollment_by_site_and_semester.csv: 265b98ce7543b728b051dd6e5390e032c5e1f6d3436652630142b57da88aca28
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_entrance_qualifications_by_school_district_2021_22.csv: bb0517354041eef931144249274bbb6d2a5d3abae04642773aae3d024121d3bf
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/lsn_population_20_29_by_kreis.csv: ac642c8dce40c0b4c20136642eaba52d121e6c51de8d4e75321572240c91e77e
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/mid_school_degree_check_20_29.csv: 5deb5a04f94d8af002382b6562e3620235c084c59a75e96de3c54e0297cee108
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/national_enrollment_20_29.csv: f95315c52a7306a505d948de347dd1bdc331fd27a4c9bd56199908c608f357a7
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/nrw_census_students_18_26.csv: 4101243e322e772d85c82b18ac9b7f7437da5e4e9a0950f59f5db273db7766ac
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/srv_school_degree_20_29.csv: 2bdca88e7c9bdae91df5b76ed2140d95c4e2a9529f6c9d431b54cdf6874446c1
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_age_distribution.csv: 478eb95e36f98f559cae7f8b36abeac0a052174a3535c413e680f39dead43fda
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_education_leg_day_20_29.csv: d2e66db926b4225852d2e1a6adde15607f3d92282a4e07a99724e5e661dd44cd
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/student_level_estimates_20_29.csv: 107c070bcd59560fd82c0c168a5576a55de6641838ae834144fc9fddfa0daa6e
+classification:
+- calibration
+status:
+  execution: completed
+  notes: >-
+    A table build and a calibration on survey aggregates, not a validation. The calibration could not decide (validation
+    entries below); the weight triple and the mover share of the final tables were set by the owner.
+    The final tables of this run are superseded by run student-balance-2026-11-27; its calibration, weights decision and
+    level decision aid stay the evidence.
+validation:
+- metric: 'calibration stage weights: total variation distance to the SrV destination reference (commune-curve weights)'
+  reference: SrV 2023 destination reference (survey aggregate; sampling noise is the noise floor)
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_calibration.csv, line '# Stage weights:'.
+    Optimum short=1 middle=1 long=0.95 mover_share=0; objective_tvd 0.1547294729; noise_floor_tvd_95 0.2225188096; decided=False;
+    ranges within the noise floor {"short": [0.05, 1.0], "middle": [0.0, 1.0], "long": [0.0, 1.0]}; reasons: optimum short
+    = 1 lies at the bound of [0, 1]: the best value may lie beyond what the grid can express | optimum middle = 1 lies at
+    the bound of [0, 1]: the best value may lie beyond what the grid can express | short ranges from 0.05 to 1 within the
+    noise floor 0.222519 of the optimum (width 0.95 > max_flat_range 0.2) | middle ranges from 0 to 1 within the noise floor
+    0.222519 of the optimum (width 1 > max_flat_range 0.2) | long ranges from 0 to 1 within the noise floor 0.222519 of
+    the optimum (width 1 > max_flat_range 0.2). The calibration wrote no configuration value.
+- metric: >-
+    calibration stage weights_and_movers: total variation distance to the SrV destination reference (commune-curve weights)
+  reference: SrV 2023 destination reference (survey aggregate; sampling noise is the noise floor)
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_calibration.csv, line '# Stage weights_and_movers:'.
+    Optimum short=1 middle=1 long=0.55 mover_share=0.15; objective_tvd 0.148141142; noise_floor_tvd_95 0.2225188096; decided=False;
+    ranges within the noise floor {"short": [0.05, 1.0], "middle": [0.0, 1.0], "long": [0.0, 1.0], "mover_share": [0.0,
+    1.0]}; reasons: optimum short = 1 lies at the bound of [0, 1]: the best value may lie beyond what the grid can express
+    | optimum middle = 1 lies at the bound of [0, 1]: the best value may lie beyond what the grid can express | short ranges
+    from 0.05 to 1 within the noise floor 0.222519 of the optimum (width 0.95 > max_flat_range 0.2) | middle ranges from
+    0 to 1 within the noise floor 0.222519 of the optimum (width 1 > max_flat_range 0.2) | long ranges from 0 to 1 within
+    the noise floor 0.222519 of the optimum (width 1 > max_flat_range 0.2) | mover_share ranges from 0 to 1 within the noise
+    floor 0.222519 of the optimum (width 1 > max_flat_range 0.2). The calibration wrote no configuration value.
+- metric: comparison run with the design's original rule (hard bands at the Kreis centroid), stage weights
+  reference: SrV 2023 destination reference
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_calibration.csv
+    (weight_rule=centroid_bands), line '# Stage weights:'. Optimum short=1 middle=1 long=0.75 mover_share=0; objective_tvd
+    0.1616276466; noise_floor_tvd_95 0.2225188096; decided=False. Also undecided: the rule is kept as a comparison only
+    (ADR-0210). The pairs with a non-zero coefficient of the two rules are in the pair coefficients lines of balance_logs.txt
+    (commune_curve) and balance_option_logs.txt (centroid_bands).
+- metric: comparison run with the design's original rule (hard bands at the Kreis centroid), stage weights_and_movers
+  reference: SrV 2023 destination reference
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/comparison_centroid_bands/student_commuter_weight_calibration.csv
+    (weight_rule=centroid_bands), line '# Stage weights_and_movers:'. Optimum short=1 middle=1 long=0.5 mover_share=0.2;
+    objective_tvd 0.1532954511; noise_floor_tvd_95 0.2225188096; decided=False. Also undecided: the rule is kept as a comparison
+    only (ADR-0210). The pairs with a non-zero coefficient of the two rules are in the pair coefficients lines of balance_logs.txt
+    (commune_curve) and balance_option_logs.txt (centroid_bands).
+- metric: values used by the final tables and their source
+  reference: none
+  result: >-
+    Read from the Weights line of every final table header: Weights: short=1 middle=1 long=0.3 mover_share=0.4 mover_site_kreise=[03158]
+    weights_source=owner (calibrated = optimum of a decided calibration stage, owner = set by the owner). The owner chose
+    option C of the decision aid on 2026-11-26 and set the triple and the mover share as an ASSUMPTION of the owner; they
+    are not calibrated. Candidate rows with model shares and distance-class shares: docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv
+    (labels option_a_stage_weights_optimum, option_b_stage_weights_and_movers_optimum, option_c_lead_recommendation). The
+    reasons are in ADR-0210.
+- metric: 'balance per local site: residents, in-commuters, total (persons, heads)'
+  reference: none (construction from CHE origins scaled to LSN enrollment)
+  result: >-
+    Read from eqasim-data/data/braunschweig/schools/student_balance_by_site.csv: TU Braunschweig | 03101000: residents_region_persons
+    14140.68183, in_commuters_persons 1491.318171, total_persons 15632 (enrollment_persons 15632); Hochsch. f. Bildende
+    Künste Braunschweig | 03101000: residents_region_persons 902, in_commuters_persons 0, total_persons 902 (enrollment_persons
+    902); TU Clausthal | 03153018: residents_region_persons 2554.745644, in_commuters_persons 204.2543564, total_persons
+    2759 (enrollment_persons 2759); HS Braunschweig/Wolfenbüttel | 03102000: residents_region_persons 1478.552477, in_commuters_persons
+    190.4475233, total_persons 1669 (enrollment_persons 1669); HS Braunschweig/Wolfenbüttel | 03103000: residents_region_persons
+    2179.397673, in_commuters_persons 183.6023273, total_persons 2363 (enrollment_persons 2363); HS Braunschweig/Wolfenbüttel
+    | 03158037: residents_region_persons 4635.61601, in_commuters_persons 456.3839901, total_persons 5092 (enrollment_persons
+    5092)
+- metric: out-commuters per surrounding institution (persons, heads)
+  reference: none
+  result: >-
+    Read from eqasim-data/data/braunschweig/schools/student_balance_out_commuters.csv, column out_commuters_persons (15
+    rows): HS Braunschweig/Wolfenbüttel | 03360023: 120.8448891; Uni Hannover | 03241001: 980.8409467; HS Hannover | 03241001:
+    205.1796574; MHH Hannover | 03241001: 106.923613; TiHo Hannover | 03241001: 0; Hochsch. f. Musik, Theater und Medien
+    Hannover | 03241001: 28.13508417; Uni Göttingen | 03159016: 379.6219107; Uni Hildesheim | 03254021: 676.6660449; HS
+    Hildesheim/Holzminden/Göttingen | 03159016: 27.32654789; HS Hildesheim/Holzminden/Göttingen | 03254021: 237.9796694;
+    HS Hildesheim/Holzminden/Göttingen | 03255023: 8.911092683; Uni Lüneburg | 03355022: 0; OVGU Magdeburg | curated: 242.0943584;
+    Hochschule Magdeburg-Stendal | curated: 48.47519138; Hochschule Harz | curated: 313.9794151
+- metric: in-commuters per origin Kreis, total (persons)
+  reference: none; the in-commuters are observed nowhere, only the CHE counts bound them
+  result: >-
+    eqasim-data/data/braunschweig/schools/student_balance_in_commuters_by_origin.csv has 43 origin Kreise; the sum of in_commuters_persons
+    over them is 2526.00636823 (derived by summing the committed column).
+- metric: students living per home Kreis, omega and the day factor
+  reference: none
+  result: >-
+    balance_students_persons per Kreis (docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv): 03101: 15570.62287;
+    03102: 1804.966648; 03103: 2639.654021; 03151: 1209.301541; 03153: 3694.140172; 03154: 575.3196027; 03157: 1535.223297;
+    03158: 2238.743906; 03ZGB: 26628.31803. Header of eqasim-data/data/braunschweig/popsim/student_level_table.csv: omega=0.5349547395
+    = 1 - Z / S; Z=12226.80196, S=26291.63868, mid_students_to_pupils_and_students_ratio=0.9456150007, srv_age_share_20_29_among_adult_students=0.8983074957,
+    zensus_students_nonemployed_persons=12930, students_living_persons=29267.97205 (all eight Kreise, A12). Day factor line:
+    Day factor (for Phases 3 and 4; the tables count heads, no day factor applied): education_leg_share_control_definition=0.3705664224
+    * (1 - away_all_day_share=0.1239264157) = 0.3246434539, both shares from srv2023_student_parameters.csv.
+- metric: >-
+    level gate, comparison 1 (the design's): balance of the students living per Kreis versus the SrV count of that
+    Kreis with the students away all day added
+  reference: >-
+    SrV 2023 student share by Kreis (survey estimate; Wolfsburg 03103 is not surveyed). The SrV count covers only the
+    surveyed municipalities of a Kreis, so it can understate the Kreis; the coverage per Kreis is not measured in a
+    committed table
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv, header line gate_triggered and
+    columns difference_in_srv_se, beyond_two_se. gate_triggered=False (Braunschweig row or pooled row beyond 2.0 SrV
+    standard errors: the owner decides on the level then). difference_in_srv_se per row: 03101: -1.398051235
+    (beyond_two_se False); 03102: -2.096088575 (True); 03103: not evaluable (False); 03151: -0.2271432393 (False);
+    03153: 5.239893344 (True); 03154: -0.9046101775 (False); 03157: -2.646203237 (True); 03158: -0.6383568429 (False);
+    03ZGB: -1.851001761 (False). Rows beyond two standard errors next to gate_triggered=False are not a contradiction:
+    the gate looks only at the Braunschweig row and the pooled row (design A2); the other rows are reported.
+    Employed-target pre-check: 32 cells, smallest remainder_persons 3049.463784
+    (student_employed_target_precheck.csv).
+- metric: >-
+    level gate, comparison 2 (whole Kreis): the 20-29 part of the balance versus the SrV share of the students aged 20
+    to 29 times the Zensus population aged 20 to 29 of the whole Kreis
+  reference: >-
+    SrV 2023 student share 20-29 by Kreis (survey estimate) and the Zensus 2022 population 20-29; the estimate covers
+    the whole Kreis but applies the share of the surveyed municipalities to all municipalities of the Kreis
+  result: >-
+    Read from docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv, header line
+    gate_triggered_area_consistent and columns balance_students_20_29_persons, srv_estimate_students_20_29_persons,
+    difference_20_29_in_srv_se, beyond_two_se_20_29. gate_triggered_area_consistent=True (the same rule: Braunschweig
+    row or pooled row beyond 2.0 SrV standard errors). Braunschweig 03101: balance 13987.20723 versus SrV estimate
+    16776.12607 (standard error 1239.42826), difference_20_29_in_srv_se -2.250165604 (beyond_two_se_20_29 True).
+    Pooled 03ZGB (seven surveyed Kreise): balance 23920.41769 versus 33532.0742 (standard error 1926.425571),
+    difference_20_29_persons -9611.656519, -4.989373409 (True); the pooled estimate is the sum of the seven Kreis
+    estimates and its standard error the root-sum-square of the seven Kreis standard errors (not the pooled SrV share times
+    the pooled population). Other rows: 03102: -2.090896588 (True); 03103: not evaluable; 03151: -2.384917849 (True);
+    03153: 0.3703673664 (False); 03154: -1.45304628 (False); 03157: -3.31632005 (True); 03158: -2.523430899 (True).
+    The same table carries the Zensus-based estimate (Zensus group times the MiD ratio) as
+    census_estimate_students_20_29_persons: 03101: 9614.625881; 03ZGB: 20255.72428.
+- metric: >-
+    level gate, status of the decision on the level (design A2)
+  reference: >-
+    design A2 (the owner decides on the level when the gate is triggered)
+  result: >-
+    The owner has NOT yet decided the level. The two comparisons disagree: gate_triggered=False (comparison 1) and
+    gate_triggered_area_consistent=True (comparison 2) in the final tables. The options open to the owner are: keep
+    the table as it is, scale the level, or extend the movers rule. The two comparisons have opposite blind spots
+    (comparison 1 counts only the surveyed municipalities; comparison 2 applies their share to the whole Kreis), so
+    neither settles the level alone; the Zensus-based estimate in the same table is a third reference; the level decision aid (next entry) adds head counts from further sources. Flag values of
+    the other tables of this run (read from the headers of
+    docs/runs/artifacts/student-balance-2026-11-26/options/*/student_level_gate.csv): gate_triggered is True for
+    option A, False for option B, option C and comparison_centroid_bands; gate_triggered_area_consistent is True in
+    all four. Inside the candidate set the design's flag therefore flips with the weights, and the gate columns
+    (gate_triggered, level_difference_in_srv_se_*) were part of the decision aid weight_candidates.csv.
+- metric: >-
+    level decision aid: students aged 20 to 29 per Kreis from further sources, and the school degree of the SrV
+    sample
+  reference: >-
+    docs/runs/artifacts/student-balance-2026-11-26/level_decision/ (student_level_estimates_20_29.csv,
+    srv_school_degree_20_29.csv, student_education_leg_day_20_29.csv, mid_school_degree_check_20_29.csv,
+    census_pattern_check_nrw.csv, entrance_qualifications_by_school_district.csv; assumptions L1 to L5 in the docstring
+    of analyse_student_level.py; the standard errors are approximate, the differences in
+    standard errors are a reading aid and no test statistic)
+  result: >-
+    A decision aid, not a validation. Columns of student_level_estimates_20_29.csv in the order
+    balance_students_20_29_persons / balance_ws2022_23_students_20_29_persons (the same flows rescaled to the CHE
+    totals of winter semester 2022/23) / census_extrapolation_students_20_29_persons (census pupils and students
+    outside the labour force times the national ratio of enrolled students to that group, summer semester 2022) /
+    srv_school_corrected_students_20_29_persons with its standard error (SrV post-stratified to the census school
+    degree of the Kreis) / srv_gate_estimate_students_20_29_persons (the gate column). Row 03ZGB, the seven surveyed
+    Kreise: 23920.41768 / 25583.77095 / 28045.53711 / 26766.98267 (1363.788859) / 33532.0742. Row 03101:
+    13987.20723 / 14941.21962 / 13312.15528 / 12767.34043 (853.2005633) / 16776.12607. Row surrounding_six, the
+    surveyed Kreise without Braunschweig: 9933.210453 / 10642.55133 / 14733.38183 / 13999.64223 (1063.940248) /
+    16755.94813.
+    School degree of the persons aged 20 to 29 (srv_school_degree_20_29.csv, row 03ZGB):
+    srv_share_with_qualification_weighted 0.7687640107 against zensus_share_with_qualification 0.5441650548;
+    student_share_with_qualification 0.4552230191, student_share_without_qualification 0.02187900976. National
+    MiD sample (mid_school_degree_check_20_29.csv): mid_share_with_qualification_unweighted 0.7903254178,
+    mid_share_with_qualification_weighted 0.5755199778, zensus_share_with_qualification 0.5570537194.
+    Head count minus the school-corrected SrV count in its standard errors, sum of the squares over the seven
+    surveyed Kreise (header of student_level_estimates_20_29.csv): balance 30.68; balance rescaled to 2022/23
+    32.2505; the regional total of the balance distributed over the Kreise by the census pattern 12.131 (total of
+    2024/25) and 9.3126 (total of 2022/23); census extrapolation 10.5802.
+    Students with an education leg on the reporting day (student_education_leg_day_20_29.csv; the SrV side and the
+    day factor share the SrV education-leg share): row 03101 srv_school_corrected_students_with_education_leg_persons
+    4658.591898 against balance_times_day_factor_persons 4540.855266; row surrounding_six 3977.200479 against
+    3224.75175. srv_school_corrected_away_all_day_share: 03101 0.08053148652 (standard error 0.0279242237),
+    surrounding_six 0.1727428577 (0.03362802608).
+    Test of the census extrapolation outside the region (census_pattern_check_nrw.csv, Summary line of its header):
+    for the 53 districts of Nordrhein-Westfalen the published census count of students by district of residence
+    (aged 18 to 26) against the public census count of the pupils and students outside the labour force (aged 20
+    to 29) times one pooled ratio: mean_absolute_relative_error 0.09692896219630165,
+    root_mean_square_relative_error 0.12463137358844101, largest_absolute_relative_error 0.28498010221109427,
+    correlation_of_logs 0.9839721983528746; mean_relative_error_many_students -0.006174228727942444 (10 districts),
+    mean_relative_error_other_districts 0.022952384460825637. The age windows differ, so it tests the pattern over
+    districts, not a level.
+    Origin by the district of the school (entrance_qualifications_by_school_district.csv, school year 2021/22):
+    entrance_qualifications_per_resident_cohort 03101: 0.813253012; 03102: 0.415896488; 03103: 0.8665413534;
+    03151: 0.3390677026; 03153: 0.359962406; 03154: 0.2653061224; 03157: 0.4522727273; 03158: 0.4292543021;
+    region_eight: 0.5208333333. The origin table of the balance counts a student in the Kreis of the school.
+    Newest enrollment (lsn_enrollment_by_site_and_semester.csv, LSN-Online table K3100101, read 2026-11-27; winter
+    semester 2025/26 is the newest semester it holds): students of the six local sites ws2021_22 32532, ss2022
+    30129, ws2022_23 30453, ws2023_24 28828, ws2024_25 28417 (the semester of the committed tables), ss2025 26952,
+    ws2025_26 27952 (header of student_level_estimates_20_29.csv). The flows rescaled to winter semester 2025/26,
+    every destination site by its own ratio; of the three institutions in Sachsen-Anhalt the university of
+    Magdeburg is rescaled to 2025/26 and the two universities of applied sciences to 2024/25, their last published
+    winter semester (same header). Column balance_ws2025_26_students_20_29_persons: 03101 13588.48062;
+    surrounding_six 9884.016518; 03ZGB 23472.49714; the census pattern at that total,
+    census_pattern_ws2025_26_students_20_29_persons: 03101 11227.24963; surrounding_six 12425.88838; 03ZGB
+    23653.13801. These are levels of today and are not compared with SrV (2023).
+    Population aged 20 to 29 of the eight Kreise (lsn_population_20_29_by_kreis.csv, LSN-Online table A100001K, and
+    the census table of the students): 122690 on the census day, 124835 on 2022-12-31, 122600 on 2025-12-31 (same
+    header). The census pattern carried to 2025 with the change per Kreis between the two dates, column
+    census_pattern_2025_population_students_20_29_persons: 03101 11106.75204; surrounding_six 12417.8962; 03ZGB
+    23524.64823.
+    omega = 1 - Z / S with Z of the census of 2022 (same header): 0.5349547395 with the students of the committed
+    level table (2024/25), 0.5651242305205824 with the students of 2022/23, 0.5266555497878669 with those of
+    2025/26; only 2022/23 puts Z and S into one year.
+    Age of the students (student_age_distribution.csv; the level table splits the balance, a count of enrolled
+    persons, with the SrV shares of the persons whose main activity is studying): share_20_29_among_adults /
+    share_30plus_among_adults / share_age_18_19 are 0.7286295231 / 0.1863271191 / 0.08493173389 for the enrolled
+    students of Germany (official statistics, winter semester 2022/23), 0.8954830604 / 0.05596747151 /
+    0.04830561256 for the students by main activity of SrV (512 respondents, eight Kreise) and 0.8416619017 /
+    0.06853994413 / 0.08861077196 for those of MiD (13634 respondents, Germany). Every '..._20_29_...' figure of
+    the balance in this manifest rests on the share of the gate table, 0.8983074959 (SrV, adult students at home
+    on the day): row 03ZGB 23920.41769. Under the share of the enrolled students it is 19402.17867, under the
+    MiD share 22412.04079 (header of student_level_estimates_20_29.csv). The comparison of the balance with the
+    census extrapolation and with SrV in the ages 20 to 29 is therefore only as firm as that share.
+- metric: >-
+    decision aid: where option C is further from SrV than option A or option B, and the basis of the distance
+    yardsticks
+  reference: >-
+    docs/runs/artifacts/student-balance-2026-11-26/weights_decision/weight_candidates.csv (rows
+    option_a_stage_weights_optimum, option_b_stage_weights_and_movers_optimum, option_c_lead_recommendation; the z
+    values rank candidates and are no test statistic)
+  result: >-
+    Read from the z_* columns (rounded to three decimals; A / B / C): z_leave_region -0.193 / -0.828 / -1.201 (C
+    further than both); z_to_region_hannover -0.911 / -1.118 / -1.253 (C further than both); z_bs_study_in_bs 0.039 /
+    -0.001 / 0.010 (C further than B); z_bs_leave_region 0.768 / 0.064 / -0.303 (C further than B);
+    z_distance_25_50_km 0.657 / 1.037 / 0.944 (C further than A). C is closer than both on z_to_other_outside (1.506 /
+    0.471 / -0.112), z_bs_study_in_wolfenbuettel (-1.195 / -0.870 / -0.299), z_distance_50_km_or_more (2.914 / 1.949 /
+    1.375) and sum_squared_z_yardsticks (14.075 / 7.791 / 5.990). Level columns: level_difference_in_srv_se_03ZGB
+    -1.759 / -1.752 / -1.851 (C further than both). The model side of the distance yardsticks is the straight line
+    times the detour factor 1.3 (circuity.LEGACY_DETOUR_FACTOR, an ASSUMPTION; sensitivity columns for 1.2 and 1.4),
+    the SrV side is routed. Option C is also above the SrV share of 50 km or more (z_distance_50_km_or_more positive),
+    by less than A and B, also with detour 1.2 and 1.4 (model_distance_50_km_or_more_detour_1.2 and _1.4 above the SrV
+    share 0.06147135099 in all three rows).
+- metric: >-
+    SrV evidence for movers: students living in Braunschweig who study in Wolfenbüttel (site Kreis 03158)
+  reference: >-
+    SrV 2023 destination reference, docs/runs/artifacts/student-balance-2026-11-26/student_commuter_weight_fit.csv
+    (stage weights, home group braunschweig, destination site_kreis_03158)
+  result: >-
+    srv_n_unweighted 8 respondents; srv_share 0.1296516259, srv_se_share 0.05122736585; the model without movers
+    (stage weights) implies 0.06844013927, a gap of 6.12 percentage points, about 1.2 SrV standard errors
+    (z_bs_study_in_wolfenbuettel of option A: -1.194898188; of option C: -0.2990111252). The calibration did not
+    identify a mover share (mover_share ranges from 0 to 1 within the noise floor); the Wolfenbüttel gap is a thin
+    base for the owner's choice of 0.4 at site Kreis 03158.
+- metric: >-
+    art academy (Hochschule für Bildende Künste Braunschweig) in the origin table
+  reference: >-
+    CHE origin table (Kreis view only; the institution has no own list), LSN enrollment 902 persons
+  result: >-
+    Read from eqasim-data/data/braunschweig/schools/student_od_table.csv (row home_ars5 03101, destination Hochsch. f.
+    Bildende Künste Braunschweig | 03101000, cell_kind local) and student_balance_by_site.csv: the Kreis-view cell of
+    the Braunschweig origin is used (origin_persons_scaled 216, scale factor 1, institutions_without_che_total in the
+    Diagnostics line); every other origin Kreis is censored (upper bounds only), the commuter rows are 0, and the rest
+    of the 902 enrolled counts as locals (residents_region_persons 902, in_commuters_persons 0). The censored commuter
+    bound of the site is capped at enrollment minus the own-Kreis origin (censored_upper_bound_commuters_capped_sites
+    in the Diagnostics line).
+- metric: named omissions of the origin table (Diagnostics line)
+  reference: none
+  result: >-
+    Read from the Diagnostics line of docs/runs/artifacts/student-balance-2026-11-26/student_level_gate.csv (key origin_cells):
+    listed_outside_choice_set {'Universität Leipzig': 150, 'Martin-Luther-Universität Halle-Wittenberg': 86, 'Universität
+    Hamburg': 37, 'Universität Kassel': 29} (institution: persons); distance_learning_cells_dropped [cells, persons] [88,
+    12271]; shown_cells_outside_origin_kreise [cells, persons] [42, 7428]; censored cells 607 with an upper bound of 32855
+    persons and 0 cells without a bound.
+issues:
+- '#140'
+- '#279'
+decisions:
+- ADR-0210
+notes: >-
+  Limitations. (a) The in-commuters are observed nowhere; the CHE counts only bound them (the censored bound columns).
+  (b) The pooled level lies below SrV in comparison 1 (and far below in comparison 2, see the validation entries). One
+  cause is measured by the level decision aid (validation entry): the SrV sample aged 20 to 29 holds more persons with
+  a university entrance qualification than the census, and SrV post-stratified to the census school degree gives a
+  lower count. Not measured: distance-learning students and institutions outside the choice set are not in the balance
+  (counts in the Diagnostics line); the balance counts enrolled students while SrV counts students by main activity
+  (assumption A16, two errors in opposite directions). In the surveyed Kreise without Braunschweig the balance stays
+  below both other head counts of the decision aid (a candidate cause, shown but not quantified as a count of students: the origin table counts a student in the Kreis of the school of the entrance qualification, and the schools of Braunschweig and Wolfsburg award far more qualifications per resident cohort than those of the other Kreise); its enrollment is that of winter semester 2024/25 while the census
+  (2022), SrV (2023) and the origin table (2022/23) are older. (c)
+  Goslar (03153) lies far above the SrV estimate in comparison 1; SrV covers selected municipalities of that Kreis
+  only. (d) The weights are not identified by SrV: the calibration ranges within the noise floor (validation entries)
+  span most of their interval; the triple and the mover share are an assumption of the owner. (e) The owner has not
+  decided the level (design A2): the two gate comparisons disagree (validation entries). (f) The distance yardsticks
+  of the decision aid compare a straight line times the detour factor 1.3 (an assumption) with routed SrV distances.
+  (g) A table build and a calibration on survey aggregates, not a validation; the tables count heads, no day factor is
+  applied. (h) The committed calibration artifacts (student_commuter_weight_*.csv) name student_level_table.py in their
+  headers as the home of assumption A9, but the pooling assumption of the calibration (the Kreis mix within a pooled home
+  group) is documented in braunschweig/calibration/student_commuter_weights.py; the code pointer was fixed later and the
+  artifacts were not regenerated. Decisions: ADR-0210.
+source: >-
+  scripts/build_student_balance.py over the inputs under pipeline.notes; outputs committed under eqasim-data/data/braunschweig/schools,
+  eqasim-data/data/braunschweig/popsim and docs/runs/artifacts/student-balance-2026-11-26/.

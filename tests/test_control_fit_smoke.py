@@ -73,6 +73,17 @@ def _seed_persons() -> pd.DataFrame:
                                 "employed_nowork", "nonemployed_work", "nonemployed_nowork",
                                 "employed_work", "employed_nowork"],
         "education_flag": ["edu", "noedu", "edu", "noedu", "edu", "noedu", "edu", "noedu"],
+        # The four student seed columns (A3, ADR-0211), one label per person like the seed
+        # derivation writes; the rows aged 18 and 25 are the students. Only the categories'
+        # partition is checked here, not the derivation (tests/test_participation_universe_controls.py).
+        "student_education_18_29": ["other_edu", "other_noedu", "other_edu", "student_edu",
+                                    "student_noedu", "other_noedu", "other_noedu", "other_noedu"],
+        "student_education_30plus": ["other_edu", "other_noedu", "other_edu", "student",
+                                     "student", "other_edu", "other_noedu", "other_noedu"],
+        "student_work_leg": ["not_student", "not_student", "not_student", "student_work",
+                             "student_nowork", "not_student", "not_student", "not_student"],
+        "student_season_ticket": ["not_student", "not_student", "not_student", "student_flatrate",
+                                  "student_no_flatrate", "not_student", "not_student", "not_student"],
     })
 
 
@@ -191,7 +202,9 @@ def test_every_kreis_target_loads_and_partitions_every_kreis():
     silently biases the counts."""
     report = cfs.check_kreis_targets(kac.REGISTRY, DATA_PATH, expected_ars5=ZGB_KREISE)
     assert report.failures == [], report.failures
-    assert report.n_controls_checked == len(kac.REGISTRY)
+    # The student entries (A3, ADR-0211) have no share table: skipped by name, never failed.
+    assert report.n_controls_checked == len(kac.REGISTRY) - len(kac.STUDENT_ENTRY_NAMES)
+    assert sorted(s.split(":")[0] for s in report.skipped) == sorted(kac.STUDENT_ENTRY_NAMES)
 
 
 def test_control_fit_reports_per_category_deviation():

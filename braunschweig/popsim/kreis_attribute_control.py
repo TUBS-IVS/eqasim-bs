@@ -93,6 +93,12 @@ def load_kreis_target(
     fallback: fails fast if the file, a target category column, the region-aggregate
     row, an ``expected_ars5`` Kreis, or the per-row share normalisation is missing/invalid.
     """
+    if ctl.name in STUDENT_ENTRY_NAMES:
+        # Their target_csv_relpath is the student level table, the one input of their counts
+        # (braunschweig.popsim.student_targets); it is no share table.
+        raise ValueError(
+            f"load_kreis_target[{ctl.name}]: a student entry has no share table; its counts are "
+            "built by braunschweig.popsim.student_targets (ADR-0211).")
     path = Path(data_path) / ctl.target_csv_relpath
     if not path.exists():
         raise FileNotFoundError(f"load_kreis_target[{ctl.name}]: target CSV not found at {path}.")
@@ -191,6 +197,74 @@ EDUCATION_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
 # DERIVED from EDUCATION_AGE_BOUNDS (never re-listed) so a registry entry name and its age
 # universe cannot drift apart (controller ruling R1).
 EDUCATION_BY_AGE_ENTRY_NAMES = tuple(EDUCATION_AGE_BOUNDS)
+
+# --------------------------------------------------------------------------- #
+# Student status entries (A3 of the student design, issue #140): the entry names and the
+# ORDERED label sets of their seed columns. The seed derivation
+# (braunschweig.popsim.mid.participation.derive_student_status_seed_columns) and the
+# registry entries read the labels from here, so a seed value and a control category cannot
+# drift apart. Every name begins with ``student_`` and no other entry's name starts that
+# way, so the importance-group prefix rule of control_spec holds.
+# --------------------------------------------------------------------------- #
+STUDENT_EDUCATION_18_29 = "student_education_18_29"
+STUDENT_EDUCATION_30PLUS = "student_education_30plus"
+STUDENT_WORK_LEG = "student_work_leg"
+STUDENT_SEASON_TICKET = "student_season_ticket"
+
+# The labels are named, like EDUCATION_FLAG_EDU, so the seed derivation never relies on the
+# POSITION of a label in a category tuple: a display reorder of a tuple must not be able to
+# swap two labels in the seed.
+STUDENT_LABEL_STUDENT_EDU = "student_edu"
+STUDENT_LABEL_STUDENT_NOEDU = "student_noedu"
+STUDENT_LABEL_OTHER_EDU = "other_edu"
+STUDENT_LABEL_OTHER_NOEDU = "other_noedu"
+STUDENT_LABEL_STUDENT = "student"
+STUDENT_LABEL_STUDENT_WORK = "student_work"
+STUDENT_LABEL_STUDENT_NOWORK = "student_nowork"
+STUDENT_LABEL_NOT_STUDENT = "not_student"
+STUDENT_LABEL_STUDENT_FLATRATE = "student_flatrate"
+STUDENT_LABEL_STUDENT_NO_FLATRATE = "student_no_flatrate"
+
+STUDENT_EDUCATION_18_29_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_EDU, STUDENT_LABEL_STUDENT_NOEDU,
+    STUDENT_LABEL_OTHER_EDU, STUDENT_LABEL_OTHER_NOEDU)
+STUDENT_EDUCATION_30PLUS_CATEGORIES = (
+    STUDENT_LABEL_STUDENT, STUDENT_LABEL_OTHER_EDU, STUDENT_LABEL_OTHER_NOEDU)
+STUDENT_WORK_LEG_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_WORK, STUDENT_LABEL_STUDENT_NOWORK, STUDENT_LABEL_NOT_STUDENT)
+STUDENT_SEASON_TICKET_CATEGORIES = (
+    STUDENT_LABEL_STUDENT_FLATRATE, STUDENT_LABEL_STUDENT_NO_FLATRATE, STUDENT_LABEL_NOT_STUDENT)
+
+# Inclusive age universe (min_age, max_age) per entry; ``None`` = no upper bound. The three
+# 18-to-29 entries share one universe, so a Kreis target is split over the batches by the
+# persons aged 18 to 29 (design A3 "Age-range universes").
+STUDENT_AGE_BOUNDS: dict[str, tuple[int, int | None]] = {
+    STUDENT_EDUCATION_18_29: (18, 29),
+    STUDENT_EDUCATION_30PLUS: (30, None),
+    STUDENT_WORK_LEG: (18, 29),
+    STUDENT_SEASON_TICKET: (18, 29),
+}
+# DERIVED from the bounds (never re-listed), like EDUCATION_BY_AGE_ENTRY_NAMES.
+STUDENT_ENTRY_NAMES = frozenset(STUDENT_AGE_BOUNDS)
+# Category order and tier per student entry (design A3): the two education entries carry the
+# quantities of the student balance and are hard; the work leg and the season ticket are soft.
+_STUDENT_ENTRY_CATEGORIES = {
+    STUDENT_EDUCATION_18_29: STUDENT_EDUCATION_18_29_CATEGORIES,
+    STUDENT_EDUCATION_30PLUS: STUDENT_EDUCATION_30PLUS_CATEGORIES,
+    STUDENT_WORK_LEG: STUDENT_WORK_LEG_CATEGORIES,
+    STUDENT_SEASON_TICKET: STUDENT_SEASON_TICKET_CATEGORIES,
+}
+_STUDENT_ENTRY_TIERS = {
+    STUDENT_EDUCATION_18_29: "hard",
+    STUDENT_EDUCATION_30PLUS: "hard",
+    STUDENT_WORK_LEG: "soft",
+    STUDENT_SEASON_TICKET: "soft",
+}
+# The one input of the student entries' counts: the student level table. Its owner is
+# braunschweig.popsim.student_level.STUDENT_LEVEL_TABLE_RELPATH (a test compares the two); typed
+# here because importing the level-table reader would put it into the cache token of every stage
+# that imports this module (the analysis stages among them).
+_STUDENT_TARGET_INPUT_RELPATH = "braunschweig/popsim/student_level_table.csv"
 
 
 # Path constants for the committed blended targets (FINAL; consume with prior_n = 0).
@@ -491,6 +565,25 @@ REGISTRY: tuple = (
         min_age=lo,
         max_age=hi,
       ) for name, (lo, hi) in EDUCATION_AGE_BOUNDS.items()),
+    # The four student entries (design A3 of the student layer, issue #140, ADR-0211). Person
+    # level over their own age universe (STUDENT_AGE_BOUNDS), each with its own seed column
+    # (mid.participation.derive_student_status_seed_columns). Their per-Kreis targets are COUNTS
+    # built once per run by braunschweig.popsim.student_targets from the student level table and
+    # committed SrV shares, never read through load_kreis_target: target_csv_relpath names the
+    # level table, the one input, so the stage's validate token covers it, and target_columns
+    # are the categories. Which of them are active, what the two education entries replace and
+    # the refusals: source_resolution.active_kreis_entries.
+    *(KreisAttributeControl(
+        name=name,
+        seed_column=name,
+        level="person",
+        categories=tuple((k, f"== '{k}'") for k in _STUDENT_ENTRY_CATEGORIES[name]),
+        target_csv_relpath=_STUDENT_TARGET_INPUT_RELPATH,
+        target_columns=_STUDENT_ENTRY_CATEGORIES[name],
+        tier=_STUDENT_ENTRY_TIERS[name],
+        min_age=lo,
+        max_age=hi,
+      ) for name, (lo, hi) in STUDENT_AGE_BOUNDS.items()),
 )
 
 
@@ -512,6 +605,17 @@ def _shrunk_shares(ctl: KreisAttributeControl, target_df: pd.DataFrame, prior_n:
             share = (raw + prior_n * agg_share) / (total + prior_n)
         rows.append({"ars5": str(r["ars5"]), **dict(zip(cols, share))})
     return pd.DataFrame(rows)
+
+
+def round_count(value: float) -> int:
+    """The whole number of persons or households a KREIS target row partitions.
+
+    Python's ``round`` (halves to the even neighbour), the one rounding convention of every KREIS
+    entry: :func:`attribute_kreis_count_table` rounds each per-Kreis total with it, and the count
+    tables of the student entries (``braunschweig.popsim.student_targets``) round their student
+    counts and row totals with it, so entries over the same universe partition the same number.
+    """
+    return int(round(float(value)))
 
 
 def _largest_remainder(shares: np.ndarray, total: int) -> np.ndarray:
@@ -542,6 +646,6 @@ def attribute_kreis_count_table(
         key = str(ars5)
         if key not in shares.index:
             raise ValueError(f"attribute_kreis_count_table[{ctl.name}]: Kreis {key} absent from the target frame.")
-        counts = _largest_remainder(shares.loc[key, cols].to_numpy(dtype=float), int(round(float(hh_total))))
+        counts = _largest_remainder(shares.loc[key, cols].to_numpy(dtype=float), round_count(hh_total))
         out.append({"ARS_kreis": key, **dict(zip(out_cols, counts))})
     return pd.DataFrame(out)

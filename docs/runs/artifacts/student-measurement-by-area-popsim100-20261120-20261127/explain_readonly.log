@@ -1,0 +1,43 @@
+WARNING! osmconvert of at least version 0.8.x is recommended!
+STALE    braunschweig.analysis.synthesis.students_vs_srv  [required, not_in_meta, cache_missing]
+HIT      braunschweig.data.alkis
+HIT      braunschweig.data.bbsr.regiostar
+HIT      braunschweig.data.building_potentials
+HIT      braunschweig.data.buildings
+HIT      braunschweig.data.census.employees
+HIT      braunschweig.data.census.employment
+HIT      braunschweig.data.census.pendler
+HIT      braunschweig.data.external_workplaces
+HIT      braunschweig.data.inkar.household_income
+HIT      braunschweig.data.schools.facilities
+HIT      braunschweig.data.schools.kita_facilities
+HIT      braunschweig.data.schools.university_facilities
+HIT      braunschweig.data.verbindungen.work_od
+HIT      braunschweig.data.verbindungen.zones
+HIT      braunschweig.gravity.model
+HIT      braunschweig.locations.synthesis.replacement_education_gravity
+HIT      braunschweig.locations.work
+HIT      braunschweig.popsim.commute_distance
+HIT      braunschweig.popsim.completed_donor
+HIT      braunschweig.popsim.enriched_adapter
+HIT      braunschweig.popsim.stage
+HIT      braunschweig.popsim.trips_stage
+HIT      braunschweig.synthesis.commute_day.home_office_donors_stage
+HIT      braunschweig.synthesis.commute_day.state_stage
+HIT      braunschweig.synthesis.commute_day.trips_day_stage
+HIT      braunschweig.synthesis.day_absence.absence_stage
+HIT      braunschweig.synthesis.locations.education_gravity
+HIT      braunschweig.synthesis.locations.home_cell
+HIT      braunschweig.synthesis.spatial.home_zones
+HIT      data.spatial.municipalities
+HIT      eqasim_common.data.osm.chunked
+HIT      eqasim_common.data.osm.locations
+HIT      eqasim_common.data.osm.osmconvert
+HIT      eqasim_common.data.population.raw
+HIT      eqasim_common.data.spatial.iris
+HIT      eqasim_common.gravity.distance_matrix
+HIT      eqasim_common.locations.education
+HIT      eqasim_common.spatial.codes
+HIT      synthesis.population.sampled
+HIT      synthesis.population.spatial.primary.candidates
+# 41 stages: 1 stale for own reasons, 0 will recompute (stale ancestor, no recorded output hash cuts it off), 0 may recompute (stale ancestor, early cutoff decides), 40 hits

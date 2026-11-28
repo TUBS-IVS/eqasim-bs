@@ -1,0 +1,1217 @@
+{
+  "building_type_rescale": {
+    "enabled": true,
+    "report": {
+      "cells_seen": 43598,
+      "cells_with_households": 38485,
+      "fallback_cells": 115,
+      "fallback_households": 346,
+      "levels_unavailable": [],
+      "partial_nan_cells": 0,
+      "partial_nan_households": 0,
+      "share_tiers": {
+        "KREIS": {
+          "cells": 3,
+          "households": 5.996114492416382
+        },
+        "ZENSUS1km": {
+          "cells": 112,
+          "households": 339.78462970256805
+        },
+        "own": {
+          "cells": 38370,
+          "households": 557824.9230556488
+        }
+      },
+      "target_sum_over_household_total_after": 1.0,
+      "target_sum_over_household_total_before": 1.0927647166850918
+    },
+    "status": "applied"
+  },
+  "family_controls": {
+    "mode": "minor_child_1km",
+    "report": {
+      "cells_with_missing_households": 0,
+      "households_in_scaled_squares": 9.996895551681519,
+      "households_in_squares_primary_without_minor_family": 3883.3434203863144,
+      "households_on_kreis_fallback": 0.0,
+      "households_total": 558170.7037998438,
+      "kreis_fallback_household_rate": 0.0,
+      "squares_fallback_absent_from_table": 0,
+      "squares_fallback_zero_table_households": 0,
+      "squares_in_table": 2409,
+      "squares_on_kreis_fallback": 0,
+      "squares_primary": 2233,
+      "squares_primary_without_minor_family": 484,
+      "squares_scaled_to_share_sum_1": 3,
+      "squares_total": 2233
+    }
+  },
+  "household_less_cells": {
+    "batches": [
+      {
+        "batch": "batch_000",
+        "donor_cells": 85,
+        "donor_cells_published_zero": 85,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 278.7181280870681,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 11,
+        "persons_in_parents_without_households": 42.03582749044722,
+        "persons_moved": 332.8798470608133,
+        "stuck_cells": 11
+      },
+      {
+        "batch": "batch_001",
+        "donor_cells": 110,
+        "donor_cells_published_zero": 108,
+        "donor_cells_rounded_to_zero": 2,
+        "large_cell_persons": 51.977410576539114,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 9,
+        "persons_in_parents_without_households": 36.02189027077429,
+        "persons_moved": 508.54485811812657,
+        "stuck_cells": 9
+      },
+      {
+        "batch": "batch_002",
+        "donor_cells": 73,
+        "donor_cells_published_zero": 73,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 156.08372058160603,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 3.002404734010696,
+        "persons_moved": 334.89498561568746,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_003",
+        "donor_cells": 64,
+        "donor_cells_published_zero": 64,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 79.7678894661367,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 7.004552913433388,
+        "persons_moved": 293.46748777918947,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_004",
+        "donor_cells": 57,
+        "donor_cells_published_zero": 57,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 22.05239631817676,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 5.012045441356349,
+        "persons_moved": 230.49264148396006,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_005",
+        "donor_cells": 78,
+        "donor_cells_published_zero": 78,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 173.46283679651197,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 350.7257378306782,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_006",
+        "donor_cells": 78,
+        "donor_cells_published_zero": 78,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 6.995422744861685,
+        "persons_moved": 310.96403195957384,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_007",
+        "donor_cells": 89,
+        "donor_cells_published_zero": 89,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 137.00236292618138,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 7,
+        "persons_in_parents_without_households": 27.017290598756517,
+        "persons_moved": 363.3795931211157,
+        "stuck_cells": 7
+      },
+      {
+        "batch": "batch_008",
+        "donor_cells": 109,
+        "donor_cells_published_zero": 109,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 371.6911292200847,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 12.995451144708852,
+        "persons_moved": 492.8492442392519,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_009",
+        "donor_cells": 73,
+        "donor_cells_published_zero": 73,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 75.251852825284,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 9.001872719221865,
+        "persons_moved": 345.0497263182331,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_010",
+        "donor_cells": 95,
+        "donor_cells_published_zero": 95,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 63.08419086760841,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 14.001908639605972,
+        "persons_moved": 435.39910848619604,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_011",
+        "donor_cells": 88,
+        "donor_cells_published_zero": 88,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 12.002285440430114,
+        "persons_moved": 392.7597829865764,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_012",
+        "donor_cells": 78,
+        "donor_cells_published_zero": 78,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 30.66048950131517,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 11.990983498799324,
+        "persons_moved": 364.35650420827153,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_013",
+        "donor_cells": 92,
+        "donor_cells_published_zero": 92,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 105.29114829597529,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 6.000793930316519,
+        "persons_moved": 418.5620987526749,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_014",
+        "donor_cells": 57,
+        "donor_cells_published_zero": 57,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 64.92849516682327,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 3.0002957122633234,
+        "persons_moved": 268.12850119816073,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_015",
+        "donor_cells": 49,
+        "donor_cells_published_zero": 49,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 283.8270107788126,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 216.83669991409596,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_016",
+        "donor_cells": 68,
+        "donor_cells_published_zero": 68,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 289.6135828615342,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_017",
+        "donor_cells": 33,
+        "donor_cells_published_zero": 33,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 98.49727126490325,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 141.18088928985995,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_018",
+        "donor_cells": 45,
+        "donor_cells_published_zero": 45,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 4.9960445908945985,
+        "persons_moved": 213.81455574801262,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_019",
+        "donor_cells": 91,
+        "donor_cells_published_zero": 91,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 49.37222421169281,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 6.0049785715862924,
+        "persons_moved": 398.0539045948443,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_020",
+        "donor_cells": 81,
+        "donor_cells_published_zero": 81,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 39.19124030508101,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 9.999309476239432,
+        "persons_moved": 371.3353707400101,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_021",
+        "donor_cells": 70,
+        "donor_cells_published_zero": 70,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 689.2252538307239,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 14.994024770858232,
+        "persons_moved": 329.3925257294827,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_022",
+        "donor_cells": 46,
+        "donor_cells_published_zero": 46,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 78.44405631498375,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 8.99740617792122,
+        "persons_moved": 220.48245296511539,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_023",
+        "donor_cells": 59,
+        "donor_cells_published_zero": 59,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 380.19154944845224,
+        "large_cells": 4,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 4.998558959708703,
+        "persons_moved": 296.8782441353392,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_024",
+        "donor_cells": 48,
+        "donor_cells_published_zero": 48,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 23.541199238970876,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 208.96680764803048,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_025",
+        "donor_cells": 56,
+        "donor_cells_published_zero": 56,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 258.3591780863135,
+        "large_cells": 5,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 252.53028301423666,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_026",
+        "donor_cells": 61,
+        "donor_cells_published_zero": 61,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 96.18061668955488,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 3.0011245840141783,
+        "persons_moved": 279.5083260648912,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_027",
+        "donor_cells": 66,
+        "donor_cells_published_zero": 66,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 169.8514925041818,
+        "large_cells": 4,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 21.00301999959629,
+        "persons_moved": 277.03427095491526,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_028",
+        "donor_cells": 31,
+        "donor_cells_published_zero": 31,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 147.8124100342393,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 7.997694368794328,
+        "persons_moved": 162.2742794946603,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_029",
+        "donor_cells": 74,
+        "donor_cells_published_zero": 74,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 86.7688099658335,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 3.002489264588803,
+        "persons_moved": 297.98397324858655,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_030",
+        "donor_cells": 43,
+        "donor_cells_published_zero": 43,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 21.04211087015574,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 12.013922552371458,
+        "persons_moved": 197.44070758133395,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_031",
+        "donor_cells": 66,
+        "donor_cells_published_zero": 66,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 245.8149447748874,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 16.01322166198952,
+        "persons_moved": 301.4996392749226,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_032",
+        "donor_cells": 57,
+        "donor_cells_published_zero": 57,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 208.57393987190207,
+        "large_cells": 4,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 270.0446104007156,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_033",
+        "donor_cells": 98,
+        "donor_cells_published_zero": 98,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 50.24526557698846,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 10.008225988640334,
+        "persons_moved": 412.7595131273729,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_034",
+        "donor_cells": 82,
+        "donor_cells_published_zero": 82,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 399.13237531716004,
+        "large_cells": 5,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 387.05609205667565,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_035",
+        "donor_cells": 71,
+        "donor_cells_published_zero": 71,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 289.59053088575075,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 5.002434366644593,
+        "persons_moved": 331.5980688056522,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_036",
+        "donor_cells": 44,
+        "donor_cells_published_zero": 44,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 20.397497198660858,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 192.88776884617525,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_037",
+        "donor_cells": 67,
+        "donor_cells_published_zero": 67,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 7,
+        "persons_in_parents_without_households": 30.024056826298988,
+        "persons_moved": 304.17213519081827,
+        "stuck_cells": 7
+      },
+      {
+        "batch": "batch_038",
+        "donor_cells": 78,
+        "donor_cells_published_zero": 78,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 15.0024672399486,
+        "persons_moved": 335.81516484157385,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_039",
+        "donor_cells": 77,
+        "donor_cells_published_zero": 77,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 348.7804609827663,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_040",
+        "donor_cells": 61,
+        "donor_cells_published_zero": 61,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 7.001604476152212,
+        "persons_moved": 291.47835912175003,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_041",
+        "donor_cells": 83,
+        "donor_cells_published_zero": 83,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 5,
+        "persons_in_parents_without_households": 15.002924694296134,
+        "persons_moved": 394.02181327811667,
+        "stuck_cells": 5
+      },
+      {
+        "batch": "batch_042",
+        "donor_cells": 74,
+        "donor_cells_published_zero": 74,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 13.005560913731223,
+        "persons_moved": 340.23854023890584,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_043",
+        "donor_cells": 60,
+        "donor_cells_published_zero": 60,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 5.999050091340905,
+        "persons_moved": 256.28748353122785,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_044",
+        "donor_cells": 46,
+        "donor_cells_published_zero": 46,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 36.14537820831174,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 9.007985634816578,
+        "persons_moved": 207.77771713151444,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_045",
+        "donor_cells": 49,
+        "donor_cells_published_zero": 49,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 377.4577256518072,
+        "large_cells": 4,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 2.6653780992764715,
+        "persons_moved": 231.1089669721951,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_046",
+        "donor_cells": 48,
+        "donor_cells_published_zero": 48,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 536.5868252016152,
+        "large_cells": 5,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 14.998206933398677,
+        "persons_moved": 205.52094852613996,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_047",
+        "donor_cells": 81,
+        "donor_cells_published_zero": 81,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 210.44850846848652,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 3,
+        "persons_in_parents_without_households": 10.997866392011929,
+        "persons_moved": 382.96019759122026,
+        "stuck_cells": 3
+      },
+      {
+        "batch": "batch_048",
+        "donor_cells": 63,
+        "donor_cells_published_zero": 63,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 94.34644914604723,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 20.998713024514927,
+        "persons_moved": 289.3403413147627,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_049",
+        "donor_cells": 98,
+        "donor_cells_published_zero": 98,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 483.6701567344514,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_050",
+        "donor_cells": 72,
+        "donor_cells_published_zero": 72,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 35.626061014743755,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 0,
+        "persons_in_parents_without_households": 0.0,
+        "persons_moved": 347.27830807002,
+        "stuck_cells": 0
+      },
+      {
+        "batch": "batch_051",
+        "donor_cells": 68,
+        "donor_cells_published_zero": 68,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 108.05757088229421,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 1,
+        "persons_in_parents_without_households": 3.000735350678859,
+        "persons_moved": 328.86611415446674,
+        "stuck_cells": 1
+      },
+      {
+        "batch": "batch_052",
+        "donor_cells": 74,
+        "donor_cells_published_zero": 74,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 219.65076732128512,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 15.998528877014905,
+        "persons_moved": 386.9036970402763,
+        "stuck_cells": 6
+      },
+      {
+        "batch": "batch_053",
+        "donor_cells": 75,
+        "donor_cells_published_zero": 75,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 148.10510803293437,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 10.000083028469817,
+        "persons_moved": 374.6036298668425,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_054",
+        "donor_cells": 107,
+        "donor_cells_published_zero": 107,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 153.42070565003638,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 2,
+        "persons_in_parents_without_households": 14.994619741890347,
+        "persons_moved": 478.508300615539,
+        "stuck_cells": 2
+      },
+      {
+        "batch": "batch_055",
+        "donor_cells": 101,
+        "donor_cells_published_zero": 101,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 23.004644193541026,
+        "persons_moved": 503.44304014380396,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_056",
+        "donor_cells": 114,
+        "donor_cells_published_zero": 114,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 291.10648287273943,
+        "large_cells": 3,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 4,
+        "persons_in_parents_without_households": 20.991549610014772,
+        "persons_moved": 552.8110168920648,
+        "stuck_cells": 4
+      },
+      {
+        "batch": "batch_057",
+        "donor_cells": 151,
+        "donor_cells_published_zero": 151,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 0.0,
+        "large_cells": 0,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 13,
+        "persons_in_parents_without_households": 57.0768976567477,
+        "persons_moved": 712.1851888955439,
+        "stuck_cells": 15
+      },
+      {
+        "batch": "batch_058",
+        "donor_cells": 151,
+        "donor_cells_published_zero": 151,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 25.0382914285874,
+        "large_cells": 1,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 5,
+        "persons_in_parents_without_households": 19.015295773475977,
+        "persons_moved": 692.0195464815893,
+        "stuck_cells": 6
+      },
+      {
+        "batch": "batch_059",
+        "donor_cells": 118,
+        "donor_cells_published_zero": 118,
+        "donor_cells_rounded_to_zero": 0,
+        "large_cell_persons": 71.5091928838765,
+        "large_cells": 2,
+        "max_parent_sum_change": 0,
+        "parents_without_households": 9,
+        "persons_in_parents_without_households": 37.16261384533925,
+        "persons_moved": 559.8986509576829,
+        "stuck_cells": 10
+      }
+    ],
+    "enabled": true,
+    "max_persons": 20.0,
+    "totals": {
+      "donor_cells": 4481,
+      "donor_cells_published_zero": 4479,
+      "donor_cells_rounded_to_zero": 2,
+      "large_cell_persons": 7553.530094561325,
+      "large_cells": 93,
+      "max_parent_sum_change": 0,
+      "parents_without_households": 159,
+      "persons_in_parents_without_households": 670.0642630157935,
+      "persons_moved": 20499.316494228242,
+      "stuck_cells": 166
+    }
+  },
+  "kreis_input_consistency": {
+    "employment_level": {
+      "below_grid_share": 0.0002444385017799192,
+      "bridge": 0.9826471681619847,
+      "bridge_family_universe": 0.982527214923259,
+      "bridge_source": "work_by_employment",
+      "capped_persons": 0.0,
+      "parts_capped": 0,
+      "parts_empty": 0,
+      "parts_reconciled": 346,
+      "parts_unchanged": 0
+    },
+    "guard": {
+      "age_pairs_enforced": true,
+      "age_tolerance": 0.05,
+      "batches": 60,
+      "grid_pairs_enforced": true,
+      "max_relative_difference_guarded": 0.016756300795536097,
+      "max_relative_difference_measured": 1.5025718766207579,
+      "min_persons": 1000.0,
+      "rows": 3880,
+      "rows_above_bound": 0,
+      "skipped": [],
+      "table": "../popsim_work/popsim_input_consistency.csv"
+    },
+    "keys": {
+      "braunschweig.population.popsim.employment_level_source": "zensus",
+      "braunschweig.population.popsim.kreis_batch_apportionment": "universe",
+      "braunschweig.population.popsim.kreis_controls_follow_grids": true,
+      "braunschweig.population.popsim.kreis_fine_min_persons": 1000,
+      "braunschweig.population.popsim.kreis_fine_tolerance": 0.05
+    },
+    "kreis_follow_grids": {
+      "controls_changed_over_batches": 600,
+      "controls_set_over_batches": 600,
+      "controls_without_grid": [],
+      "kreis_parts": 173,
+      "largest_relative_change": 1.080939828239444,
+      "largest_relative_change_control": "number_of_cars_3plus_KREIS"
+    },
+    "student_bounds": {
+      "guarded": [
+        "students_work_within_nonemployed_work"
+      ],
+      "kreis_totals_above_bound": {
+        "students_flatrate_within_flatrate": [],
+        "students_work_within_nonemployed_work": []
+      },
+      "reported": [
+        "students_flatrate_within_flatrate"
+      ],
+      "rows_above_bound_reported": 0
+    },
+    "table": "../popsim_work/popsim_input_consistency.csv",
+    "universe_apportionment": {
+      "dropped_target_mass_by_universe_column": {},
+      "empty_parts": 0,
+      "empty_regions": 0,
+      "kreis_parts": 1038
+    }
+  },
+  "student_employment": {
+    "active": true,
+    "enabled": true,
+    "level_table": "braunschweig/popsim/student_level_table.csv",
+    "omega": 0.5348793385,
+    "rows": [
+      {
+        "KREIS": "03101",
+        "employed_target_persons": 12504.7665105,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 2915.2334895,
+        "zensus_employed_persons": 15420.0
+      },
+      {
+        "KREIS": "03101",
+        "employed_target_persons": 16204.8872753,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 235.1127247,
+        "zensus_employed_persons": 16440.0
+      },
+      {
+        "KREIS": "03101",
+        "employed_target_persons": 10821.334653040843,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 3243.9470371,
+        "zensus_employed_persons": 14065.281690140844
+      },
+      {
+        "KREIS": "03101",
+        "employed_target_persons": 12745.04771268719,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 220.6028574,
+        "zensus_employed_persons": 12965.65057008719
+      },
+      {
+        "KREIS": "03102",
+        "employed_target_persons": 4449.89246547,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 490.10753453,
+        "zensus_employed_persons": 4940.0
+      },
+      {
+        "KREIS": "03102",
+        "employed_target_persons": 5110.47297128,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 39.52702872,
+        "zensus_employed_persons": 5150.0
+      },
+      {
+        "KREIS": "03102",
+        "employed_target_persons": 3576.7920448187924,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 545.37068484,
+        "zensus_employed_persons": 4122.162729658792
+      },
+      {
+        "KREIS": "03102",
+        "employed_target_persons": 3644.8441211401837,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 37.08763739,
+        "zensus_employed_persons": 3681.9317585301837
+      },
+      {
+        "KREIS": "03103",
+        "employed_target_persons": 5406.619907763908,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 605.26943521,
+        "zensus_employed_persons": 6011.889342973907
+      },
+      {
+        "KREIS": "03103",
+        "employed_target_persons": 7553.574383600632,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 48.81480219,
+        "zensus_employed_persons": 7602.389185790632
+      },
+      {
+        "KREIS": "03103",
+        "employed_target_persons": 4726.48208169,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 673.5179183099999,
+        "zensus_employed_persons": 5400.0
+      },
+      {
+        "KREIS": "03103",
+        "employed_target_persons": 6004.19777955,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 45.80222045,
+        "zensus_employed_persons": 6050.0
+      },
+      {
+        "KREIS": "03151",
+        "employed_target_persons": 7691.041925716274,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 487.18597723000005,
+        "zensus_employed_persons": 8178.227902946274
+      },
+      {
+        "KREIS": "03151",
+        "employed_target_persons": 9128.72202557246,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 39.29140597,
+        "zensus_employed_persons": 9168.01343154246
+      },
+      {
+        "KREIS": "03151",
+        "employed_target_persons": 6136.2128004281285,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 542.11970082,
+        "zensus_employed_persons": 6678.332501248128
+      },
+      {
+        "KREIS": "03151",
+        "employed_target_persons": 7961.136439516739,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 36.86655599,
+        "zensus_employed_persons": 7998.002995506739
+      },
+      {
+        "KREIS": "03153",
+        "employed_target_persons": 4911.253452043163,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 786.92196409,
+        "zensus_employed_persons": 5698.175416133163
+      },
+      {
+        "KREIS": "03153",
+        "employed_target_persons": 5844.643169332279,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 63.46502529,
+        "zensus_employed_persons": 5908.108194622279
+      },
+      {
+        "KREIS": "03153",
+        "employed_target_persons": 3774.34692337,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 875.65307663,
+        "zensus_employed_persons": 4650.0
+      },
+      {
+        "KREIS": "03153",
+        "employed_target_persons": 5040.45168784,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 59.54831216,
+        "zensus_employed_persons": 5100.0
+      },
+      {
+        "KREIS": "03154",
+        "employed_target_persons": 3405.0736690000003,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 374.926331,
+        "zensus_employed_persons": 3780.0000000000005
+      },
+      {
+        "KREIS": "03154",
+        "employed_target_persons": 4629.76230152,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 30.23769848,
+        "zensus_employed_persons": 4660.0
+      },
+      {
+        "KREIS": "03154",
+        "employed_target_persons": 2781.246136642396,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 417.20197198999995,
+        "zensus_employed_persons": 3198.448108632396
+      },
+      {
+        "KREIS": "03154",
+        "employed_target_persons": 4349.5042550405915,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 28.37159365,
+        "zensus_employed_persons": 4377.875848690592
+      },
+      {
+        "KREIS": "03157",
+        "employed_target_persons": 6016.89937641,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 533.1006235899999,
+        "zensus_employed_persons": 6550.0
+      },
+      {
+        "KREIS": "03157",
+        "employed_target_persons": 7167.00559127,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 42.99440873,
+        "zensus_employed_persons": 7210.0
+      },
+      {
+        "KREIS": "03157",
+        "employed_target_persons": 4906.78844595,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 593.2115540499999,
+        "zensus_employed_persons": 5500.0
+      },
+      {
+        "KREIS": "03157",
+        "employed_target_persons": 6259.65897027,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 40.34102973,
+        "zensus_employed_persons": 6300.0
+      },
+      {
+        "KREIS": "03158",
+        "employed_target_persons": 4562.8677060400005,
+        "grid_age_group": "16_29",
+        "sex": "M",
+        "students_counted_employed_persons": 587.13229396,
+        "zensus_employed_persons": 5150.0
+      },
+      {
+        "KREIS": "03158",
+        "employed_target_persons": 5762.64795293,
+        "grid_age_group": "30_39",
+        "sex": "M",
+        "students_counted_employed_persons": 47.35204707,
+        "zensus_employed_persons": 5810.0
+      },
+      {
+        "KREIS": "03158",
+        "employed_target_persons": 3998.3676128232964,
+        "grid_age_group": "16_29",
+        "sex": "F",
+        "students_counted_employed_persons": 653.33568388,
+        "zensus_employed_persons": 4651.7032967032965
+      },
+      {
+        "KREIS": "03158",
+        "employed_target_persons": 5077.4457193254575,
+        "grid_age_group": "30_39",
+        "sex": "F",
+        "students_counted_employed_persons": 44.42973855,
+        "zensus_employed_persons": 5121.875457875458
+      }
+    ],
+    "smallest_employed_target": {
+      "KREIS": "03154",
+      "employed_target_persons": 2781.246136642396,
+      "grid_age_group": "16_29",
+      "sex": "F"
+    },
+    "subtracted_persons_total": 15384.080363200002
+  },
+  "student_kreis_targets": {
+    "entries": [
+      "student_education_18_29",
+      "student_education_30plus",
+      "student_work_leg",
+      "student_season_ticket"
+    ],
+    "kreise": 8,
+    "level_table": "braunschweig/popsim/student_level_table.csv",
+    "region_value_cells": 16,
+    "region_value_rate": 0.125,
+    "region_value_substitutions": 2,
+    "students_count": 28763,
+    "table": "RUN_DIR/cache_view/braunschweig.popsim.stage__52833eaa4f0c501ed4579bf7cbf1e197.cache/student_kreis_targets.csv"
+  },
+  "tenure_owner_limited_to_dwellings": {
+    "enabled": true,
+    "min_households_outside": 10.0,
+    "reason": null,
+    "report": {
+      "cells_changed": 119,
+      "cells_changed_with_nan_dwelling_count": 0,
+      "cells_seen": 43598,
+      "cells_with_nan_dwelling_count": 0,
+      "cells_with_nan_tenure_count": 0,
+      "cells_with_owner_above_household_total": 0,
+      "households_moved_owner_to_renter": 1903.5492879927233,
+      "min_households_outside": 10.0
+    },
+    "status": "applied"
+  },
+  "zgb_cell_filter": {
+    "cells_dropped": 3104884,
+    "cells_kept": 43598,
+    "cells_seen": 3148482,
+    "kreise_in_scope": 8
+  }
+}

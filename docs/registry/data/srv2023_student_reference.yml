@@ -1,7 +1,9 @@
 dataset: srv2023_student_reference
 title: SrV 2023 university-student aggregates (share, presence, education status, distance
-  bands, behaviour cells, car, licence and season-ticket availability comparison; five committed
-  tables)
+  bands, behaviour cells, car, licence and season-ticket availability comparison, plus the
+  Phase 1 parameter cells, young-adult status, post-MATSim values and education destinations,
+  and the Phase 3 parameter cells by home area, education leg by student status and area rule;
+  twelve committed tables)
 provider: derived in-repo from SrV 2023 Braunschweig + RGB scientific-use microdata
 vintage: 2023 survey year
 geography: |
@@ -13,34 +15,45 @@ crs: null
 roles:
 - calibration_target
 - reference_table
-used_by: []
+used_by:
+- braunschweig.analysis.synthesis.students_vs_srv
+- data.census.filtered
 acquisition:
   method: committed
   source: |
     Regenerate with: python scripts/extract_srv_student_reference.py --raw <srv2023_raw dir>
-    --out-dir eqasim-data/data/braunschweig/srv --source-commit <sha> (optional --n-bootstrap,
-    --seed of the distance-band noise floor), which writes all five tables in one run. Reads
-    SrV2023_Personen.csv, SrV2023_Wege.csv and SrV2023_Haushalte.csv; the required columns are
-    srv_student_reference.PERSON_COLUMNS, srv_student_reference.LEG_COLUMNS plus the script's
-    TRIP_COLUMNS, and HHNR, AGS. The raw microdata is local-only and never committed.
+    --sites <lsn_university_sites.csv, local-only> --out-dir eqasim-data/data/braunschweig/srv
+    --source-commit <sha> (optional --n-bootstrap, --seed of the three bootstraps), which writes
+    all twelve tables in one run. Reads SrV2023_Personen.csv, SrV2023_Wege.csv and
+    SrV2023_Haushalte.csv; the required columns are the script's PERSON_READ_COLUMNS,
+    LEG_READ_COLUMNS and HOUSEHOLD_READ_COLUMNS (checked first, the run fails early). The site
+    table is the local-only R1 table (site_kreis_ars5 of the rows with scope local); its sha256 is
+    in the header of each Phase 1 file. The raw microdata is local-only and never committed.
   script: scripts/extract_srv_student_reference.py
 storage:
-  expected_path: eqasim-data/data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison}.csv
+  expected_path: eqasim-data/data/braunschweig/srv/{srv2023_student_share_by_kreis,srv2023_education_status_by_age,srv2023_student_education_distance_by_kreis,srv2023_student_behaviour,srv2023_student_comparison,srv2023_student_parameters,srv2023_young_adult_status_by_kreis,srv2023_student_post_matsim_reference,srv2023_student_education_destination,srv2023_student_parameters_by_area,srv2023_education_leg_by_student_status,srv2023_student_area_rule}.csv
   committed: true
   local_only: false
 verification:
   verifier_entry: null
   notes: |
-    Not listed in scripts/verify_braunschweig_inputs.py: the five files are committed (by the
-    Phase 0 extraction run), no SrV aggregate is listed in the verifier, and no stage reads them -
-    they are build-time references of the student-commuting feature (issue #140). Unit tests
+    Not listed in scripts/verify_braunschweig_inputs.py: the five Phase 0 tables are committed
+    (Phase 0 extraction run), the four Phase 1 tables (Phase 1 extraction run) and the three
+    Phase 3 tables (home area, education leg by student status, area rule), and no SrV aggregate
+    is listed in the verifier. Only the analysis stage
+    braunschweig.analysis.synthesis.students_vs_srv reads three of them (parameters, student
+    share by Kreis, young-adult status) and raises if one is missing, so requirements.production
+    is "required" since that stage entered the production run lists. The PopulationSim stage
+    (data.census.filtered) reads three others (parameters, parameters by area, education leg by
+    student status) through braunschweig.popsim.student_targets while a student entry is on
+    (default on, ADR-0211), and raises if one is missing, so requirements.synthesis is "required". Unit tests
     on synthetic SrV-shaped frames (hand-computed shares, the label partition of both
     universes, the exclusion of unreadable codes, the seeded noise floor and the CLI end to
     end): tests/test_srv_student_reference.py.
 requirements:
-  synthesis: not_needed
+  synthesis: required
   matsim: not_needed
-  production: optional
+  production: required
 licensing:
   license: aggregate values only; raw SciUse file restricted
   restricted: false
@@ -68,9 +81,32 @@ limitations: |
   n_persons; every Kreis but Braunschweig holds only a handful), so only the 03ZGB region row is
   usable as a distance reference; the Kreis rows are descriptive at most.
 
-  Measured values: see the committed headers and the Phase 0 run manifest of issue #140. A
+  Small cells (owner decision 2026-11-26): the Phase 1 tables do not pool small cells; every
+  cell is shown with its number of respondents (n_unweighted), a reader judges it by that
+  number and its standard error.
+
+  The away_all_day rows of the parameter table are measured on the raw person file BEFORE the
+  universe filter (the filter drops exactly the persons away from home all day, so the share
+  would be 0 by construction after it); the other rows of that table are measured inside the
+  universe. The parameter table's header names both education-leg definitions (harmonised
+  purpose for the comparison with the model, control definition for the day factor and the
+  control targets). The daily distance and travel time of the post-MATSim table hold for a
+  documented sub-universe (named in its header).
+
+  Phase 3 (home areas): the by-area parameter table repeats the parameter table per surveyed
+  area (the areas and their Kreise are srv_student_reference.HOME_AREAS; Wolfsburg is not
+  surveyed and has no row); its counts add up to the regional table. The area rule table
+  applies design A3 rule 2 to it (thresholds are ASSUMPTIONS, in its header), for the education
+  and the work leg under both definitions (harmonised purpose, and E_ZWECK_9 as the control
+  targets define them, the latter from the by-area exclusion keys). The
+  education-leg table gives the share with an education leg for students and other adults;
+  who those other adults are is srv2023_education_status_by_age.csv.
+
+  Measured values: see the committed headers and the run manifests of issue #140. A
   measurement, not a validation.
 notes: |
   Reference table R5 of Phase 0 of the student-commuting feature (issue #140). The behaviour
   table uses the label vocabulary shared with the MiD seed side, so both surveys classify
-  students into the same cells.
+  students into the same cells. Phase 1 of the same feature adds four tables (parameter cells,
+  young-adult status, post-MATSim reference values, education destinations) from the same
+  script; Phase 3 adds three more (by home area, education leg by student status, area rule).
