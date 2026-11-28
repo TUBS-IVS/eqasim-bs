@@ -179,6 +179,9 @@ notes: 'Config keys and defaults: day_absence_enabled (true, KEY_ENABLED), false
   escort-protected is decided in braunschweig.synthesis.escort_duty (ESCORT_PURPOSE,
   escort_person_ids). An edit to any of the three must devalidate the stage just as much as an
   edit to absence.py -- the same mechanism as braunschweig.synthesis.commute_day.state_stage.validate.
+  With the stage ON the token also holds the digest of every SrV table the draw reads (the band and
+  household tables on both paths, the student tables with the cells on; _BAND_TABLES and _CELLS_TABLES
+  of the module), so a rebuilt table devalidates the stage.
 
   Composition with the commute-day-state model (ADR-0104): this stage''s output is INDEPENDENT of
   braunschweig.synthesis.commute_day.state_stage''s draw -- neither reads the other''s output, and

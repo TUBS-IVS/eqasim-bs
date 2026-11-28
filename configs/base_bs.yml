@@ -1070,7 +1070,8 @@ config:
   # One block for every key of the student flows. The defaults repeat the code defaults, so a run without
   # this block behaves the same. Switch off (false) = the behaviour before the flows (byte-identical).
   # The students' routing, the residents' balanced assignment, the in-commuters from the origin-destination
-  # table T and the two analysis stages (student_flows, student_out_commuters).
+  # table T and the two analysis stages (student_flows, student_out_commuters); an OFF run must also remove
+  # those two analysis stages from its run list (they refuse to run with the flows off).
   braunschweig.students.flows_enabled: true
   # Rule of the allotment of the residents inside a home Kreis: plan_length or home_distance (ADR-0213);
   # the default is home_distance (owner decision 2026-11-28, ADR-0213).

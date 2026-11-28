@@ -52,7 +52,7 @@ validation:
   state: unvalidated
   runs: []
   metric: null
-  note: The cell rates are SrV values; the deviation guard compares the realised rate of each cell with its rate in every run, but no recorded run manifest holds that comparison for the cells yet.
+  note: The cell rates are SrV values; the deviation guard compares the realised rate of each cell with its rate in every run. The per-cell comparison of the checkpoint run and the guard warning of the Wolfsburg student cell are in docs/runs/student-flows-popsim100-20261120-2026-11-28.yml; a measurement, not validation.
 assessment:
   status: pending
   by: null

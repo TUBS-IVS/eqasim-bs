@@ -41,6 +41,7 @@ decisions:
 - ADR-0213
 notes: |-
   Listed in the run lists of configs/overlays/test_100pct.yml and test_25pct.yml next to students_vs_srv.
-  Writes under <output_path>/analysis/student_flows/ the CSV files named in OUTPUT_FILES of the module, a
-  summary.md and student_flows_report.json (verdict, counts, fallback rates, parameters, input digests).
+  Writes under <output_path>/<OUTPUT_SUBDIR of the module> (student_flows/) the files named in OUTPUT_FILES
+  (the CSV tables and student_flows_summary.md) and REPORT_FILE student_flows_report.json (verdict, counts,
+  fallback rates, parameters, input digests); the report is also written to the stage's cache directory.
   Config keys: the student flows block of configs/base_bs.yml.

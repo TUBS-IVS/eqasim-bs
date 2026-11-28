@@ -7,7 +7,8 @@ description: |-
   adult age, apprentices and pupils aged 20 or older to the vocational schools, other adults to the
   adult-education rule without university buildings; the residents of the university level get a balanced
   assignment fitted on the persons present on the simulated day, with the persons of a home Kreis allotted
-  to the destinations by the length of their plan's education leg (the home-distance rule selectable); the
+  to the destinations by the straight-line distance from home (the default home-distance rule, owner
+  decision of 2026-11-28; the rule by the length of the plan's education leg is selectable); the
   in-commuters are the outside rows of T times the effective day factor, with the commute length T implies
   and the students' mode table. Method and rejected options: ADR-0213; method text: the detail doc. One
   switch, braunschweig.students.flows_enabled, default on; off keeps the behaviour before the flows. The
@@ -87,8 +88,8 @@ validation:
   state: unvalidated
   runs: []
   metric: null
-  note: A measurement of the synthesis is not validation. No run manifest of the flows is linked from this
-    record yet; the manifests of the wiring and measurement runs follow in issue #140.
+  note: A measurement of the synthesis is not validation. The run on the cached full population and its
+    measurement are recorded in docs/runs/student-flows-popsim100-20261120-2026-11-28.yml.
 assessment:
   status: pending
   by: null

@@ -11,7 +11,8 @@ description: |-
   (synthesis.population.trips.simulated) and counts the students whose education leg is uncertain; the
   definitions, the counted blind spot and the code state it measures are in the module docstring of
   braunschweig/analysis/synthesis/student_out_commuters.py. configure() refuses a run without the portal
-  layer (nothing is rewritten then).
+  layer (nothing is rewritten then) and a run with braunschweig.students.flows_enabled false (no
+  destinations of the out-commuters then).
 lineage:
   type: braunschweig_new
   upstream: null

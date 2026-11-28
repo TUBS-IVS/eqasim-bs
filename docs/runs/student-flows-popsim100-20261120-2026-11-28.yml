@@ -153,6 +153,7 @@ validation:
 issues:
 - '#140'
 decisions:
+- ADR-0212
 - ADR-0213
 notes: >-
   Smoke and measurement on a cached population, not a validation: no target value, the SrV tables are a survey and the
