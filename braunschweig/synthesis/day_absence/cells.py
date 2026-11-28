@@ -15,6 +15,9 @@ The individual stage of :func:`braunschweig.synthesis.day_absence.absence.draw_a
   student" (the rule of ``braunschweig.calibration.mid_student_reference``), so such an adult is drawn
   at the band's rate of ALL persons, the expected rate of an adult of unknown status.
 
+An adult of unknown status is never a student here, although the education routing may route such a person to a
+university by its fallback rule (rule text: ``student_flows_inputs.status_unknown``).
+
 The rate of an adult band as a whole is no longer a target: it follows from the students and the
 others the population holds. The household stage is unchanged (by household size).
 

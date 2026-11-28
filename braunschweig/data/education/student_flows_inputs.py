@@ -109,6 +109,14 @@ def status_unknown(p_taet: pd.Series) -> pd.Series:
     routing and the student flows analysis): ``P_TAET`` is missing, not a number, or the no-answer code
     :data:`P_TAET_NO_ANSWER`. An unknown status is never read as "not a student" (the rule of
     ``braunschweig.calibration.mid_student_reference``); each caller says what it does with such a person.
+
+    Owner of the rule text for the three places (controller ruling of the PR #703 review): the education routing
+    MUST place every person with an education activity, so a person of unknown status takes the B1 fallback rule
+    (``studies & ~employed & age >= 20``) and can end up as a university student; the day-absence cells and the
+    student population rows of the acceptance table never GUESS a status, so such a person is no student there
+    (the cells draw an adult of unknown status at the band's rate of all persons). The acceptance report counts
+    the persons the routing sent to a university by this fallback (``n_university_by_status_fallback``) and their
+    share of the site residents apart.
     """
     code = pd.to_numeric(p_taet, errors="coerce")
     return (code.isna() | (code == P_TAET_NO_ANSWER)).astype(bool)

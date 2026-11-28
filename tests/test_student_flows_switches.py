@@ -73,7 +73,7 @@ def test_off_path_declares_no_new_input_and_no_new_key():
     assert not _ON_ONLY_STAGES & set(off.stages)
     flows_keys = {stage.KEY_KREIS_MATCHING_RULE, stage.KEY_FIT_TOLERANCE, stage.KEY_FIT_MAX_ITERATIONS,
                   stage.KEY_MATCHING_FALLBACK_WARN_SHARE, stage.KEY_OD_TABLE_PATH, stage.KEY_DAY_ABSENCE_ENABLED,
-                  stage.KEY_DAY_ABSENCE_STUDENT_CELLS}
+                  stage.KEY_DAY_ABSENCE_STUDENT_CELLS, stage.KEY_NO_ROW_MAX_SHARE, stage.KEY_NEAR_SITE_RADIUS_KM}
     assert flows_keys <= set(on.declared)
     assert not flows_keys & set(off.declared)
     assert on.declared[stage.KEY_KREIS_MATCHING_RULE] == "home_distance"   # owner decision 2026-11-28 (ADR-0213)
@@ -140,6 +140,8 @@ _REGION_HEADS = {"BS-TU": 850.0, "WF": 400.0, "GOE": 400.0}
 _PRESENT = {"03101": 50, "03102": 30}
 _ABSENT = {"03101": 10, "03102": 6}
 _WOLFSBURG = 4          # persons of 03103, the first of them absent
+# Wolfsburg has no row of T: the default of the key (0.0) raises, so the tests that run this population allow it.
+_ALLOW_NO_ROW = {stage.KEY_NO_ROW_MAX_SHARE: 0.5}
 
 
 def _write_od_table(data_path):
@@ -229,7 +231,8 @@ def _run(tmp_path, people, row_order=None, **overrides):
 
 def test_on_path_gives_every_destination_its_share_of_the_present_persons_and_counts_the_other_routes(tmp_path):
     people = _people()
-    out, report = _run(tmp_path, people)
+    out, report = _run(tmp_path, people, **_ALLOW_NO_ROW, **{stage.KEY_NEAR_SITE_RADIUS_KM: 3.0})
+    assert report["allotment_diagnostics"]["radius_km"] == 3.0   # the configured radius reaches the diagnostics
     assert len(out) == len(people) and set(out["person_id"]) == set(people["person_id"])
     assert list(out.columns) == ["person_id", "commune_id", "location_id", "geometry", "routed_level",
                                  "destination_id", "assignment_path"]
@@ -285,7 +288,8 @@ def test_the_counted_routes_warn(tmp_path, caplog, warn_share, plan_rule_warned)
     20 % of the present, 25 % of the absent persons) warns above the configured share only, present and absent
     rated apart."""
     with caplog.at_level("INFO", logger=stage.__name__):
-        _, report = _run(tmp_path, _people(), **{stage.KEY_MATCHING_FALLBACK_WARN_SHARE: warn_share})
+        _, report = _run(tmp_path, _people(), **_ALLOW_NO_ROW,
+                         **{stage.KEY_MATCHING_FALLBACK_WARN_SHARE: warn_share})
     warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
     assert sum("no row of T" in message for message in warnings) == 1
     plan_warnings = [message for message in warnings if stage.KEY_MATCHING_FALLBACK_WARN_SHARE in message]
@@ -304,16 +308,29 @@ def test_on_path_does_not_depend_on_the_row_order_and_runs_without_day_absence(t
 
     stage_draw_buildings = stage.draw_buildings
     monkeypatch.setattr(stage, "draw_buildings", recording_draw_buildings)
-    out, _ = _run(tmp_path, people)
+    out, _ = _run(tmp_path, people, **_ALLOW_NO_ROW)
     allotted_ids = set(people.loc[people["kreis"] != "03103", "person_id"])
     assert len(indexes) == 1 and indexes[0].name == "person_id" and set(indexes[0]) == allotted_ids
-    reversed_out, _ = _run(tmp_path, people, row_order=np.arange(len(people))[::-1])
+    reversed_out, _ = _run(tmp_path, people, row_order=np.arange(len(people))[::-1], **_ALLOW_NO_ROW)
     by_person = out.set_index("person_id").sort_index()
     by_person_reversed = reversed_out.set_index("person_id").sort_index()
     pd.testing.assert_series_equal(by_person["location_id"], by_person_reversed["location_id"])
     pd.testing.assert_series_equal(by_person["assignment_path"], by_person_reversed["assignment_path"])
 
     # Day absence OFF: no absence stage is read and every person is present.
-    no_absence, report = _run(tmp_path, people, day_absence_enabled=False)
+    no_absence, report = _run(tmp_path, people, day_absence_enabled=False, **_ALLOW_NO_ROW)
     assert report["n_absent"] == 0
     assert not no_absence["assignment_path"].str.startswith("absent_").any()
+
+
+def test_a_home_kreis_without_a_row_of_t_raises_by_default_and_runs_up_to_the_allowed_share(tmp_path):
+    """On the real table every home Kreis has a row, so the default (0.0) stops the run and names the Kreis and
+    the key; 4 of the 100 toy persons live in Wolfsburg (no row): 4 % passes at 5 % and fails at 3 %."""
+    people = _people()
+    with pytest.raises(ValueError) as error:
+        _run(tmp_path, people)
+    assert stage.KEY_NO_ROW_MAX_SHARE in str(error.value) and "03103" in str(error.value)
+    with pytest.raises(ValueError, match="no_row_fallback_max_share"):
+        _run(tmp_path, people, **{stage.KEY_NO_ROW_MAX_SHARE: 0.03})
+    _, report = _run(tmp_path, people, **{stage.KEY_NO_ROW_MAX_SHARE: 0.05})
+    assert report["legacy_without_row"]["n_persons"] == _WOLFSBURG

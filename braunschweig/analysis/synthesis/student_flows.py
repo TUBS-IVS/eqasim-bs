@@ -22,6 +22,10 @@ total of the region):
 * ``students_30plus_report``: the students aged 30 or older with an education activity, present or not (their plan
   is what the balance applies ``e`` to; balance = level 30+ x ``e`` x ``rate``), ``rule_applies`` False.
 
+A person of unknown status is no student in these population rows, although the routing may have sent it to a
+university by its fallback rule; the report counts those persons apart (``n_university_by_status_fallback``; rule
+text: ``student_flows_inputs.status_unknown``).
+
 "Present" is the absence stage's ``day_absence_state``; with the day absence off every person is present. An
 "education activity" is a row of the ``education_gravity`` output (the persons whose plan has an education trip).
 
@@ -88,6 +92,10 @@ KEY_OD_TABLE_PATH = "braunschweig.students.od_table_path"
 DEFAULT_OD_TABLE_PATH = "braunschweig/schools/student_od_table.csv"
 KEY_LEVEL_TABLE_PATH = "braunschweig.students.level_table_path"
 DEFAULT_LEVEL_TABLE_PATH = "braunschweig/popsim/student_level_table.csv"
+#: Repeated from ``education_gravity`` (KEY_NEAR_SITE_RADIUS_KM, DEFAULT_NEAR_SITE_RADIUS_KM; the owner of the
+#: assumption text) and pinned by ``tests/test_student_flows_analysis.py``.
+KEY_NEAR_SITE_RADIUS_KM = "braunschweig.students.near_site_radius_km"
+DEFAULT_NEAR_SITE_RADIUS_KM = 2.0
 KEY_DAY_ABSENCE_ENABLED = "day_absence_enabled"
 KEY_DAY_ABSENCE_STUDENT_CELLS = "day_absence_student_cells_enabled"
 
@@ -257,16 +265,28 @@ def acceptance_table(*, destinations: pd.DataFrame, enrollment: pd.Series, regio
     return pd.DataFrame(rows, columns=ACCEPTANCE_COLUMNS)
 
 
+def check_acceptance_settings(min_persons: float, max_deviation_share: float) -> None:
+    """Raise ``ValueError`` naming the key for an invalid acceptance setting.
+
+    ``min_persons`` (``KEY_MIN_PERSONS``) must be finite and > 0: with 0 a row of balance 0 would be judged, and its
+    deviation share is NaN, which never fails, so the rule would silently pass an empty row.
+    ``max_deviation_share`` (``KEY_MAX_DEVIATION_SHARE``) must be finite and >= 0.
+    """
+    if not (math.isfinite(max_deviation_share) and max_deviation_share >= 0):
+        raise ValueError(f"{_LOG_TAG} {KEY_MAX_DEVIATION_SHARE} (max_deviation_share) must be finite and >= 0, got "
+                         f"{max_deviation_share!r}")
+    if not (math.isfinite(min_persons) and min_persons > 0):
+        raise ValueError(f"{_LOG_TAG} {KEY_MIN_PERSONS} (min_persons) must be finite and > 0, got {min_persons!r}")
+
+
 def acceptance_verdict(table: pd.DataFrame, min_persons: float, max_deviation_share: float) -> str:
     """``PASS``, ``FAIL`` or ``REPORT_ONLY`` (ASSUMPTION A17).
 
     Judged rows are those with ``rule_applies`` and ``balance >= min_persons``. Any judged row with
     ``|deviation_share| > max_deviation_share`` gives ``FAIL``; no judged row gives ``REPORT_ONLY``; else ``PASS``.
+    ``min_persons`` must be > 0 (:func:`check_acceptance_settings`).
     """
-    if not (math.isfinite(max_deviation_share) and max_deviation_share >= 0):
-        raise ValueError(f"{_LOG_TAG} max_deviation_share must be finite and >= 0, got {max_deviation_share!r}")
-    if not (math.isfinite(min_persons) and min_persons >= 0):
-        raise ValueError(f"{_LOG_TAG} min_persons must be finite and >= 0, got {min_persons!r}")
+    check_acceptance_settings(min_persons, max_deviation_share)
     judged = table[table["rule_applies"].astype(bool) & (table["balance"] >= min_persons)]
     if judged.empty:
         return VERDICT_REPORT_ONLY
@@ -593,19 +613,21 @@ def non_students_moved(frame: pd.DataFrame) -> pd.DataFrame:
     return members.groupby("routed_level").size().rename("persons").reset_index()
 
 
-def allotment_by_kreis(assigned: pd.DataFrame, centres: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+def allotment_by_kreis(assigned: pd.DataFrame, centres: pd.DataFrame, rng: np.random.Generator,
+                       near_site_radius_km: float = DEFAULT_NEAR_SITE_RADIUS_KM) -> pd.DataFrame:
     """The allotment diagnostics of Task 9 per home Kreis, with the random-allotment baseline.
 
     Args:
         assigned: ``[person_id, home_kreis, destination_id, path, x, y, leg_km]``, the present persons of Kreise
             with a fitted row (every person of such a Kreis).
         centres: ``university_assignment.destination_centres`` of the facilities.
+        near_site_radius_km: ``KEY_NEAR_SITE_RADIUS_KM``, the radius of the "lives next to a local site" counts.
     """
     rows = []
     for kreis, members in assigned.groupby("home_kreis", sort=True):
         diagnostics = _university_assignment.allotment_diagnostics(
             members[["person_id", "destination_id", "path", "home_kreis"]], members[["person_id", "x", "y", "leg_km"]],
-            centres, kreis_column="home_kreis")
+            centres, near_site_radius_km, kreis_column="home_kreis")
         totals = members.groupby("destination_id").size()
         random_km = _university_assignment.random_allotment_mean_distance(
             members[["person_id", "x", "y", "leg_km"]], totals, centres, rng)
@@ -790,6 +812,7 @@ def configure(context):
     context.config(KEY_DETOUR_SENSITIVITY, DEFAULT_DETOUR_SENSITIVITY)
     context.config(KEY_MIN_SRV_RESPONDENTS, DEFAULT_MIN_SRV_RESPONDENTS)
     context.config(KEY_FALLBACK_WARN_SHARE, DEFAULT_FALLBACK_WARN_SHARE)
+    context.config(KEY_NEAR_SITE_RADIUS_KM, DEFAULT_NEAR_SITE_RADIUS_KM)
 
 
 def _xy(frame_with_geometry, crs_name: str) -> np.ndarray:
@@ -814,6 +837,10 @@ def summary_markdown(report: dict, acceptance: pd.DataFrame, failing: pd.DataFra
              f"|deviation| > {acc['max_deviation_share']:.1%}; {acc['n_rows_judged']} row(s) judged)",
              f"- sampling rate {report['parameters']['sampling_rate']}, absence mode {report['day_factor']['absence_mode']}, "
              f"e {report['day_factor']['e']:.4f}, f_eff {report['day_factor']['f_eff']:.4f}"]
+    counts = report["counts"]
+    lines.append(f"- University residents routed by the status fallback (unknown P_TAET, not counted as students in "
+                 f"the population rows): {counts['n_university_by_status_fallback']} "
+                 f"({counts['share_university_by_status_fallback_of_site_residents']:.2%} of the site residents)")
     if acc["verdict"] == VERDICT_REPORT_ONLY:
         lines.append("- No row reaches the minimum: this table is a report and the rule needs a larger sample.")
     if acc["verdict"] == VERDICT_FAIL:
@@ -849,6 +876,8 @@ def execute(context):
     max_share = float(context.config(KEY_MAX_DEVIATION_SHARE))
     warn_share = float(context.config(KEY_FALLBACK_WARN_SHARE))
     min_srv_respondents = int(context.config(KEY_MIN_SRV_RESPONDENTS))
+    near_site_radius_km = float(context.config(KEY_NEAR_SITE_RADIUS_KM))
+    check_acceptance_settings(min_persons, max_share)   # before the inputs are read: a bad key stops the run early
     # The yardstick first, then the sensitivity values; a value equal to one already listed is dropped.
     detour_factors = list(dict.fromkeys(
         [float(_circuity.LEGACY_DETOUR_FACTOR), *[float(f) for f in context.config(KEY_DETOUR_SENSITIVITY)]]))
@@ -903,9 +932,9 @@ def execute(context):
     state_path_mismatch = int((frame[frame["destination_id"].notna()]["present"]
                                != resident_mask(frame)[frame["destination_id"].notna()]).sum())
     if state_path_mismatch:
-        LOGGER.error("%s %d persons whose day_absence_state disagrees with their assignment path (absent_*): the "
-                     "location stage and the absence stage do not come from the same population", _LOG_TAG,
-                     state_path_mismatch)
+        raise ValueError(f"{_LOG_TAG} {state_path_mismatch} person(s) whose day_absence_state disagrees with their "
+                         f"assignment path (absent_*): the caches of {ABSENCE_STAGE} and {GRAVITY_STAGE} most likely "
+                         f"come from different code states, so no verdict can be computed from two populations")
     counts = student_counts(frame)
     n_students_outside_level = students_outside_level(frame, level_by_kreis.index)
     (LOGGER.warning if n_students_outside_level else LOGGER.info)(
@@ -993,6 +1022,16 @@ def execute(context):
     moved = non_students_moved(frame)
     n_university_non_students = int(moved.loc[moved["routed_level"] == "university", "persons"].sum()) \
         if len(moved) else 0
+    # Persons of unknown status the routing sent to a university by its B1 fallback rule (the population rows and
+    # the absence cells do not count them as students; rule text: student_flows_inputs.status_unknown). Counted
+    # among the present residents at a university building, the same set as ``university``.
+    n_university_by_status_fallback = int(university["p_taet"].isna().sum())
+    share_university_by_status_fallback = (n_university_by_status_fallback / len(university) if len(university)
+                                           else 0.0)
+    (LOGGER.warning if n_university_by_status_fallback else LOGGER.info)(
+        "%s university residents routed by the status fallback (unknown P_TAET): %d of %d (%.2f%% of the site "
+        "residents); the population rows do not count them as students", _LOG_TAG, n_university_by_status_fallback,
+        len(university), 100.0 * share_university_by_status_fallback)
 
     allotted_paths = (_university_assignment.PATH_PLAN_LENGTH, _university_assignment.PATH_FALLBACK_DECAY,
                       _university_assignment.PATH_HOME_DISTANCE)
@@ -1007,7 +1046,8 @@ def execute(context):
         "leg_km": allotted["person_id"].map(leg_km).to_numpy(dtype=float)})
     centres = _university_assignment.destination_centres(facilities)
     allotment = allotment_by_kreis(assigned, centres, np.random.default_rng(
-        [int(context.config("random_seed")), BASELINE_STREAM_ID])) if len(assigned) else pd.DataFrame()
+        [int(context.config("random_seed")), BASELINE_STREAM_ID]),
+        near_site_radius_km) if len(assigned) else pd.DataFrame()
     commute = incommuter_commute_table(incommuters if has_commuters else incommuters.iloc[0:0])
 
     # ---- fallback rates of Tasks 5, 6, 9, 10, 11
@@ -1073,6 +1113,8 @@ def execute(context):
                    "n_adult_students_outside_level_kreise": n_students_outside_level,
                    "n_state_path_mismatch": state_path_mismatch,
                    "n_non_students_at_a_university_building": n_university_non_students,
+                   "n_university_by_status_fallback": n_university_by_status_fallback,
+                   "share_university_by_status_fallback_of_site_residents": share_university_by_status_fallback,
                    "dropped_zero_share_destinations": list(dropped)},
         "srv_distance_rows": {"min_respondents": min_srv_respondents, **distance_rows},
         "fallback_rates": rates, "home_kreis_vs_vg250": mismatch, "committed_balance_vs_t": balance_check,

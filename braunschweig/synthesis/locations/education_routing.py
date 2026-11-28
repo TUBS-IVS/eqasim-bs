@@ -12,6 +12,10 @@ Routing table (design B1; ``P_TAET`` is the survey status: 8 apprentice, 9 pupil
     apprentice or pupil (P_TAET 8 or 9), 20 or older -> ``bbs_adult``
     everyone else, 20 or older                      -> ``adult_education``
 
+A person of unknown status is routed by the B1 fallback rule of :func:`student_status` and so can become a
+university student, unlike in the day-absence cells and the acceptance report's population rows (rule text:
+``student_flows_inputs.status_unknown``).
+
 Deliberate choice (for the record, ADR-0213): ``bbs_adult`` is drawn with ONE scalar slope, the ``bbs`` entry of
 ``education_gravity_slope_by_level``, for every person. The per-RS7 slope override that the pupils' placement
 honours (``education_gravity_slope_by_level_rs7``) is not used: ``assign_by_decay`` takes a single slope, and

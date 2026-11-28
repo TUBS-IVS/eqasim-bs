@@ -968,7 +968,8 @@ def allotment_diagnostics(assigned: pd.DataFrame, persons: pd.DataFrame, centres
         persons: ``[person_id, x, y, leg_km]`` of the same persons.
         centres: ``[destination_id, x, y, scope]`` (:func:`destination_centres`).
         radius_km: a person living within this straight-line distance of a local site's centre lives "next to" the
-            site. The default 2 km is the design's reporting radius (B5); it enters no allotment.
+            site. The stages pass ``braunschweig.students.near_site_radius_km`` (default 2 km, the design's
+            reporting radius, B5); it enters no allotment.
         kreis_column: the column of ``assigned`` naming each person's home Kreis (required, also for a frame of
             one Kreis: without it the places of several Kreise would be pooled and the "with place" counts would
             come out too high).

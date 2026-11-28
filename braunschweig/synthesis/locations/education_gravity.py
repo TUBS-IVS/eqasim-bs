@@ -95,6 +95,15 @@ DEFAULT_FIT_MAX_ITERATIONS = 1000
 #: 2026-11-28 (run manifest ``docs/runs/student-flows-popsim100-20261120-2026-11-28.yml``) and the value stays.
 KEY_MATCHING_FALLBACK_WARN_SHARE = "braunschweig.students.matching_fallback_warn_share"
 DEFAULT_MATCHING_FALLBACK_WARN_SHARE = 0.25
+#: Largest share of the university persons whose home Kreis has no row of T (placed by the legacy decay) before the
+#: stage raises. ASSUMPTION (design B5): on the real table every home Kreis has a row, so any such person means a
+#: broken T (wrong region filter, a key mismatch in ``home_ars5``); the default 0.0 raises on the first one.
+KEY_NO_ROW_MAX_SHARE = "braunschweig.students.no_row_fallback_max_share"
+DEFAULT_NO_ROW_MAX_SHARE = 0.0
+#: Radius of the "lives next to a local site" count of the allotment diagnostics (reporting only, enters no
+#: allotment). ASSUMPTION: the 2 km reporting radius of design B5, not from a table.
+KEY_NEAR_SITE_RADIUS_KM = "braunschweig.students.near_site_radius_km"
+DEFAULT_NEAR_SITE_RADIUS_KM = 2.0
 #: The table T relative to ``data_path``. The key and its default are those of
 #: ``braunschweig.data.schools.university_facilities`` (KEY_OD_TABLE_PATH), repeated because of the import boundary
 #: of Phase 4 and pinned by ``tests/test_student_flows_switches.py``.
@@ -148,6 +157,8 @@ class UniversityFlowInputs:
         fit_tolerance, fit_max_iterations: the fit's settings.
         fallback_warn_share: ``braunschweig.students.matching_fallback_warn_share``.
         rng: the dedicated generator of the university step (:data:`UNIVERSITY_STREAM_ID`).
+        no_row_max_share: ``braunschweig.students.no_row_fallback_max_share``.
+        near_site_radius_km: ``braunschweig.students.near_site_radius_km``.
     """
     seed: pd.DataFrame
     shares: pd.Series
@@ -160,6 +171,8 @@ class UniversityFlowInputs:
     fit_max_iterations: int
     fallback_warn_share: float
     rng: np.random.Generator
+    no_row_max_share: float = DEFAULT_NO_ROW_MAX_SHARE
+    near_site_radius_km: float = DEFAULT_NEAR_SITE_RADIUS_KM
 
 
 def check_university_flow_settings(rule, day_absence_enabled, day_absence_student_cells_enabled) -> None:
@@ -305,7 +318,8 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
 
     1. A person whose home Kreis has no row of T (no seed on a destination with a share) is placed by the legacy
        ``assign_by_decay`` over the buildings (capacity times the decay of ``decay_slope``, radius
-       ``max_radius_km``); counted, and a WARNING above 0 (design: 0 on the real table).
+       ``max_radius_km``); counted, a WARNING above 0 and a ValueError when their share of the university persons
+       exceeds ``inputs.no_row_max_share`` (design: 0 on the real table, so a broken T stops the run).
     2. The present persons of the other Kreise: ``fit_flow_matrix`` (rows: the persons present per home Kreis;
        columns: their sum split by the destinations' shares), ``controlled_round``, then per home Kreis (sorted)
        ``allot_within_kreis`` on the Kreis's row by ``inputs.rule``. The share of the plan rule's fallback is
@@ -332,7 +346,8 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
 
     Raises:
         ValueError: when a person has no home Kreis or no day-absence state, when a destination with a share has
-            no facility, when ``location_id`` is not unique, or on the errors of the pure functions (a fit that does
+            no facility, when ``location_id`` is not unique, when the persons of home Kreise without a row of T
+            exceed ``inputs.no_row_max_share``, or on the errors of the pure functions (a fit that does
             not converge, a destination no populated Kreis reaches).
     """
     report = _empty_university_report(inputs)
@@ -372,7 +387,14 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
     no_row = ~frame["home_ars5"].isin(with_row).to_numpy()
     present = frame["present"].to_numpy(dtype=bool)
 
-    # 1. Home Kreise without a row of T: the legacy decay over the buildings.
+    # 1. Home Kreise without a row of T: the legacy decay over the buildings, up to the configured share.
+    no_row_share = float(no_row.sum()) / len(frame)
+    if no_row_share > inputs.no_row_max_share:
+        raise ValueError(
+            f"{_UNIVERSITY_TAG} {int(no_row.sum())}/{len(frame)} university persons ({100.0 * no_row_share:.1f}%) live "
+            f"in a home Kreis without a row of T {sorted(set(frame.loc[no_row, 'home_ars5']))}, above "
+            f"{KEY_NO_ROW_MAX_SHARE} = {inputs.no_row_max_share}; on the real table every home Kreis has a row, so "
+            f"T or the home Kreis codes are broken")
     if no_row.any():
         legacy = frame[no_row]
         choice = assign_by_decay(legacy[["x", "y"]].to_numpy(), _xy(facilities), facilities["capacity"].to_numpy(),
@@ -462,7 +484,7 @@ def assign_university_flows(persons, facilities, inputs: UniversityFlowInputs, d
         report["allotment_diagnostics"] = allotment_diagnostics(
             assigned.rename(columns={"assignment_path": "path"}), frame.loc[fitted_rows.index,
                                                                              ["person_id", "x", "y", "leg_km"]],
-            centres, kreis_column="home_ars5")
+            centres, inputs.near_site_radius_km, kreis_column="home_ars5")
     present_distance = pd.DataFrame({"home_ars5": frame["home_ars5"], "km": distance_km})[present]
     report["realised_distance_km_by_home_kreis"] = {
         str(kreis): {"n_present": int(len(group)), "mean": float(group["km"].mean()),
@@ -852,6 +874,8 @@ def _configure_university_flows(context):
     context.config(KEY_FIT_TOLERANCE, DEFAULT_FIT_TOLERANCE)
     context.config(KEY_FIT_MAX_ITERATIONS, DEFAULT_FIT_MAX_ITERATIONS)
     context.config(KEY_MATCHING_FALLBACK_WARN_SHARE, DEFAULT_MATCHING_FALLBACK_WARN_SHARE)
+    context.config(KEY_NO_ROW_MAX_SHARE, DEFAULT_NO_ROW_MAX_SHARE)
+    context.config(KEY_NEAR_SITE_RADIUS_KM, DEFAULT_NEAR_SITE_RADIUS_KM)
     context.config(KEY_OD_TABLE_PATH, DEFAULT_OD_TABLE_PATH)
     day_absence_enabled = context.config(KEY_DAY_ABSENCE_ENABLED, DEFAULT_DAY_ABSENCE_ENABLED)
     cells_enabled = None
@@ -953,7 +977,9 @@ def _university_flow_inputs(context, df_persons):
         rule=context.config(KEY_KREIS_MATCHING_RULE), fit_tolerance=float(context.config(KEY_FIT_TOLERANCE)),
         fit_max_iterations=context.config(KEY_FIT_MAX_ITERATIONS),
         fallback_warn_share=float(context.config(KEY_MATCHING_FALLBACK_WARN_SHARE)),
-        rng=np.random.default_rng([random_seed, UNIVERSITY_STREAM_ID]))
+        rng=np.random.default_rng([random_seed, UNIVERSITY_STREAM_ID]),
+        no_row_max_share=float(context.config(KEY_NO_ROW_MAX_SHARE)),
+        near_site_radius_km=float(context.config(KEY_NEAR_SITE_RADIUS_KM)))
 
 
 def execute(context):

@@ -152,8 +152,10 @@ def test_verdict_report_only_when_no_row_reaches_the_minimum_and_rows_without_th
 def test_verdict_rejects_bad_settings():
     with pytest.raises(ValueError, match="max_deviation_share"):
         S.acceptance_verdict(_verdict_table([(1.0, 1.0, True)]), 200, -0.1)
-    with pytest.raises(ValueError, match="min_persons"):
-        S.acceptance_verdict(_verdict_table([(1.0, 1.0, True)]), -1, 0.05)
+    # 0 is refused too: a row of balance 0 (NaN deviation share, which never fails) would be judged
+    for bad in (-1, 0, math.nan):
+        with pytest.raises(ValueError, match=S.KEY_MIN_PERSONS):
+            S.acceptance_verdict(_verdict_table([(1.0, 1.0, True)]), bad, 0.05)
 
 
 # ----------------------------------------------------------------------------------------- distance bands
@@ -229,6 +231,8 @@ def test_literals_repeated_from_their_owners_match_them():
     assert S.DEFAULT_OD_TABLE_PATH == incommuters.DEFAULT_OD_TABLE_PATH == gravity.DEFAULT_OD_TABLE_PATH
     assert S.KEY_LEVEL_TABLE_PATH == incommuters.KEY_LEVEL_TABLE_PATH
     assert S.DEFAULT_LEVEL_TABLE_PATH == incommuters.DEFAULT_LEVEL_TABLE_PATH
+    assert (S.KEY_NEAR_SITE_RADIUS_KM, S.DEFAULT_NEAR_SITE_RADIUS_KM) == (
+        gravity.KEY_NEAR_SITE_RADIUS_KM, gravity.DEFAULT_NEAR_SITE_RADIUS_KM)
     assert S.KEY_DAY_ABSENCE_ENABLED == gravity.KEY_DAY_ABSENCE_ENABLED
     assert S.KEY_DAY_ABSENCE_STUDENT_CELLS == gravity.KEY_DAY_ABSENCE_STUDENT_CELLS
     assert (S.ABSENT_PATH_PREFIX, S.PATH_LEGACY_DECAY) == (gravity.ABSENT_PATH_PREFIX, gravity.PATH_LEGACY_DECAY)
@@ -363,7 +367,8 @@ def _config(tmp_path, data_path, **override):
             S.KEY_MAX_DEVIATION_SHARE: S.DEFAULT_MAX_DEVIATION_SHARE,
             S.KEY_DETOUR_SENSITIVITY: S.DEFAULT_DETOUR_SENSITIVITY,
             S.KEY_MIN_SRV_RESPONDENTS: S.DEFAULT_MIN_SRV_RESPONDENTS,
-            S.KEY_FALLBACK_WARN_SHARE: S.DEFAULT_FALLBACK_WARN_SHARE, S.KEY_DAY_ABSENCE_ENABLED: True}, **override}
+            S.KEY_FALLBACK_WARN_SHARE: S.DEFAULT_FALLBACK_WARN_SHARE, S.KEY_DAY_ABSENCE_ENABLED: True,
+            S.KEY_NEAR_SITE_RADIUS_KM: S.DEFAULT_NEAR_SITE_RADIUS_KM}, **override}
 
 
 def _run_stage(tmp_path, monkeypatch, mutate_world=None, **config):
@@ -464,6 +469,42 @@ def test_the_no_answer_code_is_an_unknown_status_counted_apart_and_never_a_non_s
     assert report["committed_balance_vs_t"]["level_vs_t_region"]["holds"] is True
 
 
+def test_a_university_resident_of_unknown_status_is_counted_apart_and_no_student_in_the_population_rows(
+        tmp_path, monkeypatch):
+    """Person 5 (40 years, unknown status 99) is routed to the university by the B1 fallback rule: the report
+    counts it (1 of the 5 present university residents) and the population rows still count only the 3 + 3
+    persons with the student code."""
+    def fallback_routed(world):
+        world["stages"][S.ENRICHED_STAGE].loc[4, "P_TAET"] = 99
+        gravity = world["stages"][S.GRAVITY_STAGE]
+        gravity.loc[4, ["routed_level", "destination_id", "assignment_path"]] = [
+            "university", world["local"], "home_distance"]
+
+    _, _, _, out = _run_stage(tmp_path, monkeypatch, mutate_world=fallback_routed)
+    report = json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))
+    assert report["counts"]["n_university_by_status_fallback"] == 1
+    assert report["counts"]["share_university_by_status_fallback_of_site_residents"] == pytest.approx(1 / 5)
+    table = _csv(out, "acceptance").set_index(["section", "key"])
+    assert table.loc[("students_population", "03101"), "model"] == 3     # persons 1, 2, 8; person 5 is no student
+    assert "status fallback" in (out / S.OUTPUT_FILES["summary"]).read_text(encoding="utf-8")
+
+
+def test_a_state_path_mismatch_between_the_absence_and_the_location_stage_raises(tmp_path, monkeypatch):
+    """Person 1 is present by the absence stage but its path says absent_*: the two caches disagree on who is
+    present, so no verdict is computed."""
+    def disagree(world):
+        world["stages"][S.GRAVITY_STAGE].loc[0, "assignment_path"] = "absent_plan_length"
+
+    with pytest.raises(ValueError, match="different code states") as error:
+        _run_stage(tmp_path, monkeypatch, mutate_world=disagree)
+    assert "1 person(s)" in str(error.value)
+
+
+def test_the_stage_refuses_a_zero_acceptance_minimum_before_reading_the_inputs(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match=S.KEY_MIN_PERSONS):
+        _run_stage(tmp_path, monkeypatch, **{S.KEY_MIN_PERSONS: 0})
+
+
 def test_the_level_total_is_checked_against_the_region_rows_of_t(caplog):
     od = pd.DataFrame({"destination_id": ["A", "A", "B"], "home_in_region": [True, False, True],
                        "students_persons": [60.0, 15.0, 40.0]})
@@ -498,7 +539,8 @@ def test_stage_fail_branch_logs_an_error_names_the_population_rows_and_says_so_i
         tmp_path, monkeypatch, caplog):
     import logging
     with caplog.at_level(logging.ERROR, logger=S.LOGGER.name):
-        _, _, result, out = _run_stage(tmp_path, monkeypatch, **{S.KEY_MIN_PERSONS: 0})
+        # a positive minimum far below every balance of the toy judges every row with a balance above 0
+        _, _, result, out = _run_stage(tmp_path, monkeypatch, **{S.KEY_MIN_PERSONS: 1e-9})
     assert result["verdict"] == S.VERDICT_FAIL
     errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
     assert any("FAIL" in m and "not used for results on a population that fails the population rows" in m
