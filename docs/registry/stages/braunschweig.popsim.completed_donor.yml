@@ -36,6 +36,7 @@ features:
 - diary_plan_match
 - participation_universe_controls
 - mid_passenger_availability
+- overnight_open_day_end
 decisions:
 - ADR-0122
 - ADR-0002
@@ -47,6 +48,7 @@ decisions:
 - ADR-0162
 - ADR-0166
 - ADR-0211
+- ADR-0214
 notes: >-
   STUDENT DONOR KEY (ADR-0211, issue #140): since A1 the stage also reads
   braunschweig.population.popsim.donor_match_student_status (default on) and

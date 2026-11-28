@@ -34,6 +34,7 @@ features:
 - commute_day_state
 - escort_passive_from_adult
 - purpose_main_fold_code_10
+- overnight_open_day_end
 decisions:
 - ADR-0122
 - ADR-0104
@@ -44,6 +45,7 @@ decisions:
 - ADR-0111
 - ADR-0112
 - ADR-0183
+- ADR-0214
 notes: 'Config keys: commute_day_state_enabled (default true, master switch, shared with every
   other commute-day-state stage), braunschweig.population.popsim.mid_dir (the same raw-MiD
   directory braunschweig.popsim.trips_stage reads, so both stages can never point at different

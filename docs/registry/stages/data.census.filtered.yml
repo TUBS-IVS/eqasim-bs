@@ -65,6 +65,7 @@ features:
 - sex_aware_couples
 - srv_participation_controls
 - tier3_kreis_controls
+- overnight_open_day_end
 decisions:
 - ADR-0121
 - ADR-0002
@@ -86,6 +87,7 @@ decisions:
 - ADR-0203
 - ADR-0204
 - ADR-0211
+- ADR-0214
 notes: >-
   DONOR RESOLUTION ONCE (ADR-0192): donor household counts and donor person attributes with
   imputed codes are resolved once, before the seed, and inherited by the clones.

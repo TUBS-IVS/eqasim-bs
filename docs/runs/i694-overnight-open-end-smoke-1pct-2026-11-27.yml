@@ -1,0 +1,124 @@
+id: i694-overnight-open-end-smoke-1pct-2026-11-27
+date: '2026-11-27'
+repository:
+  commit: dac81184bcbea22b04da06fde20f4a49ca7aac74
+  branch: feature/i694-overnight-open-day-end
+  notes: >-
+    eqasim-bs dac81184bcbea22b04da06fde20f4a49ca7aac74 (git bundle sha256
+    138a8323e0d7181330fd96a1069aeb4d8ac4cfac0b7e0666d306713e88c11d53) and eqasim-java-bs
+    3f398bdfe0960096b1702def8fa772b7db6e8e23, run as isolated runs on the project server (scripts/isolated_run.py).
+    The PopulationSim environment of each run was built with uv sync --frozen (populationsim 0.10.0+bs.3).
+    The gate ran with --allow-environment-mismatch: five pip helper packages (py-spy, pdfplumber, pdfminer.six,
+    pypdfium2, cryptography) are missing in the server env and none is imported by the pipeline (owner agreed
+    2026-11-27).
+configuration:
+  config: >-
+    configs/base_bs.yml of the branch with one run overlay per run (i694_smoke_source_v2.yml for run 1,
+    i694_smoke_source_v3.yml for run 2 = v2 plus freight_enabled false). Common: sampling_rate 0.01,
+    braunschweig.population.popsim.keep_overnight_open_ends true (the default of the branch). One seed (the
+    PopulationSim recompute of run 1 changed the draw against earlier runs). There is NO arm with the switch off.
+  notes: >-
+    SCOPE DECIDED BY THE OWNER (2026-11-27): a 1 % run only ("1 % sample is enough for now"). Therefore this record has
+    no switch-off arm and no 100 % replay of the trip stage and the portal stage. The closure share and the
+    unbounded chain-solver count with the switch off are NOT measured, so no before/after comparison of the invented
+    closures exists here. The expected change of the closure share in the design (spec section 7) stays an
+    expectation.
+sampling:
+  rate: 0.01
+  scope: >-
+    the 1 % sample of the full region. The measurement universe is the 9,706 persons with trips in the portal stage
+    output (all model Kreise, including 03103; not restricted to the seven SrV-surveyed Kreise).
+pipeline:
+  targets:
+  - matsim.simulation.prepare
+  - matsim.output
+  notes: >-
+    Run 1 (run folder i694_smoke, overlay i694_smoke_source_v2.yml): full synthesis including the PopulationSim
+    recompute, the plan_structure_vs_srv analysis and the portal stage; then matsim.simulation.prepare FAILED (exit 1,
+    2026-11-27T19:23:42+01:00) with a NullPointerException in eqasim OutsideConstraint.validateBeforeEstimation
+    (null initial mode): the standalone initial mode choice received the injected freight agents (legs without
+    routingMode). Cause: main at dcc56abe excluded only the in-commuters from that choice; PR #695 (#678, merged
+    2026-11-27) fixes it and is in this branch through the merge of origin/main. Not caused by this feature.
+    Run 2 (run folder i694_smoke2, overlay i694_smoke_source_v3.yml, cache copied from run 1): exit 0 at
+    2026-11-27T19:54:43+01:00, standalone mode choice passed, 3 MATSim iterations. Run 2 ran with freight_enabled
+    false, so it does not repeat the freight path of run 1.
+classification:
+- smoke
+status:
+  execution: completed
+  notes: >-
+    A 1 % smoke plus one pre-registered measurement, NOT a validation: one seed, no switch-off arm, 3 MATSim
+    iterations (no equilibrium), and SrV is an observed reference for one share only. Run 1 failed in prepare for a
+    reason outside this feature (see pipeline.notes); run 2 completed. MATSim logs "The first and the last activity
+    do not have the same type" (scoring of open days), the expected warning of design section 6.8. Stuck agents in run
+    2: 21 of 10,369 mobile agents (0.2 %, eqasim StuckAgentAnalysis); there is no run without the feature to compare
+    against, so the KPI is reported, not judged as better or worse. The plan check of run 2 flagged two frozen-tour
+    shares above their bounds (share_plans_non_monotonic_large 1.77 % of 904 against 0.50 %,
+    share_lifted_frozen_pt_walk 2.33 % of 258 against 2.00 %; fail_on_threshold false): the tours of #678, not this
+    feature.
+source: >-
+  the project server: run folders i694_smoke and i694_smoke2 (run.json, logs, cache stage directories) and the outputs
+  under i694_smoke/output/analysis/plan_structure_vs_srv/ (accepted_deviations.csv, closure.csv), the synthesis log of
+  run 1, and the portal stage output braunschweig.synthesis.portal_trips.stage__6ae61320aafe11f0dce2af7ca7f561fb.p
+  (table trips). The pre-registered metric was computed from that pickle by the controller (last trip per person by
+  trip_index); the script is not committed.
+environment: >-
+  the project server (64 cores, 94 GB), conda env eqasim; no other session load was recorded for these runs.
+validation:
+- metric: PRE-REGISTERED. Share of mobile synthetic persons whose simulated day ends away from home (pre-portal open ends plus far stays ended outside by the portal stage), all causes
+  reference: >-
+    SrV 2023 share_mobile_last_to_home 0.9776 (committed eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv,
+    universe at_home_zero, segment all) = 2.24 % open end; bound 1.24 % to 3.24 % (SrV +/- 1 pp, an ASSUMPTION fixed
+    before any run in issue #694 and in the design, section 7)
+  result: >-
+    2.20 % (214 of 9,706 persons end away from home: 152 end outside, 62 at a non-home in-area activity), delta to SrV
+    -0.04 pp: INSIDE the bound. This says the model day is of the same size as the SrV open-end share. It is not a
+    validation of who stays away: SrV shares are not matched per person or by arrival band here. Caveats: (a) the
+    model figure is over all 9,706 persons with trips, all model Kreise, while SrV covers seven Kreise; a restriction
+    by commune_id prefix to the seven SrV Kreise gives 189 of 6,952 (2.72 %, also inside) but 1,904 persons have no
+    commune_id, so that figure is unreliable and is not the registered metric; (b) 1 % sample, sampling standard error
+    of a 2.2 % share about 0.15 pp (an estimate from a binomial share), one seed; (c) no switch-off arm, so the
+    share cannot be attributed to the feature against today's behaviour (the far stays of ADR-0183 alone are part of
+    it); (d) the portal report has n_stays_without_return 152 and n_stays_closure_return_dropped 87.
+  artifact: not committed (server outputs; see source)
+- metric: pre-portal view, share of mobile persons whose day ends away from home (plan_structure_vs_srv, accepted_deviations.csv, share_mobile_last_to_home)
+  reference: SrV 2023 share_mobile_last_to_home 0.9776 (committed, as above); information only, no bound
+  result: >-
+    model 0.98718 against SrV 0.97761, i.e. open end 1.28 % against 2.24 % (delta -0.96 pp). closure.csv: n_persons_open_end
+    127 of 9,706 (1.31 %); invented closure trips 1,936 (5.45 % of 35,506 trips); persons closed 1,936 (19.9 %).
+    The pre-portal view cannot see the far stays that the portal stage ends outside, which is why the registered
+    metric adds them.
+  artifact: not committed (server output, see source)
+- metric: donor decision of the synthesis (log of the trip build)
+  reference: 'none: a count of model input'
+  result: >-
+    Over 81,301 open-end MiD diaries: kept open 6,150 (7.56 %), closed 75,151, of which middle days 4,097. MiD
+    answers over 420,979 persons: own overnight flag 7.99 %, inherited by children 1.19 %, no usable answer 1.75 %.
+    Donor-pool persons kept open in the trip stage: 138 of 10,285 (1.3 %), and no closure appended for them.
+  artifact: not committed (server log, see source)
+- metric: does matsim.simulation.prepare and a 3-iteration MATSim run finish with the open days (every activity with a facility, no DMC exception)?
+  reference: 'none: a wiring check on model output'
+  result: >-
+    Yes in run 2 (exit 0); no LinkAssignment or DMC exception; run 1 failed earlier for the freight reason of
+    pipeline.notes. Not tested: runs with freight on after the merge of #695, and any run longer than 3 iterations.
+  artifact: not committed (server logs, see source)
+- metric: closure share and unbounded chain-solver count with the switch off
+  reference: 'none'
+  result: >-
+    NOT MEASURED (no switch-off arm, owner decision of 2026-11-27). Tail placement by the chain solvers is covered by a
+    unit test only; the unbounded count of this run is not read into this record.
+  artifact: none
+features:
+- overnight_open_day_end
+- home_closure_model
+issues:
+- '#694'
+decisions:
+- ADR-0214
+- ADR-0108
+- ADR-0183
+notes: >-
+  Limitations in one place: 1 % sample, one seed, no switch-off arm, no 100 % replay (plan Step 2 not done by owner
+  decision), the second-order effect of the trip_class seed change on the PopulationSim weights is included in this
+  run (the recompute ran with the feature) but not isolated, and the Kreis universe differs from SrV (caveat a). The
+  next production run (full 100 %) is where the effect on the closure share and the chain solvers can be measured.
