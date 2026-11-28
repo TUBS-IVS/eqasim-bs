@@ -129,7 +129,9 @@ _EXPECTED_SIGNATURES = {
         "departure_time_min_reference_n: 'int' = 200, "
         "departure_time_min_model_n: 'int' = 50, "
         "departure_time_max_median_shift_hours: 'float' = 2.0, "
-        "vectorized_validation: 'bool' = True) -> 'pd.DataFrame'"
+        "vectorized_validation: 'bool' = True, "
+        "keep_overnight_open_ends: 'bool' = False, "
+        "overnight_answers: 'pd.DataFrame | None' = None) -> 'pd.DataFrame'"
     ),
 }
 
