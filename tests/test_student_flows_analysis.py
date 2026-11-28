@@ -164,9 +164,10 @@ def test_band_shares_are_left_inclusive_and_the_emd_is_hand_computed():
     same = {"group": "all", "reference": "srv", "n_reference": 10, "shares": [0.25, 0.25, 0.0, 0.25, 0.0, 0.25],
             "emd_noise_95": 0.1}
     all_in_first_band = {**same, "shares": [1.0, 0, 0, 0, 0, 0], "emd_noise_95": 0.3}
-    table = S.band_comparison({"all": km}, [same, all_in_first_band], [1.0])
+    table = S.band_comparison({"all": km}, [same, all_in_first_band], [1.0], 30)
     assert table["emd"].tolist() == pytest.approx([0.0, 2.25 / 5])   # |cdf diff| = .75 .5 .5 .25 .25
     assert table["emd_within_noise"].tolist() == [True, False]
+    assert table["n_reference_low"].tolist() == [True, True]          # 10 respondents < 30
     assert table[f"model_share_{labels[0]}"].tolist() == [0.25, 0.25]
 
 
@@ -174,8 +175,41 @@ def test_a_group_without_model_persons_or_without_reference_shares_has_no_emd():
     nan_row = {"group": "03103", "reference": "srv", "n_reference": 0, "shares": [math.nan] * 6,
                "emd_noise_95": math.nan}
     table = S.band_comparison({"03103": np.array([2.0]), "03102": np.array([])},
-                              [nan_row, {**nan_row, "group": "03102", "shares": [1, 0, 0, 0, 0, 0]}], [1.3])
+                              [nan_row, {**nan_row, "group": "03102", "shares": [1, 0, 0, 0, 0, 0],
+                                         "n_reference": 30}], [1.3], 30)
     assert table["emd"].isna().all()
+    assert table["n_reference_low"].tolist() == [True, False]          # the minimum itself is enough
+
+
+def test_srv_rows_below_the_respondent_minimum_are_reported_only_and_the_threshold_is_configurable():
+    bands = pd.DataFrame({"group": ["all", "03101", "03157", "all"], "reference": ["srv", "srv", "srv", "mid"],
+                          "n_reference_low": [False, False, True, False]})
+    assert S.usable_distance_rows(bands) == {"usable": ["03101", "all"], "reported_only": ["03157"]}
+    # on the committed table: 03101 (68 respondents) and the total 03ZGB (111) reach 30, the other Kreise do not
+    srv = pd.read_csv(REAL_DATA / "braunschweig" / "srv" / S.SRV_DISTANCE_TABLE, comment="#", dtype={"code": str})
+    committed = S.band_comparison({}, S.srv_band_references(srv), [1.3], S.DEFAULT_MIN_SRV_RESPONDENTS)
+    assert S.usable_distance_rows(committed)["usable"] == ["03101", "all"]
+    recorder = _ConfigureRecorder()
+    S.configure(recorder)
+    assert recorder.keys[S.KEY_MIN_SRV_RESPONDENTS] == 30
+
+
+def test_students_outside_the_level_kreise_are_counted():
+    frame = pd.DataFrame({"home_kreis": ["03101", "03999", "03999", "03101"], "age": [20, 20, 17, 30],
+                          "is_student": [True, True, True, False]})
+    assert S.students_outside_level(frame, ["03101", "03102"]) == 1   # the 17-year-old and the non-student stay out
+
+
+def test_incommuter_ids_must_be_unique_and_disjoint_from_the_residents():
+    residents = pd.Series([1, 2, 3])
+    S.check_incommuter_ids(pd.DataFrame({"person_id": [10, 11]}), residents)
+    S.check_incommuter_ids(pd.DataFrame(), residents)       # the injection is off
+    with pytest.raises(ValueError, match="repeat"):
+        S.check_incommuter_ids(pd.DataFrame({"person_id": [10, 10]}), residents)
+    with pytest.raises(ValueError, match="residents' ids"):
+        S.check_incommuter_ids(pd.DataFrame({"person_id": [3, 11]}), residents)
+    with pytest.raises(ValueError, match="no person_id"):
+        S.check_incommuter_ids(pd.DataFrame({"destination_id": ["x"]}), residents)
 
 
 # ----------------------------------------------------------------------------------------- pins
@@ -305,7 +339,7 @@ def _world():
     trips = pd.DataFrame({"person_id": [1, 3], "preceding_purpose": ["home", "education"],
                           "following_purpose": ["education", "home"], "euclidean_distance": [5000.0, 20000.0]})
     incommuters = pd.DataFrame({
-        "orig_ars5": [origin, origin], "destination_id": [local, local], "home_branch": ["in_ring", "gate"],
+        "person_id": [10_000_001, 10_000_002], "orig_ars5": [origin, origin], "destination_id": [local, local], "home_branch": ["in_ring", "gate"],
         "commute_length_km": [30.0, 40.0], "commute_length_source": ["commune_curve", "od_cell"]})
     return dict(local=local, far=far, origin=origin, stages={
         S.ENRICHED_STAGE: persons, S.HOME_ZONES_STAGE: zones, S.HOME_LOCATIONS_STAGE: homes, S.TRIPS_STAGE: trips,
@@ -314,31 +348,38 @@ def _world():
                                                               "n_adults_unreadable_p_taet": 0}}})
 
 
-def _config(tmp_path, data_path):
+def _config(tmp_path, data_path, **override):
     from braunschweig.data.education import student_flows_inputs as inputs
-    return {"data_path": str(data_path), "output_path": str(tmp_path / "out"), "sampling_rate": RATE_STAGE,
+    return {**{"data_path": str(data_path), "output_path": str(tmp_path / "out"), "sampling_rate": RATE_STAGE,
             "random_seed": 7, S.KEY_OD_TABLE_PATH: S.DEFAULT_OD_TABLE_PATH,
             S.KEY_LEVEL_TABLE_PATH: S.DEFAULT_LEVEL_TABLE_PATH,
             inputs.KEY_HOME_AREA_KREISE: inputs.default_home_area_kreise(), S.KEY_MIN_PERSONS: S.DEFAULT_MIN_PERSONS,
             S.KEY_MAX_DEVIATION_SHARE: S.DEFAULT_MAX_DEVIATION_SHARE,
             S.KEY_DETOUR_SENSITIVITY: S.DEFAULT_DETOUR_SENSITIVITY,
-            S.KEY_FALLBACK_WARN_SHARE: S.DEFAULT_FALLBACK_WARN_SHARE, S.KEY_DAY_ABSENCE_ENABLED: True}
+            S.KEY_MIN_SRV_RESPONDENTS: S.DEFAULT_MIN_SRV_RESPONDENTS,
+            S.KEY_FALLBACK_WARN_SHARE: S.DEFAULT_FALLBACK_WARN_SHARE, S.KEY_DAY_ABSENCE_ENABLED: True}, **override}
 
 
-@pytest.fixture
-def stage_run(tmp_path, monkeypatch):
+def _run_stage(tmp_path, monkeypatch, mutate_world=None, **config):
     from braunschweig.analysis import spatial
     data_path = tmp_path / "data"
     _copy_real_tables(data_path)
     world = _world()
+    if mutate_world is not None:
+        mutate_world(world)
     # household 2 lies in 03103 by the VG250 join, but in 03102 by its home zone
     monkeypatch.setattr(spatial, "assign_geographies", lambda homes, kreise=None: pd.DataFrame(
         {"household_id": [1, 2], "ars5": ["03101", "03103"]}))
     own = tmp_path / "cache"
     own.mkdir()
-    context = _ExecuteContext(world["stages"], _config(tmp_path, data_path), str(own))
+    context = _ExecuteContext(world["stages"], _config(tmp_path, data_path, **config), str(own))
     result = S.execute(context)
     return world, context, result, tmp_path / "out" / S.OUTPUT_SUBDIR
+
+
+@pytest.fixture
+def stage_run(tmp_path, monkeypatch):
+    return _run_stage(tmp_path, monkeypatch)
 
 
 def _csv(directory, key):
@@ -413,3 +454,47 @@ def test_configure_declares_the_inputs_and_refuses_the_configurations_the_design
         S.configure(_ConfigureRecorder({S.KEY_FLOWS_ENABLED: False}))
     with pytest.raises(ValueError, match="student_cells"):
         S.configure(_ConfigureRecorder({S.KEY_DAY_ABSENCE_STUDENT_CELLS: False}))
+
+
+def test_stage_fail_branch_logs_an_error_names_the_population_rows_and_says_so_in_the_summary(
+        tmp_path, monkeypatch, caplog):
+    import logging
+    with caplog.at_level(logging.ERROR, logger=S.LOGGER.name):
+        _, _, result, out = _run_stage(tmp_path, monkeypatch, **{S.KEY_MIN_PERSONS: 0})
+    assert result["verdict"] == S.VERDICT_FAIL
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert any("FAIL" in m and "not used for results on a population that fails the population rows" in m
+               for m in errors)
+    report = json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))
+    failing = report["acceptance"]["population_rows_failing"]
+    assert failing and {row["section"] for row in failing} <= {"students_population", "students_of_day"}
+    assert any(row["key"] == "03101" for row in failing)
+    summary = (out / S.OUTPUT_FILES["summary"]).read_text(encoding="utf-8")
+    assert "**FAIL**" in summary and "not used for results on a population that fails the population rows" in summary
+    # the SrV rows with enough respondents are named; the others are reported only
+    assert report["srv_distance_rows"]["usable"] == ["03101", "all"]
+    assert "03157" in report["srv_distance_rows"]["reported_only"]
+    assert "Usable" in summary and "Reported only" in summary
+    bands = _csv(out, "distance_bands")
+    srv = bands[bands["reference"] == "srv"]
+    assert srv.set_index("group")["n_reference_low"].astype(bool).to_dict()["03157"] is True
+    assert not srv[srv["group"].isin(["03101", "all"])]["n_reference_low"].astype(bool).any()
+
+
+def test_stage_lists_each_detour_factor_once_and_counts_students_outside_the_level_kreise(
+        tmp_path, monkeypatch):
+    _, _, _, out = _run_stage(tmp_path, monkeypatch, **{S.KEY_DETOUR_SENSITIVITY: [1.3, 1.2, 1.2, 1.4]})
+    assert json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))["parameters"]["detour_factors"] == [
+        1.3, 1.2, 1.4]
+    bands = _csv(out, "distance_bands")
+    assert len(bands[(bands["group"] == "all") & (bands["reference"] == "srv")]) == 3
+    report = json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))
+    assert report["counts"]["n_adult_students_outside_level_kreise"] == 0
+
+
+def test_stage_refuses_an_incommuter_id_that_is_also_a_residents_id(tmp_path, monkeypatch):
+    def clash(world):
+        world["stages"][S.INCOMMUTERS_STAGE]["persons"].loc[0, "person_id"] = 1
+
+    with pytest.raises(ValueError, match="residents' ids"):
+        _run_stage(tmp_path, monkeypatch, mutate_world=clash)

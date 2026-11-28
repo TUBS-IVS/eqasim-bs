@@ -28,8 +28,10 @@ total of the region):
 The rule (:func:`acceptance_verdict`, ASSUMPTION A17): a row with ``rule_applies`` whose balance is at least
 ``braunschweig.students.acceptance_min_persons`` and whose relative deviation exceeds
 ``braunschweig.students.acceptance_max_deviation_share`` makes the verdict ``FAIL``; with no such row large enough
-the verdict is ``REPORT_ONLY`` (the rule needs a larger sample). The stage never raises on the verdict: it is
-written to ``student_flows_report.json`` and logged, a FAIL as an error.
+the verdict is ``REPORT_ONLY`` (the rule needs a larger sample). The stage never raises on a verdict; it raises on
+an invalid configuration or invalid input (a refused switch combination, an in-commuter id that repeats or overlaps
+a resident's, a missing table). The verdict is written to ``student_flows_report.json`` and logged, a FAIL as an
+error.
 
 Diagnostics (measurements of the synthesis, not validation) are listed in :data:`OUTPUT_FILES`. Distance bands of
 the residents compare ``straight line x detour factor`` with the SrV table (the ADR-0210 yardstick
@@ -73,6 +75,8 @@ KEY_MAX_DEVIATION_SHARE = "braunschweig.students.acceptance_max_deviation_share"
 DEFAULT_MAX_DEVIATION_SHARE = 0.05  # ASSUMPTION A17: not from a table (design 5a)
 KEY_DETOUR_SENSITIVITY = "braunschweig.students.analysis_detour_sensitivity"
 DEFAULT_DETOUR_SENSITIVITY = [1.2, 1.4]   # ASSUMPTION: the ADR-0210 yardstick's sensitivity runs
+KEY_MIN_SRV_RESPONDENTS = "braunschweig.students.analysis_min_srv_respondents"
+DEFAULT_MIN_SRV_RESPONDENTS = 30   # ASSUMPTION A14: the designer's respondent threshold, not from a table
 KEY_FALLBACK_WARN_SHARE = "braunschweig.students.flows_report_fallback_warn_share"
 DEFAULT_FALLBACK_WARN_SHARE = 0.25   # ASSUMPTION: warn level of the fallbacks that are a rate, not a defect
 #: Repeated from ``student_incommuters`` and ``education_gravity`` (stage modules, not imported here); pinned by
@@ -340,6 +344,37 @@ def student_counts(frame: pd.DataFrame) -> dict[str, pd.Series]:
     return {name: frame[mask].groupby("home_kreis").size() for name, mask in sets.items()}
 
 
+def students_outside_level(frame: pd.DataFrame, level_codes: Sequence[str]) -> int:
+    """Adult students whose home Kreis has no row of the level table: no population row counts them."""
+    return int((adult_students(frame) & ~frame["home_kreis"].isin(list(level_codes))).sum())
+
+
+def check_incommuter_ids(incommuters: pd.DataFrame, resident_ids: pd.Series) -> None:
+    """Raise ``ValueError`` when the in-commuter ``person_id`` is absent, repeats or overlaps a resident's id.
+
+    An empty frame (the injection is off) passes; an overlap would count one person in two rows of the table.
+    """
+    if incommuters.empty:
+        return
+    if "person_id" not in incommuters.columns:
+        raise ValueError(f"{_LOG_TAG} the in-commuter frame has no person_id column; found {list(incommuters.columns)}")
+    ids = incommuters["person_id"]
+    if ids.duplicated().any():
+        raise ValueError(f"{_LOG_TAG} {int(ids.duplicated().sum())} in-commuter person_id(s) repeat, first "
+                         f"{ids[ids.duplicated()].head(5).tolist()}")
+    overlap = set(ids) & set(resident_ids)
+    if overlap:
+        raise ValueError(f"{_LOG_TAG} {len(overlap)} in-commuter person_id(s) are also residents' ids, first "
+                         f"{sorted(overlap)[:5]}")
+
+
+def usable_distance_rows(bands: pd.DataFrame) -> dict:
+    """The SrV distance rows (groups) with enough respondents and those reported only (``n_reference_low``)."""
+    srv = bands[bands["reference"] == "srv"].drop_duplicates("group")
+    return {"usable": sorted(srv.loc[~srv["n_reference_low"], "group"]),
+            "reported_only": sorted(srv.loc[srv["n_reference_low"], "group"])}
+
+
 # =================================================================================== diagnostics
 def realised_flows(frame: pd.DataFrame, incommuters: pd.DataFrame, od: pd.DataFrame) -> pd.DataFrame:
     """``[home_ars5, destination_id, kind, persons, t_heads]``: residents of the day and in-commuters per pair.
@@ -375,13 +410,15 @@ def band_shares(km: np.ndarray, edges: Sequence[float] = _student_mode_reference
 
 
 def band_comparison(model_km_by_group: Mapping[str, np.ndarray], references: Sequence[Mapping],
-                    detour_factors: Sequence[float]) -> pd.DataFrame:
+                    detour_factors: Sequence[float], min_reference_persons: int) -> pd.DataFrame:
     """Band shares of ``straight line x detour factor`` against a reference, with the earth mover's distance.
 
     ``references``: dicts ``group, reference, n_reference, shares`` (a sequence over the bands of
     ``student_mode_reference.BAND_LABELS``), ``emd_noise_95`` (NaN if the table has none). The EMD is
     ``srv_distance_targets.emd_on_shares``, the function that wrote the SrV table's ``emd_noise_95``;
     ``emd_within_noise`` compares the two (missing without a noise level or a reference).
+    ``n_reference_low`` is True when the reference row holds fewer than ``min_reference_persons`` respondents
+    (``braunschweig.students.analysis_min_srv_respondents``, ASSUMPTION A14): such a row is reported only.
     """
     labels = _student_mode_reference.BAND_LABELS
     rows = []
@@ -394,7 +431,8 @@ def band_comparison(model_km_by_group: Mapping[str, np.ndarray], references: Seq
             emd = _srv_distance_targets.emd_on_shares(model, shares_ref) if have_both else math.nan
             noise = float(reference.get("emd_noise_95", math.nan))
             row = {"group": reference["group"], "reference": reference["reference"], "detour_factor": float(factor),
-                   "n_model": int(km.size), "n_reference": reference["n_reference"]}
+                   "n_model": int(km.size), "n_reference": reference["n_reference"],
+                   "n_reference_low": bool(reference["n_reference"] < min_reference_persons)}
             row.update({f"model_share_{label}": share for label, share in zip(labels, model)})
             row.update({f"reference_share_{label}": share for label, share in zip(labels, shares_ref)})
             row.update({"emd": emd, "emd_noise_95": noise,
@@ -700,6 +738,7 @@ def configure(context):
     context.config(KEY_MIN_PERSONS, DEFAULT_MIN_PERSONS)
     context.config(KEY_MAX_DEVIATION_SHARE, DEFAULT_MAX_DEVIATION_SHARE)
     context.config(KEY_DETOUR_SENSITIVITY, DEFAULT_DETOUR_SENSITIVITY)
+    context.config(KEY_MIN_SRV_RESPONDENTS, DEFAULT_MIN_SRV_RESPONDENTS)
     context.config(KEY_FALLBACK_WARN_SHARE, DEFAULT_FALLBACK_WARN_SHARE)
 
 
@@ -735,6 +774,12 @@ def summary_markdown(report: dict, acceptance: pd.DataFrame, failing: pd.DataFra
                   "|---|---|---|---|---|"]
         lines += [f"| {r.section} | {r.key} | {r.model:.1f} | {r.balance:.1f} | {r.deviation_share:+.1%} |"
                   for r in failing.itertuples()]
+    rows = report["srv_distance_rows"]
+    lines += ["", "## SrV distance rows", "",
+              f"- Usable (at least {rows['min_respondents']} respondents, ASSUMPTION A14): "
+              f"{', '.join(rows['usable']) or 'none'} (`all` is the SrV total row {SRV_TOTAL_CODE})",
+              f"- Reported only (fewer respondents, a difference there says little): "
+              f"{', '.join(rows['reported_only']) or 'none'}"]
     lines += ["", "## Fallback rates", ""]
     lines += [f"- {e['tag']}: primary {e['primary']}/{e['n']}, fallback {e['fallback']} ({e['fallback_share']:.1%})"
               for e in report["fallback_rates"]]
@@ -752,7 +797,10 @@ def execute(context):
     min_persons = float(context.config(KEY_MIN_PERSONS))
     max_share = float(context.config(KEY_MAX_DEVIATION_SHARE))
     warn_share = float(context.config(KEY_FALLBACK_WARN_SHARE))
-    detour_factors = [_circuity.LEGACY_DETOUR_FACTOR, *[float(f) for f in context.config(KEY_DETOUR_SENSITIVITY)]]
+    min_srv_respondents = int(context.config(KEY_MIN_SRV_RESPONDENTS))
+    # The yardstick first, then the sensitivity values; a value equal to one already listed is dropped.
+    detour_factors = list(dict.fromkeys(
+        [float(_circuity.LEGACY_DETOUR_FACTOR), *[float(f) for f in context.config(KEY_DETOUR_SENSITIVITY)]]))
     absence_on = bool(context.config(KEY_DAY_ABSENCE_ENABLED))
     paths = table_paths(context)
     for label, path in paths.items():
@@ -808,6 +856,11 @@ def execute(context):
                      "location stage and the absence stage do not come from the same population", _LOG_TAG,
                      state_path_mismatch)
     counts = student_counts(frame)
+    n_students_outside_level = students_outside_level(frame, level_by_kreis.index)
+    (LOGGER.warning if n_students_outside_level else LOGGER.info)(
+        "%s adult students whose home Kreis has no row of the level table (excluded from the population rows): %d",
+        _LOG_TAG, n_students_outside_level)
+    check_incommuter_ids(incommuters, enriched["person_id"])
     has_commuters = len(incommuters) > 0 and "destination_id" in incommuters.columns
     if not has_commuters:
         LOGGER.warning("%s the in-commuter stage holds no agent with a site (cordon or student injection off?): the "
@@ -868,7 +921,11 @@ def execute(context):
                                              "employed only"}
     mid_path = paths["mid_student_education_distance_mode"]
     references.append(mid_band_reference(mid_path))
-    bands = band_comparison(km_by_group, references, detour_factors)
+    bands = band_comparison(km_by_group, references, detour_factors, min_srv_respondents)
+    distance_rows = usable_distance_rows(bands)
+    LOGGER.info("%s SrV distance rows with at least %d respondents (usable): %s; reported only (too few "
+                "respondents): %s", _LOG_TAG, min_srv_respondents, distance_rows["usable"],
+                distance_rows["reported_only"])
     LOGGER.info("%s skipped: %s", _LOG_TAG, skipped["mikrozensus_distance_bands"])
 
     site_kreise = frozenset(od.loc[od["scope"] == "local", "site_kreis_ars5"])
@@ -966,9 +1023,11 @@ def execute(context):
                    "n_residents_of_day_at_a_destination": int(len(residents)),
                    "n_incommuter_agents": int(len(incommuters)) if has_commuters else 0,
                    "n_persons_unreadable_p_taet": int(frame["p_taet"].isna().sum()),
+                   "n_adult_students_outside_level_kreise": n_students_outside_level,
                    "n_state_path_mismatch": state_path_mismatch,
                    "n_non_students_at_a_university_building": n_university_non_students,
                    "dropped_zero_share_destinations": list(dropped)},
+        "srv_distance_rows": {"min_respondents": min_srv_respondents, **distance_rows},
         "fallback_rates": rates, "home_kreis_vs_vg250": mismatch, "committed_balance_vs_t": balance_check,
         "skipped": skipped,
     }
