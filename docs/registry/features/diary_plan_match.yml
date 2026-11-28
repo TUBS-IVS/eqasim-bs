@@ -174,8 +174,8 @@ notes: >-
     draws once. Primary (student donor) versus fallback (non-student donor) is counted per path and
     published by completed_donor.student_run_info. The warn bound
     braunschweig.population.popsim.donor_match_student_fallback_warn_share is unset by default
-    (report only; a path with no student donor at all always warns); setting it enters the
-    completed_donor hash, so it is set together with another planned rebuild. The key binds student
+    (report only; a path with no student donor at all always warns); it is volatile and does not
+    enter the completed_donor hash (see the stage record braunschweig.popsim.completed_donor). The key binds student
     targets only. Meaning and rejected options: ADR-0211; the measured counts per path belong to the
     one-batch smoke manifest, not here.
 assessment:

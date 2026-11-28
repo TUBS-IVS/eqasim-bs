@@ -19,7 +19,7 @@ production:
 introduced:
   issue: '#140'
   pr: '#219'
-  adr: null
+  adr: ADR-0210
 detail_doc: docs/features/student-incommuters.md
 code_paths:
 - braunschweig/synthesis/student_incommuters.py
@@ -54,7 +54,7 @@ assessment:
   by: null
   date: null
   pending_reason: |
-    No ADR exists for #140, and the STATUS matrix itself marks the validation run as pending. A merged default-ON feature without an ADR and without a validation run is exactly the combination this register is meant to make visible.
+    The decisions are recorded in ADR-0210 (origin-destination balance, weights, student level) and ADR-0211 (employed target, education entries, student donor key); the measurements are in docs/runs/student-balance-2026-11-26.yml, docs/runs/student-balance-2026-11-27.yml and docs/runs/student-synthesis-smoke-20261127.yml. The STATUS matrix itself marks the validation run as pending: no validation run exists for the default-ON in-commuter placement.
   source: null
 notes: |-
   The description above is the OFF path of braunschweig.students.flows_enabled (the count of enrollment minus

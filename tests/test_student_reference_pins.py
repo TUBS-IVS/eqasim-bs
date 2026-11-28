@@ -440,6 +440,10 @@ def test_student_parameters_by_area_add_up_to_the_regional_table_and_partition()
     regional = _read_with_nan_label(PARAMETER_TABLE)
     assert list(by_area.columns) == ["area", *regional.columns]
     assert set(by_area["area"]) == set(HOME_AREAS)
+    # the machine-readable header line the stage checks its configured home areas against
+    from braunschweig.data.csv_header import read_header_mapping
+    assert read_header_mapping(SRV / PARAMETER_BY_AREA_TABLE, "Home areas") == {
+        area: tuple(kreise) for area, kreise in HOME_AREAS.items()}
     assert len(by_area) == len(HOME_AREAS) * len(regional)
     key = ["parameter", "base", "label"]
     summed = by_area.groupby(key, sort=False)[["n_unweighted", "weight_sum"]].sum()

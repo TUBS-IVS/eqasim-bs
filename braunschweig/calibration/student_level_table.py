@@ -470,7 +470,11 @@ def employed_target_precheck(level: pd.DataFrame, zensus_employed: pd.DataFrame)
     employment grid. Columns
     :data:`PRECHECK_COLUMNS`; ``remainder_persons`` = Zensus employed - students counted as
     employed, the room left for the employed persons that are not students. A negative remainder
-    raises (design A2: the employment target cannot hold the students). Raises ``ValueError`` too
+    raises (design A2: the employment target cannot hold the students). ASSUMPTION (year mix): the
+    students counted as employed are the model-year level (the enrollment semester carried to the model
+    year) times the census-year ``omega``, and they are subtracted from the Zensus 2022 employed persons
+    of the census year, so the remainder mixes two years (ADR-0210 Decision 5, ADR-0211; no census-year
+    correction of the level is made here). Raises ``ValueError`` too
     on a missing column, a Kreis or sex without Zensus rows, an unknown age class or sex, or a
     non-finite or negative count.
     """

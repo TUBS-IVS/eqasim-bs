@@ -14,6 +14,10 @@ here. Keeping the owner on this side keeps the SrV calibration modules out of th
 ``employed_students_by_grid_group`` gives the persons
 :func:`braunschweig.popsim.employment_grid.per_cell_employment_targets` subtracts from the employed
 target of the grid groups 16 to 29 and 30 to 39.
+
+ASSUMPTION (year mix): these persons are the model-year level (the enrollment semester carried to the
+model year) times the census-year ``omega``, while the Zensus 2022 employed persons they are subtracted
+from are of the census year; the subtraction mixes the two years (ADR-0210 Decision 5, ADR-0211).
 """
 
 from __future__ import annotations

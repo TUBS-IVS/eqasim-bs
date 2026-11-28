@@ -511,6 +511,9 @@ def validate_student_fallback_warn_share(value):
     from braunschweig.popsim.stage.config_keys import KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE
     if value is None:
         return None
+    if isinstance(value, (bool, np.bool_)):   # YAML true would otherwise pass as 1.0
+        raise ValueError(f"{KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE} must be null or a share in [0, 1], "
+                         f"got the boolean {value!r}")
     try:
         share = float(value)
     except (TypeError, ValueError):

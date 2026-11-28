@@ -46,7 +46,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from braunschweig.data.csv_header import read_header_value
+from braunschweig.data.csv_header import read_header_mapping, read_header_value
 from braunschweig.popsim import kreis_attribute_control as kac
 from braunschweig.popsim.controls import largest_remainder_round
 from braunschweig.popsim.student_level import AGE_LABELS, YOUNG_AGE_LABELS, StudentLevel
@@ -162,9 +162,48 @@ def _single_share(table: pd.DataFrame, path: Path, column: str, **keys: str) -> 
     return _share_value(selected[column].iloc[0], path, f"column {column!r} of the row {description}")
 
 
+#: The header line of :data:`AREA_RELPATH` that names the Kreise of each home area the table was written for
+#: (``# Home areas: braunschweig=03101; surrounding=03102,...``, written by
+#: ``scripts/extract_srv_student_reference.py`` from ``srv_student_reference.HOME_AREAS``).
+HOME_AREAS_HEADER_LABEL = "Home areas"
+
+
+def _check_home_areas_against_table(area_path: Path, home_areas: Mapping[str, Sequence[str]]) -> None:
+    """Raise unless the configured home areas are exactly the areas the by-area table was written for.
+
+    The ticket share of a home area is the SrV share of the Kreise the table pooled into that area; a
+    configured area with other Kreise would silently take the wrong share. The order of the Kreise is no
+    difference."""
+    from braunschweig.popsim.stage.config_keys import KEY_STUDENT_HOME_AREA_KREISE as key
+    try:
+        table_areas = read_header_mapping(area_path, HOME_AREAS_HEADER_LABEL)
+    except ValueError as error:
+        raise ValueError(f"{_LOG_TAG} {area_path.name}: the home areas of the table cannot be checked "
+                         f"against {key} ({error}); regenerate it with "
+                         "scripts/extract_srv_student_reference.py") from error
+    configured = {str(area): tuple(sorted(str(kreis) for kreis in kreise))
+                  for area, kreise in home_areas.items()}
+    in_table = {area: tuple(sorted(kreise)) for area, kreise in table_areas.items()}
+    if configured != in_table:
+        differences = []
+        for area in sorted(set(configured) | set(in_table)):
+            if configured.get(area) != in_table.get(area):
+                differences.append(f"{area}: configured {list(configured.get(area, ()))}, "
+                                   f"table {list(in_table.get(area, ()))}")
+        raise ValueError(f"{_LOG_TAG} {area_path.name}: the home areas of {key} differ from the areas the SrV "
+                         f"table was written for ({'; '.join(differences)}); the flat-rate share of an area "
+                         "is the SrV share of exactly its table Kreise, so change the config back or "
+                         "regenerate the table with the new areas (srv_student_reference.HOME_AREAS)")
+
+
 def read_student_shares(data_path, expected_kreise: Sequence[str],
-                        areas: Sequence[str] | None = None) -> StudentShares:
+                        areas: Sequence[str] | None = None,
+                        home_areas: Mapping[str, Sequence[str]] | None = None) -> StudentShares:
     """Read the committed SrV tables under ``data_path``; no fallback.
+
+    ``home_areas`` (the value of ``config_keys.KEY_STUDENT_HOME_AREA_KREISE``) is checked against the
+    ``# Home areas:`` header of :data:`AREA_RELPATH`: ``ValueError`` when the Kreise of any area differ or the
+    header is absent. With it, ``areas`` defaults to its areas.
 
     ``education_leg`` and ``work_leg`` come from the headers of :data:`REGIONAL_RELPATH` (the control
     definitions, A9 and A23); the regional flat-rate share of students from its row ``season_ticket`` /
@@ -184,6 +223,10 @@ def read_student_shares(data_path, expected_kreise: Sequence[str],
 
     area_path, by_area = _read_table(
         data_path, AREA_RELPATH, ("area", "parameter", "base", "label", "share"))
+    if home_areas is not None:
+        _check_home_areas_against_table(area_path, home_areas)
+        if areas is None:
+            areas = sorted(home_areas)
     flatrate_rows = by_area[(by_area["parameter"] == "season_ticket")
                             & (by_area["base"] == "students_present") & (by_area["label"] == "flatrate")]
     found_areas = sorted(set(flatrate_rows["area"]))

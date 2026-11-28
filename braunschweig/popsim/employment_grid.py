@@ -15,6 +15,8 @@ age-shape source is used only for the age SHAPE; the absolute LEVEL is census.
 STUDENTS = optionally (design A2 of the student layer, ADR-0211) the students the Zensus counts
          as employed, subtracted from the LEVEL of the grid groups 16_29 and 30_39 per Kreis and
          sex before the spread over the cells (A12, A13; braunschweig.popsim.student_level).
+         ASSUMPTION (year mix): the subtracted students are the model-year level times the
+         census-year omega, the LEVEL they leave is the Zensus 2022 one (ADR-0210, ADR-0211).
 
 Produces 10 control columns: EMPLOYED_{M,F}_{16_29,30_39,40_49,50_59,60plus}_agg.
 """

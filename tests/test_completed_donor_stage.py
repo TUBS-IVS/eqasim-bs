@@ -424,7 +424,8 @@ def test_completed_donor_configure_declares_the_student_keys():
 
 
 @pytest.mark.parametrize("value, ok", [(None, True), (0, True), (0.4, True), (1, True),
-                                       (-0.01, False), (1.01, False), ("high", False), (float("nan"), False)])
+                                       (-0.01, False), (1.01, False), ("high", False), (float("nan"), False),
+                                       (True, False), (False, False)])   # a YAML boolean is not a share
 def test_completed_donor_configure_requires_a_student_warn_share_in_zero_one(value, ok):
     from braunschweig.popsim.stage import config_keys
     key = config_keys.KEY_DONOR_MATCH_STUDENT_FALLBACK_WARN_SHARE

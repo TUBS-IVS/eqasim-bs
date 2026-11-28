@@ -1284,9 +1284,9 @@ def test_align_members_student_is_not_robbed_of_its_student_donor_by_an_earlier_
     # sex mismatch: a female student 22 and a male student donor 23; the present ladder would give the
     # student the female non-student donor of her (age band, sex) cell
     ([(22, 2, 10), (24, 2, 1)], [(24, 2, 1), (23, 1, 10)], [(0, 0), (1, 1)]),
-    # age-band mismatch: a student aged 16 and a student donor aged 40 (other band, other sex); only the
+    # age-band mismatch: a student aged 19 and a student donor aged 12 (other band, other sex); only the
     # last student tier (student status alone) pairs them
-    ([(16, 2, 10), (30, 2, 1)], [(30, 2, 1), (40, 1, 10)], [(0, 0), (1, 1)]),
+    ([(19, 2, 10), (30, 2, 1)], [(30, 2, 1), (12, 1, 10)], [(0, 0), (1, 1)]),
 ], ids=["sex_mismatch", "age_band_mismatch"])
 def test_align_members_student_keeps_a_student_donor_across_sex_and_age_band(target_rows, donor_rows, off_pairs):
     target, donor = _members(target_rows), _members(donor_rows)
@@ -1294,6 +1294,15 @@ def test_align_members_student_keeps_a_student_donor_across_sex_and_age_band(tar
     assert sorted(on) == [(0, 1), (1, 0)]
     assert [tpos for tpos, _ in on] == [0, 1]  # target order, pair count unchanged
     assert sorted(wpm.align_members(target, donor)) == off_pairs
+
+
+def test_align_members_student_under_18_pairs_by_todays_ladder_not_student_first():
+    # the 16-year-old student counts only in the person path (lead decision 13): in a household pair she
+    # takes the first free donor of her (age band, sex) cell, not the student donor of another band
+    target = _members([(16, 2, 10), (45, 2, 1)])
+    donor = _members([(16, 2, 1), (40, 1, 10)])
+    assert sorted(wpm.align_members(target, donor, student_key=True)) == sorted(wpm.align_members(target, donor))
+    assert sorted(wpm.align_members(target, donor, student_key=True)) == [(0, 0), (1, 1)]
 
 
 def test_align_members_looser_student_tier_does_not_steal_an_exact_student_pair():

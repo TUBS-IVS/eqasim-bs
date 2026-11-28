@@ -410,7 +410,10 @@ notes: >-
   decided the level (design A2): the two gate comparisons disagree (validation entries). (f) The distance yardsticks
   of the decision aid compare a straight line times the detour factor 1.3 (an assumption) with routed SrV distances.
   (g) A table build and a calibration on survey aggregates, not a validation; the tables count heads, no day factor is
-  applied. Decisions: ADR-0210.
+  applied. (h) The committed calibration artifacts (student_commuter_weight_*.csv) name student_level_table.py in their
+  headers as the home of assumption A9, but the pooling assumption of the calibration (the Kreis mix within a pooled home
+  group) is documented in braunschweig/calibration/student_commuter_weights.py; the code pointer was fixed later and the
+  artifacts were not regenerated. Decisions: ADR-0210.
 source: >-
   scripts/build_student_balance.py over the inputs under pipeline.notes; outputs committed under eqasim-data/data/braunschweig/schools,
   eqasim-data/data/braunschweig/popsim and docs/runs/artifacts/student-balance-2026-11-26/.

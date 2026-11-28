@@ -361,9 +361,12 @@ def _by_area_header(diagnostics: dict, universe_diagnostics: dict, source_commit
         % R.PARAMETER_TABLE,
         "#   by their Kreis, the persons by their household, the universe by its Kreis; every",
         "#   definition, base and exclusion rule is that of the parameter table (same builder).",
-        "# Home areas (srv_student_reference.HOME_AREAS): %s. Wolfsburg (%s) is not surveyed and has"
-        % ("; ".join("%s = %s" % (area, list(kreise)) for area, kreise in R.HOME_AREAS.items()),
-           WOLFSBURG_KREIS),
+        # Machine-readable line (csv_header.read_header_mapping); student_targets.read_student_shares checks
+        # the configured home areas of the stage against it, so keep the format.
+        "# Home areas: %s"
+        % "; ".join("%s=%s" % (area, ",".join(kreise)) for area, kreise in R.HOME_AREAS.items()),
+        "# The areas above are srv_student_reference.HOME_AREAS. Wolfsburg (%s) is not surveyed and has"
+        % WOLFSBURG_KREIS,
         "#   no row here (the model side reports it with NaN SrV columns).",
         "# The two areas together are the region: per (parameter, base, label) the n_unweighted of",
         "#   the two areas add up to the row of %s. No cell is pooled (design A15);"
