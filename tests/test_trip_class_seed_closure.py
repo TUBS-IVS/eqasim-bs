@@ -216,6 +216,7 @@ def test_seed_column_derivation_counts_kept_open_day_as_plus_zero():
     persons["src_first_so1"] = [1, 1, 1]
     # Person 0 reports an overnight trip (code 2) and ends away -> kept open; person 1 none (code 1).
     answers = pd.DataFrame({"H_ID": [1, 2, 3], "P_ID": [1, 1, 1], "P_STREISE": [2, 1, 1]})
+    answers.attrs[ooe.MAX_NO_ANSWER_SHARE_ATTR] = 0.20
     out = seed_loading._derive_trip_class_seed_column(
         persons, sources.get_source("mid").seed_columns(),
         active_kreis_entry_names={"trip_class"}, kreis_seed_rng=np.random.RandomState(0),
