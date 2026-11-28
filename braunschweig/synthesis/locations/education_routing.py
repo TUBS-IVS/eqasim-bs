@@ -27,7 +27,7 @@ import logging
 
 import pandas as pd
 
-from braunschweig.data.education.student_flows_inputs import STUDENT_P_TAET
+from braunschweig.data.education.student_flows_inputs import STUDENT_P_TAET, status_unknown
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,10 @@ def age_to_level(age):
 def student_status(persons: pd.DataFrame, *, warn_share: float = 0.0) -> tuple[pd.Series, dict]:
     """``(Series[bool] is_student, counts)`` of ``persons`` (same index).
 
-    PRIMARY: ``P_TAET == STUDENT_P_TAET`` for every person with a numeric ``P_TAET``. An unknown status is never read
-    as "not a student" (the rule of ``mid_student_reference._drop_unreadable_activity``): a person whose ``P_TAET`` is
-    missing or not a number takes the design B1 fallback rule, per person, and is counted as FALLBACK
-    (``taet_missing``, the same as ``fallback``). FALLBACK rule: ``studies & ~employed & age >= 20``; it applies to
+    PRIMARY: ``P_TAET == STUDENT_P_TAET`` for every person with a known status. An unknown status
+    (``student_flows_inputs.status_unknown``: missing, not a number or the no-answer code) is never read as "not a
+    student" (the rule of ``mid_student_reference._drop_unreadable_activity``): such a person takes the design B1
+    fallback rule, per person, and is counted as FALLBACK (``taet_missing``, the same as ``fallback``). FALLBACK rule: ``studies & ~employed & age >= 20``; it applies to
     the whole population when the column is absent (e.g. the legacy IPF population) and to exactly the persons
     without a readable ``P_TAET`` otherwise. A missing ``studies`` or ``employed`` value reads as False and is counted
     as ``flag_missing`` (persons on the fallback rule with a missing flag). Logged as ``"[education routing] student
@@ -92,7 +92,7 @@ def student_status(persons: pd.DataFrame, *, warn_share: float = 0.0) -> tuple[p
     n = len(persons)
     if TAET_COLUMN in persons.columns:
         taet = pd.to_numeric(persons[TAET_COLUMN], errors="coerce")
-        on_fallback = taet.isna()
+        on_fallback = status_unknown(persons[TAET_COLUMN])
         is_student = (taet == STUDENT_P_TAET)
     else:
         taet = None

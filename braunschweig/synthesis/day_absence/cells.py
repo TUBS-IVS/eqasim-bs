@@ -19,9 +19,10 @@ The rate of an adult band as a whole is no longer a target: it follows from the 
 others the population holds. The household stage is unchanged (by household size).
 
 Import boundary (Phase 4 global constraints): the home areas, the region, the student code and the
-loaders come from the leaf :mod:`braunschweig.data.education.student_flows_inputs`; no
-``braunschweig.popsim`` or ``srv_student_reference`` module is imported. The MiD no-answer code of
-``P_TAET`` is repeated here as :data:`P_TAET_NO_ANSWER` and pinned by ``tests/test_day_absence_cells.py``.
+loaders and the one rule of an unknown status
+(:func:`~braunschweig.data.education.student_flows_inputs.status_unknown`) come from the leaf
+:mod:`braunschweig.data.education.student_flows_inputs`; no ``braunschweig.popsim`` or
+``srv_student_reference`` module is imported.
 """
 from __future__ import annotations
 
@@ -46,8 +47,6 @@ ADULT_BANDS = tuple(band for band in AGE_BAND_LABELS if AGE_BAND_BOUNDS[band][0]
 if set(MINOR_BANDS) | set(ADULT_BANDS) != set(AGE_BAND_LABELS):
     raise RuntimeError(f"{_LOG_TAG} an age band straddles {ADULT_MIN_AGE_YEARS} years: {AGE_BAND_BOUNDS}")
 
-#: Owner ``braunschweig.calibration.mid_student_reference.P_TAET_NO_ANSWER``: the MiD code of no answer.
-P_TAET_NO_ANSWER = 99
 STUDENT_CELL_PREFIX = "student:"
 ADULT_CELL_PREFIX = "adult:"
 #: Column of the SrV non-student rate (issue #140, Task 2) in ``srv2023_absence_by_age_band.csv``.
@@ -127,7 +126,7 @@ def assign_cells(persons: pd.DataFrame, area_of_kreis: Mapping[str, str], *,
         raise ValueError(f"{_LOG_TAG} P_TAET holds value(s) that are no code: "
                          f"{persons.loc[not_a_number, 'P_TAET'].astype(str).unique()[:5].tolist()}")
     adult = np.isin(band, ADULT_BANDS)
-    unreadable = (code.isna() | (code == P_TAET_NO_ANSWER)).to_numpy()
+    unreadable = flows_inputs.status_unknown(persons["P_TAET"]).to_numpy()
     student = adult & (code == flows_inputs.STUDENT_P_TAET).to_numpy()
 
     n_adults, n_unreadable = int(adult.sum()), int((adult & unreadable).sum())

@@ -276,8 +276,3 @@ def test_draw_absence_refuses_cells_without_rates_and_persons_without_a_cell():
     with pytest.raises(ValueError, match="student:braunschweig"):
         D.draw_absence(persons, TOY_REFERENCE, np.random.RandomState(1), cell_rates=without_student_rate,
                        cells=person_cells)
-
-
-def test_the_repeated_no_answer_code_equals_its_owner():
-    """cells.py repeats the MiD no-answer code because of the import boundary; pinned here."""
-    assert C.P_TAET_NO_ANSWER == P_TAET_NO_ANSWER

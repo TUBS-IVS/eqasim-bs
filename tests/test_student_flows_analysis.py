@@ -447,6 +447,38 @@ def test_stage_fallback_rates_and_distance_rows_on_the_toy_population(stage_run)
     assert (_csv(out, "flows")["kind"] == "incommuter").sum() >= 1
 
 
+def test_the_no_answer_code_is_an_unknown_status_counted_apart_and_never_a_non_student(tmp_path, monkeypatch):
+    """Person 5 (40 years, routed to adult education) answers P_TAET with the MiD no-answer code 99: it counts as
+    unreadable (report and the Task 5 fallback rate) and leaves the other adults and the non-students."""
+    def no_answer(world):
+        world["stages"][S.ENRICHED_STAGE].loc[4, "P_TAET"] = 99
+
+    _, _, _, out = _run_stage(tmp_path, monkeypatch, mutate_world=no_answer)
+    report = json.loads((out / S.REPORT_FILE).read_text(encoding="utf-8"))
+    assert report["counts"]["n_persons_unreadable_p_taet"] == 1
+    status = {entry["tag"]: entry for entry in report["fallback_rates"]}["student status (Task 5)"]
+    assert (status["n"], status["fallback"]) == (7, 1)
+    leg = _csv(out, "leg_by_status").set_index(["code", "group"])
+    assert leg.loc[(S.SRV_TOTAL_CODE, "other_adult"), "n_present"] == 0
+    assert _csv(out, "non_students").empty
+    assert report["committed_balance_vs_t"]["level_vs_t_region"]["holds"] is True
+
+
+def test_the_level_total_is_checked_against_the_region_rows_of_t(caplog):
+    od = pd.DataFrame({"destination_id": ["A", "A", "B"], "home_in_region": [True, False, True],
+                       "students_persons": [60.0, 15.0, 40.0]})
+    by_site = pd.DataFrame({"destination_id": ["A"], "total_persons": [75.0], "in_commuters_persons": [15.0]})
+    out = pd.DataFrame({"destination_id": ["B"], "out_commuters_persons": [40.0]})
+    with caplog.at_level("WARNING", logger=S.LOGGER.name):
+        holds = S.committed_balance_check(od, by_site, out, 100.0 + 5e-5)
+    assert holds["n_mismatch"] == 0 and holds["level_vs_t_region"]["holds"] is True
+    assert holds["level_vs_t_region"]["t_region_total_persons"] == 100.0 and not caplog.records
+    with caplog.at_level("WARNING", logger=S.LOGGER.name):
+        broken = S.committed_balance_check(od, by_site, out, 101.0)
+    assert broken["level_vs_t_region"]["holds"] is False
+    assert any(record.levelname == "WARNING" and "BROKEN" in record.getMessage() for record in caplog.records)
+
+
 def test_configure_declares_the_inputs_and_refuses_the_configurations_the_design_rules_out():
     recorder = _ConfigureRecorder()
     S.configure(recorder)

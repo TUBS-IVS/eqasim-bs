@@ -97,6 +97,15 @@ def test_a_gate_stay_followed_by_a_shorter_education_leg_is_counted_as_uncertain
     assert diagnostics["gate_before_education"].to_dict()[11]      # a longer leg is still a gate stay before it
 
 
+def test_a_missing_gate_marker_is_no_gate_leg():
+    """A NaN in portal_leg (a leg the portal rewrite never marked) reads as not a gate leg, as in the owner stage
+    outside_tour_modes: person 1 keeps its education leg and person 4 has no leg instead of a phantom gate stay."""
+    trips = _trips().astype({"portal_leg": object})
+    trips.loc[[0, 6], "portal_leg"] = np.nan
+    legs = S.outbound_education_legs(trips, [1, 4]).set_index("person_id")
+    assert legs["mode"].to_dict() == {1: "car"} and legs["gated"].to_dict() == {1: False}
+
+
 def test_a_trip_table_without_the_gate_column_is_refused():
     with pytest.raises(ValueError, match="portal_leg"):
         S.outbound_education_legs(_trips().drop(columns=["portal_leg"]), [1])
@@ -297,3 +306,5 @@ def test_configure_declares_the_inputs_and_refuses_a_run_without_the_portal_laye
     assert recorder.keys[S.KEY_MAX_ROUTABLE_DISTANCE_M] == 45000.0
     with pytest.raises(ValueError, match="portal"):
         S.configure(_ConfigureRecorder({S.KEY_PORTAL_ENABLED: False}))
+    with pytest.raises(ValueError, match="braunschweig.students.flows_enabled"):
+        S.configure(_ConfigureRecorder({S.KEY_FLOWS_ENABLED: False}))

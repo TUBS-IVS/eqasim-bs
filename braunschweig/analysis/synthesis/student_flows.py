@@ -79,6 +79,9 @@ KEY_MIN_SRV_RESPONDENTS = "braunschweig.students.analysis_min_srv_respondents"
 DEFAULT_MIN_SRV_RESPONDENTS = 30   # ASSUMPTION A14: the designer's respondent threshold, not from a table
 KEY_FALLBACK_WARN_SHARE = "braunschweig.students.flows_report_fallback_warn_share"
 DEFAULT_FALLBACK_WARN_SHARE = 0.25   # ASSUMPTION: warn level of the fallbacks that are a rate, not a defect
+#: ASSUMPTION (not from a table): relative tolerance of the identity "level table total = sum of T's region rows"
+#: in :func:`committed_balance_check`; T is built on the level, so only floating-point noise may separate them.
+LEVEL_TOTAL_RELATIVE_TOLERANCE = 1e-6
 #: Repeated from ``student_incommuters`` and ``education_gravity`` (stage modules, not imported here); pinned by
 #: ``tests/test_student_flows_analysis.py``.
 KEY_OD_TABLE_PATH = "braunschweig.students.od_table_path"
@@ -281,7 +284,8 @@ def person_table(persons: pd.DataFrame, home_kreis: pd.Series, gravity: pd.DataF
                  day_state: pd.Series | None) -> pd.DataFrame:
     """One row per enriched person: home Kreis, status, education activity, destination, presence.
 
-    Columns: ``person_id, home_kreis, age, p_taet`` (numeric, NaN unreadable), ``is_student`` (``P_TAET ==
+    Columns: ``person_id, home_kreis, age, p_taet`` (numeric; NaN for an unknown status, i.e. missing, not a number
+    or the no-answer code), ``is_student`` (``P_TAET ==
     STUDENT_P_TAET``), ``activity`` (the person is in ``gravity``), ``destination_id``, ``assignment_path``,
     ``routed_level`` (from ``gravity``; None without activity), ``present`` (``day_absence_state == present``;
     True for all when ``day_state`` is None).
@@ -301,7 +305,9 @@ def person_table(persons: pd.DataFrame, home_kreis: pd.Series, gravity: pd.DataF
     kreis = persons["household_id"].map(home_kreis)
     if kreis.isna().any():
         raise ValueError(f"{_LOG_TAG} {int(kreis.isna().sum())} persons live in a household without a home Kreis")
-    taet = pd.to_numeric(persons["P_TAET"], errors="coerce")
+    # An unknown status (missing, not a number or the no-answer code) is NaN in ``p_taet``: the one rule of
+    # ``student_flows_inputs.status_unknown``, shared with the routing and the day-absence cells.
+    taet = pd.to_numeric(persons["P_TAET"], errors="coerce").where(~_flows_inputs.status_unknown(persons["P_TAET"]))
     frame = pd.DataFrame({"person_id": persons["person_id"].to_numpy(), "home_kreis": kreis.to_numpy(dtype=object),
                           "age": persons["age"].to_numpy(), "p_taet": taet.to_numpy(dtype=float),
                           "is_student": (taet == _flows_inputs.STUDENT_P_TAET).to_numpy()})
@@ -578,9 +584,12 @@ def non_students_moved(frame: pd.DataFrame) -> pd.DataFrame:
     """``[routed_level, persons]`` of the persons aged 20 or older with an education activity who are no student.
 
     The rule OFF would send all of them to the university level; ON they take ``bbs_adult`` or
-    ``adult_education`` and none may sit at a university building (``university`` must be 0 or absent).
+    ``adult_education`` and none may sit at a university building (``university`` must be 0 or absent). A person
+    of unknown status (``p_taet`` NaN) is no "non-student": the routing places it by the fallback rule, which can
+    send it to a university, so it is left out here (counted in ``n_persons_unreadable_p_taet``).
     """
-    members = frame[frame["activity"] & ~frame["is_student"] & (frame["age"] >= 20) & frame["routed_level"].notna()]
+    members = frame[frame["activity"] & ~frame["is_student"] & frame["p_taet"].notna() & (frame["age"] >= 20)
+                    & frame["routed_level"].notna()]
     return members.groupby("routed_level").size().rename("persons").reset_index()
 
 
@@ -668,11 +677,15 @@ def kreis_mismatch(home_kreis: pd.Series, vg250_kreis: pd.Series) -> dict:
 
 
 def committed_balance_check(od: pd.DataFrame, by_site: pd.DataFrame, out_commuters: pd.DataFrame,
-                            tolerance_persons: float = 1e-3) -> dict:
+                            level_total_persons: float, tolerance_persons: float = 1e-3,
+                            level_relative_tolerance: float = LEVEL_TOTAL_RELATIVE_TOLERANCE) -> dict:
     """Compare the committed balance tables with T: a mismatch is counted and reported, not raised.
 
     Per site: total and in-commuters of ``student_balance_by_site.csv`` against T's rows of the site; per surrounding
-    institution: ``out_commuters_persons`` against T's region rows.
+    institution: ``out_commuters_persons`` against T's region rows. Identity of the level: the total of the level
+    table over the region (``level_total_persons``) equals the sum of T's region rows (``home_in_region``), within
+    ``level_relative_tolerance`` of the level total; a broken identity is reported under ``level_vs_t_region`` and
+    WARNED (the population rows and the site rows would then rest on two different student totals).
     """
     by_destination = od.groupby("destination_id")["students_persons"].sum()
     outside = od[~od["home_in_region"]].groupby("destination_id")["students_persons"].sum()
@@ -688,7 +701,17 @@ def committed_balance_check(od: pd.DataFrame, by_site: pd.DataFrame, out_commute
                        float(region.get(site, 0.0))))
     bad = [{"destination_id": s, "quantity": q, "table": a, "t": b} for s, q, a, b in checks
            if abs(a - b) > tolerance_persons]
-    return {"n_checked": len(checks), "n_mismatch": len(bad), "mismatches": bad[:10]}
+    t_region_total = float(od.loc[od["home_in_region"], "students_persons"].sum())
+    level_total = float(level_total_persons)
+    gap = abs(level_total - t_region_total)
+    level_holds = math.isfinite(gap) and gap <= level_relative_tolerance * abs(level_total)
+    (LOGGER.info if level_holds else LOGGER.warning)(
+        "%s level table total %.6f vs T's region rows %.6f: relative gap %.3g (bound %g)%s", _LOG_TAG, level_total,
+        t_region_total, gap / abs(level_total) if level_total else math.inf, level_relative_tolerance,
+        "" if level_holds else ": the identity is BROKEN, the level and T no longer describe the same students")
+    return {"n_checked": len(checks), "n_mismatch": len(bad), "mismatches": bad[:10],
+            "level_vs_t_region": {"level_total_persons": level_total, "t_region_total_persons": t_region_total,
+                                  "relative_tolerance": float(level_relative_tolerance), "holds": bool(level_holds)}}
 
 
 def incommuter_commute_table(incommuters: pd.DataFrame) -> pd.DataFrame:
@@ -1021,7 +1044,7 @@ def execute(context):
     (LOGGER.warning if mismatch["n_different"] or mismatch["n_without_vg250_kreis"] else LOGGER.info)(
         "%s home Kreis by home zone vs VG250 join: %d of %d households differ, %d without a VG250 Kreis",
         _LOG_TAG, mismatch["n_different"], mismatch["n_households"], mismatch["n_without_vg250_kreis"])
-    balance_check = committed_balance_check(od, by_site, out_table)
+    balance_check = committed_balance_check(od, by_site, out_table, float(level["students_persons"].sum()))
     if balance_check["n_mismatch"]:
         LOGGER.warning("%s committed balance tables differ from T in %d of %d checks: %s", _LOG_TAG,
                        balance_check["n_mismatch"], balance_check["n_checked"], balance_check["mismatches"])

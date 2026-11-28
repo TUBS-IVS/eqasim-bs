@@ -18,7 +18,7 @@ Import boundary (Phase 4 global constraints): the module is a TRUE LEAF. It impo
 ``braunschweig.data.csv_header`` and loads no ``braunschweig.popsim``, ``braunschweig.calibration`` or
 ``braunschweig.analysis`` module (a stage that imports it must not inherit their closure, which names
 the VG250 archive). The name and default of the home-area key, the header key of the education-leg
-share, the student status code, the region and Wolfsburg codes, the columns of T and the age groups
+share, the student status and no-answer codes of ``P_TAET``, the region and Wolfsburg codes, the columns of T and the age groups
 and sexes of the level are therefore repeated here ONCE; ``tests/test_student_flows_phase3_pins.py``
 pins every repeated value against the module that owns it.
 
@@ -65,6 +65,9 @@ AGE_RANGE_OLD = "30plus"
 # tests/test_student_flows_phase3_pins.py.
 #: Owner ``braunschweig.popsim.attributes.STUDENT_TAET``: the P_TAET code of a student.
 STUDENT_P_TAET = 10
+#: The MiD no-answer code of ``P_TAET`` ("99 keine Angabe" in the code list of ``braunschweig.popsim.attributes``;
+#: the constant ``braunschweig.calibration.mid_student_reference.P_TAET_NO_ANSWER`` holds the same value).
+P_TAET_NO_ANSWER = 99
 #: Owner ``braunschweig.calibration.srv_student_reference.AREA_WOLFSBURG``.
 AREA_WOLFSBURG = "wolfsburg"
 #: Owner ``braunschweig.calibration.srv_distance_targets.ZGB_KREISE``: the study region.
@@ -96,6 +99,19 @@ _AWAY_ROW = {"parameter": "away_all_day", "base": "students_all", "label": "yes"
 _SEED_COLUMNS = ["home_ars5", "destination_id", "seed"]
 _KREIS_PATTERN = r"\d{5}"
 _NUMBER = r"[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?"
+
+
+# --------------------------------------------------------------------------- student status
+def status_unknown(p_taet: pd.Series) -> pd.Series:
+    """``Series[bool]`` (index of ``p_taet``): True where the student status of a person is UNKNOWN.
+
+    The ONE definition of an unknown status for the student layer (the day-absence cells, the education
+    routing and the student flows analysis): ``P_TAET`` is missing, not a number, or the no-answer code
+    :data:`P_TAET_NO_ANSWER`. An unknown status is never read as "not a student" (the rule of
+    ``braunschweig.calibration.mid_student_reference``); each caller says what it does with such a person.
+    """
+    code = pd.to_numeric(p_taet, errors="coerce")
+    return (code.isna() | (code == P_TAET_NO_ANSWER)).astype(bool)
 
 
 # --------------------------------------------------------------------------- home areas

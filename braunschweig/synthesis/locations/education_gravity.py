@@ -91,7 +91,8 @@ DEFAULT_FIT_TOLERANCE = 1e-6
 KEY_FIT_MAX_ITERATIONS = "braunschweig.students.fit_max_iterations"
 DEFAULT_FIT_MAX_ITERATIONS = 1000
 #: Share of the present persons on the fallback of the plan rule (no observed education leg) above which a
-#: WARNING is logged. ASSUMPTION, not from a table: to be reset after the 1 % smoke shows the real share.
+#: WARNING is logged. ASSUMPTION, not from a table: the planned 1 % smoke was replaced by the 100 % run of
+#: 2026-11-28 (run manifest ``docs/runs/student-flows-popsim100-20261120-2026-11-28.yml``) and the value stays.
 KEY_MATCHING_FALLBACK_WARN_SHARE = "braunschweig.students.matching_fallback_warn_share"
 DEFAULT_MATCHING_FALLBACK_WARN_SHARE = 0.25
 #: The table T relative to ``data_path``. The key and its default are those of

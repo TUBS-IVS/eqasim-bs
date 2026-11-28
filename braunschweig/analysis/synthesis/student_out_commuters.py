@@ -76,6 +76,7 @@ RULE_STATE = ("measures the synthesis of the code state it runs on (see pipeline
 KEY_OUTPUT_SUBDIR = "student_out_commuters_output_subdir"
 DEFAULT_OUTPUT_SUBDIR = "analysis/student_out_commuters"
 KEY_PORTAL_ENABLED = _portal_config_keys.KEY_ENABLED
+KEY_FLOWS_ENABLED = _flows_inputs.KEY_FLOWS_ENABLED
 KEY_MAX_ROUTABLE_DISTANCE_M = _portal_config_keys.KEY_MAX_ROUTABLE_DISTANCE_M
 DEFAULT_MAX_ROUTABLE_DISTANCE_M = _portal_config_keys.DEFAULT_MAX_ROUTABLE_DISTANCE_M
 #: Repeated from ``student_incommuters`` (a stage module whose closure this stage should not inherit) and pinned
@@ -130,7 +131,8 @@ def _leg_flags(trips: pd.DataFrame, person_ids) -> pd.DataFrame:
     if missing:
         raise ValueError(f"{_LOG_TAG} the trips lack the column(s) {missing}; found {list(trips.columns)}")
     legs = trips[trips["person_id"].isin(list(person_ids))].copy()
-    marker = legs[GATE_LEG_COLUMN].astype(bool)
+    # .eq(True) as the owner stage outside_tour_modes reads it: astype(bool) would turn a NaN into a gate leg.
+    marker = legs[GATE_LEG_COLUMN].eq(True)
     legs["is_gate"] = (marker & (legs["following_purpose"] == OUTSIDE_PURPOSE)
                        & (legs["preceding_purpose"] != OUTSIDE_PURPOSE))
     legs["is_education"] = (legs["following_purpose"] == EDUCATION_PURPOSE) & ~marker
@@ -326,6 +328,11 @@ def configure(context):
     if not context.config(KEY_PORTAL_ENABLED, _portal_config_keys.DEFAULT_ENABLED):
         raise ValueError(f"{_LOG_TAG} {KEY_PORTAL_ENABLED} is false: without the portal layer no leg is rewritten "
                          f"as a stay at a gate and there is nothing to report; drop this stage from the run list")
+    # The destinations and facilities of the out-commuters exist only with the flows switch on; refuse at DAG time,
+    # like the sibling stage student_flows, before the population is built.
+    if not context.config(KEY_FLOWS_ENABLED, True):
+        raise ValueError(f"{_LOG_TAG} {KEY_FLOWS_ENABLED} is false: the out-commuting students exist only on the ON "
+                         f"path of the student flows; enable it or drop this stage from the run list")
     for stage in (ENRICHED_STAGE, HOME_ZONES_STAGE, HOME_LOCATIONS_STAGE, GRAVITY_STAGE, FACILITIES_STAGE,
                   TRIPS_STAGE):
         context.stage(stage)

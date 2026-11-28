@@ -148,7 +148,7 @@ _REFUSALS = {
     # Only 03153, which has no person, reaches the Salzgitter site: its share would be lost.
     "unreachable_destination": (
         _SEED[~((_SEED["home_ars5"] == "03101") & (_SEED["destination_id"] == "Ostfalia Salzgitter"))],
-        pd.Series({"03101": 100, "03153": 0}), _TWO_KREISE_SHARES, "Ostfalia Salzgitter"),
+        pd.Series({"03101": 100, "03153": 0}), _TWO_KREISE_SHARES, r"Ostfalia Salzgitter.*sampling rate"),
     # 03157 has persons but no seed on any destination with a share.
     "row_without_seed": (_SEED, pd.Series({"03101": 100, "03157": 10}), _TWO_KREISE_SHARES, "03157"),
     # 03101 reaches only the TU; with 90 of 100 persons there the TU's target of 36.4 cannot be met.

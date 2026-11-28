@@ -133,7 +133,8 @@ def fit_flow_matrix(seed: pd.DataFrame, row_totals: pd.Series, dest_shares: pd.S
     unreachable = sorted(str(destination) for destination, reach in zip(columns, fitted.sum(axis=0)) if reach <= 0)
     if unreachable:
         raise ValueError(f"{_LOG_TAG} destinations with a positive share that no home Kreis with persons reaches: "
-                         f"{unreachable}; their share of the students would be lost")
+                         f"{unreachable}; their share of the students would be lost (very small samples can leave a "
+                         f"destination without any populated home Kreis: raise the sampling rate)")
     stranded = sorted(str(home) for home, reach in zip(populated, fitted.sum(axis=1)) if reach <= 0)
     if stranded:
         raise ValueError(f"{_LOG_TAG} home Kreise with persons but no seed on a destination with a share: "
@@ -542,7 +543,10 @@ def allot_within_kreis(persons: pd.DataFrame, cell_totals: pd.Series, centres: p
     function decides only who (design B5, A26). Distances are straight lines in metres from the home to the
     destination's centre (:func:`destination_centres`); a cell of 0 receives nobody.
 
-    Rule ``plan_length`` (primary: the plan decides; the owner's choice of 2026-11-27):
+    The default rule is ``home_distance`` (owner decision 2026-11-28, ADR-0213 Decision 3); ``plan_length`` is
+    selectable (``braunschweig.students.kreis_matching_rule``).
+
+    Rule ``plan_length`` (the plan decides):
 
     1. Places for the fallback persons (``leg_km`` missing) are held back from the cells in proportion to the cell
        totals by largest remainder (Hamilton), in exact integer arithmetic. Equal remainders are ordered by a seeded

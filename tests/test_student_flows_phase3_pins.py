@@ -2,7 +2,7 @@
 
 The flows module is a true leaf (it loads no popsim, calibration or analysis module; global
 constraints, "Import boundary"), so the name and default of the home-area key, the header key of
-the education-leg share, the age groups of the level, the student status code, the region and the
+the education-leg share, the age groups of the level, the student status and no-answer codes, the region and the
 Wolfsburg codes are repeated there as literals.
 This file is the only place that imports both sides: it fails when Phase 3 changes one of them and
 the flows module does not follow.
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from braunschweig.calibration.mid_student_reference import STUDENT_P_TAET
@@ -77,6 +78,22 @@ def test_the_repeated_literals_equal_their_owners():
 
 def test_student_status_code_of_the_leaf_module_equals_the_popsim_constant():
     assert STUDENT_P_TAET == STUDENT_TAET == SFI.STUDENT_P_TAET
+
+
+def test_the_no_answer_code_equals_the_mid_code_list_and_the_calibration_constant():
+    """The owner is the MiD P_TAET code list of popsim.attributes, a comment without a constant: its
+    "99 keine Angabe" line is read from the source; the calibration constant must agree too."""
+    import inspect
+    import re
+
+    from braunschweig.calibration.mid_student_reference import P_TAET_NO_ANSWER
+    from braunschweig.popsim import attributes
+
+    listed = re.findall(r"^#\s+(\d+)\s+keine Angabe", inspect.getsource(attributes), flags=re.MULTILINE)
+    assert listed[:1] == [str(SFI.P_TAET_NO_ANSWER)]          # the first such line is the P_TAET list
+    assert SFI.P_TAET_NO_ANSWER == P_TAET_NO_ANSWER
+    unknown = SFI.status_unknown(pd.Series([10, 99, None, "x", 4.0], dtype=object))
+    assert unknown.tolist() == [False, True, True, True, False]
 
 
 def test_education_leg_share_header_key_equals_the_one_of_the_stage():

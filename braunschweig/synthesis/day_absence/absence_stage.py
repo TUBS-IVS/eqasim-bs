@@ -119,7 +119,13 @@ DEFAULT_MAX_UNREADABLE_P_TAET_SHARE = cells.DEFAULT_MAX_UNREADABLE_P_TAET_SHARE
 #: Bands (on the cells path: cells) with fewer persons than this are not judged against the
 #: deviation guard (sampling noise).
 MIN_PERSONS_FOR_BAND_GUARD = 1000
-#: The SrV tables the cells path reads; their digests enter the ON token.
+#: The SrV tables every ON run reads (:func:`~braunschweig.synthesis.day_absence.absence.load_absence_reference`);
+#: their digests enter the ON token on both paths.
+_BAND_TABLES = (
+    srv_absence.ABSENCE_BY_AGE_TABLE,
+    srv_absence.ABSENCE_HOUSEHOLD_TABLE,
+)
+#: The SrV tables the cells path reads in addition; their digests enter the token with the cells ON.
 _CELLS_TABLES = (
     srv_absence.ABSENCE_BY_AGE_TABLE,
     flows_inputs.PARAMETERS_TABLE,
@@ -138,11 +144,13 @@ def validate(context):
     here (same mechanism as ``braunschweig.synthesis.commute_day.state_stage.validate``).
 
     Returns the structured token of ``braunschweig.synpp_tokens.source_token``: one semantic
-    digest per helper module (docstrings, comments and formatting do not change it). With the
-    student cells ON (and the stage ON) the token is ``{"helpers": ..., "cells_files": ...}``: the
-    cells helpers join the modules and the CRLF-neutral digests of the SrV tables the cells read are
-    added, so a rebuilt table devalidates the stage; a missing table stops the run at DAG time. OFF,
-    the token covers the modules of the code before the switch only.
+    digest per helper module (docstrings, comments and formatting do not change it). With the stage
+    ON the token is ``{"helpers": ..., "srv_files": ...}``: the CRLF-neutral digests of every SrV
+    table the draw reads (:data:`_BAND_TABLES` on both paths, plus :data:`_CELLS_TABLES` with the
+    student cells ON), so a rebuilt table devalidates the stage; a missing table stops the run at DAG
+    time. With the cells ON the cells helpers also join the modules; with the cells OFF the modules
+    are those of the code before the switch. With the stage OFF no file is read and the token is the
+    module token alone.
     """
     cells_on = _cells_on(context)
     helper_modules = _HELPER_MODULES if cells_on else tuple(
@@ -150,16 +158,16 @@ def validate(context):
     deferred_names = _DEFERRED_HELPER_MODULE_NAMES if cells_on else tuple(
         name for name in _DEFERRED_HELPER_MODULE_NAMES if name not in _CELLS_ONLY_DEFERRED_HELPER_MODULE_NAMES)
     helpers = synpp_tokens.source_token(helper_modules, deferred_names, stage_label=__name__ + ".validate()")
-    if not cells_on:
+    if not context.config(KEY_ENABLED):
         return helpers
     srv_dir = os.path.join(str(context.config("data_path")), *SRV_SUBDIR)
     files = {}
-    for name in _CELLS_TABLES:
+    for name in dict.fromkeys((*_BAND_TABLES, *(_CELLS_TABLES if cells_on else ()))):
         path = os.path.join(srv_dir, name)
         if not os.path.isfile(path):
-            raise RuntimeError(f"{_LOG_TAG} {KEY_STUDENT_CELLS} is true but {name} is missing: {path}")
+            raise RuntimeError(f"{_LOG_TAG} {KEY_ENABLED} is true but the SrV table {name} is missing: {path}")
         files[name] = synpp_tokens.text_file_sha256(path)
-    return {"helpers": helpers, "cells_files": files}
+    return {"helpers": helpers, "srv_files": files}
 
 
 def _cells_on(context) -> bool:
@@ -322,9 +330,11 @@ def execute(context):
         # Compact per-band line (final-review fix wave, MINOR finding 5): includes
         # n_eligible_present so the individual-stage eligibility gate's effect on each band is
         # visible even when the deviation guard below does not fire.
-        logger.info("%s %s %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d)", _LOG_TAG, unit_noun,
-                   band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
-                   cell["n_eligible_present"])
+        # The residual probability of the individual stage joins the line (it is NaN for a band drawn
+        # in several cells, whose band entry is a report only).
+        logger.info("%s %s %s: realised %.2f%% vs reference %.2f%% (n=%d, n_eligible=%d, residual_p=%.6f)", _LOG_TAG,
+                    unit_noun, band, 100.0 * cell["realised_rate"], 100.0 * cell["reference_rate"], cell["n"],
+                    cell["n_eligible_present"], cell["residual_p"])
         if cell["n"] >= MIN_PERSONS_FOR_BAND_GUARD:
             deviation_pp = 100.0 * (cell["realised_rate"] - cell["reference_rate"])
             if abs(deviation_pp) > max_dev_pp:

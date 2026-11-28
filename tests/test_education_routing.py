@@ -97,12 +97,14 @@ def test_student_status_missing_p_taet_values_are_counted_as_fallback_and_warn(c
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
-def test_unknown_status_in_a_population_with_p_taet_takes_the_fallback_rule_end_to_end():
-    # Ruling: an unknown status is never read as "not a student". The persons with a missing P_TAET take
-    # studies & ~employed & age >= 20 per person; the persons with a readable P_TAET stay on the primary rule.
+@pytest.mark.parametrize("unknown", [NAN, 99], ids=["missing", "no_answer_code"])
+def test_unknown_status_in_a_population_with_p_taet_takes_the_fallback_rule_end_to_end(unknown):
+    # Ruling: an unknown status is never read as "not a student". The persons with a missing P_TAET or the MiD
+    # no-answer code 99 take studies & ~employed & age >= 20 per person; the persons with a known status stay on
+    # the primary rule.
     persons = pd.DataFrame({
         "age": [25, 25, 17, 25, 25, 25],
-        "P_TAET": [NAN, NAN, NAN, 10, 4, 8],
+        "P_TAET": [unknown, unknown, unknown, 10, 4, 8],
         "studies": [True, False, True, False, True, False],      # persons 4 and 5: ignored (readable P_TAET)
         "employed": [False, False, False, False, False, True],
     })

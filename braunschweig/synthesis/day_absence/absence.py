@@ -491,7 +491,8 @@ def draw_absence(persons: pd.DataFrame, reference: AbsenceReference, rng: np.ran
         diagnostics["by_cell"] = by_unit
         logger.info("%s cells path: the rates above per band are REPORTED, not targeted; drawn per cell %s",
                     _LOG_TAG, {c: f"{100 * v['realised_rate']:.2f}% vs {100 * v['reference_rate']:.2f}% "
-                                  f"(n={v['n']}, n_eligible={v['n_eligible_present']})" for c, v in by_unit.items()})
+                                  f"(n={v['n']}, n_eligible={v['n_eligible_present']}, "
+                                  f"residual_p={v['residual_p']:.6f})" for c, v in by_unit.items()})
     return out, diagnostics
 
 

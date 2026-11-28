@@ -333,6 +333,27 @@ def test_a_building_of_weight_zero_gets_no_capacity_and_is_counted():
     assert gdf["location_id"].is_unique
 
 
+def test_a_building_with_a_nan_weight_raises_naming_the_building():
+    buildings = _buildings()
+    buildings.loc[1, "weight"] = np.nan
+    with pytest.raises(ValueError, match=r"NaN weight for building\(s\) \[1\]"):
+        _build(buildings=buildings)
+
+
+def test_colliding_location_ids_raise(monkeypatch):
+    """The last guard of the facility ids: a slug rule whose text collides although its values differ (two
+    distinct objects printing the same text) must raise instead of handing two facilities one id."""
+    from braunschweig.data.schools import university_facilities
+
+    class _SameText:
+        def __str__(self):
+            return "same"
+
+    monkeypatch.setattr(university_facilities, "slug", lambda destination: _SameText())
+    with pytest.raises(ValueError, match="location_id is not unique"):
+        _build()
+
+
 def test_the_left_out_share_warns_only_above_the_configured_share(capsys):
     # 1 of 4 buildings lies in a commune without a site: 25 %
     _build(warn_share=0.05)

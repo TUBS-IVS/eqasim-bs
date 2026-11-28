@@ -327,6 +327,14 @@ def build_site_facilities(sites, surrounding, points, buildings, communes,
                 weights, on_potential = sub[weight_column].to_numpy(float), None
             else:
                 weights, on_potential = pick_unit_weights(sub, weight_column, area_weight_column)
+            weights = np.asarray(weights, dtype=float)
+            nan_weight = np.isnan(weights)
+            if nan_weight.any():
+                # A NaN would silently drop the building (``not weight > 0``) and turn the total into NaN.
+                raise ValueError("%s local site %s: NaN weight for building(s) %s of commune %s (column %r); "
+                                 "fill or drop them in the OSM university buildings"
+                                 % (_LOG_TAG, destination, sub.index[nan_weight].tolist(), commune,
+                                    weight_column))
             if not weights.sum() > 0:
                 raise ValueError("%s local site %s: the university buildings of commune %s have "
                                  "zero total weight" % (_LOG_TAG, destination, commune))

@@ -169,8 +169,11 @@ def test_cells_path_draws_each_person_in_its_cell_and_reports_every_cell(caplog)
     assert (diagnostics["n_adults"], diagnostics["n_adults_unreadable_p_taet"]) == (9, 1)
     assert diagnostics["share_adults_unreadable_p_taet"] == pytest.approx(1 / 9)
     assert set(diagnostics["by_band"]) == set(D.AGE_BAND_LABELS)
-    for cell in rates:   # one line per cell: the rate reached against the SrV rate
-        assert any(cell in message and "reference" in message for message in caplog.messages), cell
+    for cell in rates:   # one line per cell: the rate reached against the SrV rate, with the residual drawn
+        residual = diagnostics["by_cell"][cell]["residual_p"]
+        assert 0.0 <= residual <= 1.0, cell
+        assert any(f"cell {cell}:" in message and "reference" in message and f"residual_p={residual:.6f}" in message
+                   for message in caplog.messages), cell
 
 
 def test_off_path_marks_everyone_present_without_reading_any_file(tmp_path):
@@ -195,22 +198,29 @@ _BAND_TOKEN_MODULES = {"braunschweig.synthesis.day_absence.absence", "braunschwe
                        "braunschweig.calibration.srv_plan_structure", "braunschweig.gravity.friction"}
 
 
-def test_validate_token_covers_the_cells_helpers_and_tables_only_when_the_cells_are_on(tmp_path):
-    """OFF (cells or day absence off): the token over the modules of the code before the switch and
-    nothing else (Ruling 10; the digest of absence.py itself changes once with this task). ON: the
-    cells helpers and the CRLF-neutral digests of the three SrV tables the cells read; a missing
-    table stops the run at DAG time."""
-    for config in (_config(), _config(**{S.KEY_ENABLED: False, S.KEY_STUDENT_CELLS: True})):
-        token = S.validate(_ValidateContext(config))
-        assert token["format"] == 2 and set(token["modules"]) == _BAND_TOKEN_MODULES
+def test_validate_token_covers_every_srv_table_read_and_the_cells_helpers_only_with_the_cells_on(tmp_path):
+    """Day absence off: the module token of the code before the switch and nothing else (no file is
+    read). Cells off: the same modules plus the digests of the two band-draw tables. Cells on: the
+    cells helpers and the digests of the band tables and the two student tables; a missing table stops
+    the run at DAG time on either path."""
+    off = S.validate(_ValidateContext(_config(**{S.KEY_ENABLED: False, S.KEY_STUDENT_CELLS: True})))
+    assert off["format"] == 2 and set(off["modules"]) == _BAND_TOKEN_MODULES
+    band = S.validate(_ValidateContext(_config()))
+    assert set(band["helpers"]["modules"]) == _BAND_TOKEN_MODULES
+    assert set(band["srv_files"]) == {D.ABSENCE_BY_AGE_TABLE, D.ABSENCE_HOUSEHOLD_TABLE}
     token = S.validate(_ValidateContext(_cells_config()))
     assert set(token["helpers"]["modules"]) == _BAND_TOKEN_MODULES | {
         "braunschweig.synthesis.day_absence.cells", "braunschweig.data.education.student_flows_inputs",
         "braunschweig.data.csv_header"}
-    assert set(token["cells_files"]) == {D.ABSENCE_BY_AGE_TABLE, SFI.PARAMETERS_TABLE, SFI.PARAMETERS_BY_AREA_TABLE}
+    assert set(token["srv_files"]) == {D.ABSENCE_BY_AGE_TABLE, D.ABSENCE_HOUSEHOLD_TABLE, SFI.PARAMETERS_TABLE,
+                                       SFI.PARAMETERS_BY_AREA_TABLE}
     srv = tmp_path.joinpath(*S.SRV_SUBDIR)
     srv.mkdir(parents=True)
-    for name in (D.ABSENCE_BY_AGE_TABLE, SFI.PARAMETERS_TABLE):   # the table by area is missing
+    (srv / D.ABSENCE_BY_AGE_TABLE).write_bytes(
+        open(os.path.join(DATA_PATH, *S.SRV_SUBDIR, D.ABSENCE_BY_AGE_TABLE), "rb").read())
+    with pytest.raises(RuntimeError, match=D.ABSENCE_HOUSEHOLD_TABLE):   # the household table is missing
+        S.validate(_ValidateContext(_config(data_path=str(tmp_path))))
+    for name in (D.ABSENCE_HOUSEHOLD_TABLE, SFI.PARAMETERS_TABLE):   # the table by area is missing
         (srv / name).write_bytes(open(os.path.join(DATA_PATH, *S.SRV_SUBDIR, name), "rb").read())
     with pytest.raises(RuntimeError, match=SFI.PARAMETERS_BY_AREA_TABLE):
         S.validate(_ValidateContext(_cells_config(data_path=str(tmp_path))))
