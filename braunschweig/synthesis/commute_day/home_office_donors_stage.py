@@ -38,6 +38,7 @@ from braunschweig.popsim import closure_dwell as _closure_dwell
 from braunschweig.popsim import diary_facts as _diary_facts
 from braunschweig.popsim import diary_plan_match as _diary_plan_match
 from braunschweig.popsim import escort_pairing as _escort_pairing
+from braunschweig.popsim import overnight_open_end as _overnight_open_end
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips as _popsim_trips
 from braunschweig.popsim import trips_stage as _trips_stage
@@ -111,7 +112,7 @@ DEFAULT_EXPLICIT_ROUND_TRIP_PURPOSES = True
 
 # --------------------------------------------------------------------------- raw MiD inputs
 
-PERSONS_FILE = "MiD2023_Personen.csv"
+PERSONS_FILE = _mid_csv_format.MID_PERSONS_FILE
 WEGE_FILE = "MiD2023_Wege.csv"
 HOUSEHOLDS_FILE = "MiD2023_Haushalte.csv"
 RAW_FILES = (PERSONS_FILE, WEGE_FILE, HOUSEHOLDS_FILE)
@@ -183,7 +184,9 @@ TRIP_COLUMNS = tuple("donor_id" if column == "person_id" else column for column 
 #: silently serves a stale pool.
 _HELPER_MODULES = (_donor_pool, _popsim_trips, _plan_validation, _trips_stage, _closure_dwell,
                    _diary_facts, _diary_plan_match, _escort_pairing, _mid_csv_format,
-                   _mid_donor)
+                   _mid_donor,
+                   # decides which donor days stay open (issue #694); execute() calls it
+                   _overnight_open_end)
 #: Modules hashed by NAME because they are imported inside ``configure()``/``execute()`` rather
 #: than at module level (see the config-key block above). Written as string LITERALS, like
 #: every other stage's deferred list: ``tests/test_synpp_helper_hash_invariant.py`` resolves
@@ -231,12 +234,13 @@ def configure(context):
         DEFAULT_CLOSURE_DWELL_MODEL, DEFAULT_DIARY_PLAN_MATCH,
         DEFAULT_DROP_LEADING_ARRIVE_HOME_LEG, DEFAULT_ESCORT_PASSIVE_FROM_ADULT,
         DEFAULT_EXCLUDE_HOLIDAY_PLAN_SOURCES, DEFAULT_EXCLUDE_RBW_LEGS,
+        DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
         DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES, DEFAULT_W_ZWECK_10_AS_LEISURE,
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
         require_positive,
     )
@@ -250,6 +254,11 @@ def configure(context):
     context.config(KEY_CLOSURE_DWELL_MIN_OBS, _trips_stage.DEFAULT_CLOSURE_DWELL_MIN_OBS)
     context.config(KEY_W_ZWECK_10_AS_LEISURE, DEFAULT_W_ZWECK_10_AS_LEISURE)
     context.config(KEY_ESCORT_PASSIVE_FROM_ADULT, DEFAULT_ESCORT_PASSIVE_FROM_ADULT)
+    # Overnight open day end (issue #694): the SAME shared key trips_stage and the popsim stage
+    # read; a donor day must end open exactly when the day it replaces does.
+    context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS)
+    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+                   DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE)
     # require_positive (issue #409 range-guard follow-up): both pairing parameters are
     # documented "valid range > 0" (config_keys); a non-positive value would otherwise reach
     # braunschweig.popsim.escort_pairing.pair_passive_legs unchecked -- see that module's own
@@ -401,8 +410,8 @@ def execute(context):
     from braunschweig.popsim.stage.config_keys import (
         KEY_CLOSURE_DWELL_MIN_OBS, KEY_CLOSURE_DWELL_MODEL, KEY_DIARY_PLAN_MATCH,
         KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
-        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS,
-        KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+        KEY_EXCLUDE_HOLIDAY_PLAN_SOURCES, KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+        KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
         KEY_PASSIVE_PAIR_MAX_GAP_MINUTES, KEY_W_ZWECK_10_AS_LEISURE,
     )
     if not bool(context.config(KEY_ENABLED)):
@@ -431,6 +440,15 @@ def execute(context):
                 len(persons), len(wege), len(households))
     _require_donor_filter_columns(persons, filter_flags)
 
+    # Overnight open day end (issue #694): the same per-donor decision trips_stage makes, from
+    # this stage's own MiD inputs. Nothing extra is read or computed when the flag is OFF.
+    open_end_donors = None
+    if bool(context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS)):
+        open_end_donors = _trips_stage.build_open_end_donors(
+            wege, _overnight_open_end.load_overnight_answers(
+                mid_dir, max_no_answer_share=float(
+                    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE))))
+
     attributes, trips, diagnostics = build_home_office_donor_pool(
         persons, wege, households,
         random_seed=int(context.config("random_seed")),
@@ -448,11 +466,20 @@ def execute(context):
             context.config(KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS)),
         vectorized_validation=bool(
             context.config(_plan_validation.KEY_VECTORIZED_PLAN_VALIDATION)),
+        open_end_donors=open_end_donors,
         **filter_flags,
     )
 
     diagnostics = dict(diagnostics)
     diagnostics["enabled"] = True
+    if open_end_donors is not None:
+        # Share of the pool's donors whose day stays open (issue #694), reported like
+        # trips_stage._log_closure_share does for the synthetic persons.
+        donor_keys = pd.MultiIndex.from_arrays([attributes["H_ID"], attributes["P_ID"]])
+        n_kept_open = int(open_end_donors.reindex(donor_keys).fillna(False).astype(bool).sum())
+        diagnostics["n_donors_kept_open"] = n_kept_open
+        logger.info("%s overnight open day end: %d/%d pool donors kept open (%.1f%%)", _LOG_TAG,
+                    n_kept_open, len(attributes), 100.0 * n_kept_open / max(len(attributes), 1))
     diagnostics["n_mid_persons"] = len(persons)
     diagnostics["n_mid_trips"] = len(wege)
     diagnostics["n_mid_households"] = len(households)

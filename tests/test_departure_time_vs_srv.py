@@ -460,13 +460,16 @@ def test_validate_hashes_the_pure_module_and_the_reference_builders():
     from braunschweig.analysis import departure_time, plan_structure
     from braunschweig.calibration import metrics, srv_departure_times, srv_plan_structure
     from braunschweig.popsim import departure_time_model
+    from braunschweig.popsim import overnight_open_end
     from braunschweig.popsim import trips as popsim_trips
+    from braunschweig.popsim.mid import csv_format
     from braunschweig.popsim.stage import config_keys
     from braunschweig.synthesis.portal_trips import config_keys as portal_config_keys
 
     assert set(S._HELPER_MODULES) == {departure_time, plan_structure, srv_departure_times,
                                       srv_plan_structure, departure_time_model, metrics,
-                                      popsim_trips, config_keys, provenance, portal_config_keys}
+                                      popsim_trips, config_keys, provenance, portal_config_keys,
+                                      overnight_open_end, csv_format}
     token = S.validate(None)
     assert token["format"] == 2
     assert token == S.validate(None)

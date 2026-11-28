@@ -58,7 +58,8 @@ notes: 'Writes seven files under <output_path>/analysis/plan_structure_vs_srv/:
   table rather than only the head-to-head Kreise -- the closure is a property of the trip
   builder, not of a region), accepted_deviations.csv (open-end days,
   open-start days, single-trip days -- the three consequences of the closed-plan decision, each
-  with both sides'' value and ACCEPTED_DEVIATION_NOTE, which names issue #367 and points at this
+  with both sides'' value and the note of accepted_deviation_note (issue #367; issue #694 too when the
+  model trip table has open day ends), which points at this
   record''s decisions list, where ADR-0108 is the record of the closed-plan decision), summary.md and
   provenance.json (git commit, parameters, reference path, universe counts, closure counts).
   delta_pp is (model - srv) x 100 for share metrics (mobility_rate, share_*, participation_*,

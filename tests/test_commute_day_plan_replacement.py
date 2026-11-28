@@ -844,3 +844,35 @@ def test_the_ranking_context_never_changes_the_persons_whose_day_is_replaced():
         .sort_values(["person_id", "trip_index"]).reset_index(drop=True),
         trips[trips["person_id"].isin(untouched)]
         .sort_values(["person_id", "trip_index"]).reset_index(drop=True))
+
+
+def test_replaced_day_keeps_open_end():
+    """Review Focus 5: a donor day kept open (built by donor_pool.donor_trips) is spliced onto
+    the home-office worker as it is, with no closing home trip appended on the way."""
+    from braunschweig.synthesis.commute_day import donor_pool
+    persons = pd.DataFrame({
+        "H_ID": [2, 2], "P_ID": [1, 2], "HP_ID": ["2_1", "2_2"], "HP_SEX": [2, 1],
+        "HP_ALTER": [35, 50], "arbwo": [1, 1], "P_STARB1": [1, 1], "starb2": [1, 1],
+        "M_HOFF": [1, 1], "P_ARB_ENTF": [10.0, 10.0]})
+    wege = pd.DataFrame({
+        "H_ID": [2, 2, 2, 2], "P_ID": [1, 1, 2, 2], "W_ID": [1, 2, 1, 2],
+        "W_ZWECK": [1, 8, 1, 4], "hvm_imp": [4] * 4,
+        "W_SZS": [8, 17, 8, 17], "W_SZM": [0] * 4, "W_AZS": [8, 17, 8, 17],
+        "W_AZM": [30, 30, 40, 40], "wegkm": [5.0] * 4, "wegkm_imp": [5.0] * 4})
+    donors = donor_pool.select_home_office_day_donors(persons)
+    attributes = donor_pool.donor_attributes(
+        donors, persons, pd.DataFrame({"H_ID": [2], "H_ANZAUTO": [1], "H_GR": [2]}), wege)
+    decisions = pd.Series(
+        [False, True],
+        index=pd.MultiIndex.from_tuples([(2, 1), (2, 2)], names=["H_ID", "P_ID"]))
+    donor_trips = donor_pool.donor_trips(
+        donors, attributes, wege, random_seed=0, escort_purpose=False,
+        escort_passive_education=False, explicit_round_trip_purposes=True,
+        open_end_donors=decisions)
+    matches = pd.DataFrame({"person_id": ["p2"], "donor_id": ["2_2"], "coarsening_level": [0]})
+    trips = _trips_fixture().assign(is_synthetic_closure=False)
+    day_trips, _ = plan_replacement.build_day_trips(
+        trips, _states_fixture(), matches, donor_trips, random_seed=RANDOM_SEED)
+    p2 = day_trips[day_trips["person_id"] == "p2"].sort_values("trip_index")
+    assert len(p2) == 2 and not p2["is_synthetic_closure"].any()
+    assert p2["following_purpose"].iloc[-1] != "home" and bool(p2["is_last_trip"].iloc[-1])

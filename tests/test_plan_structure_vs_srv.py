@@ -270,7 +270,46 @@ def test_closure_metrics_reports_zero_and_flags_an_absent_column(caplog):
     assert any("is_synthetic_closure" in record.getMessage() for record in caplog.records)
 
 
+def test_closure_metrics_report_open_end_persons():
+    trips = _model_trips()
+    # Person 3 now keeps the day open: the last trip ends at "shop", not at home.
+    trips.loc[trips["person_id"] == 3, "following_purpose"] = ["work", "shop"]
+    metrics = P.closure_metrics(trips)
+
+    # Mobile persons = persons with at least one trip (person 4 is immobile).
+    assert metrics["n_persons_open_end"] == 1
+    assert metrics["share_persons_open_end"] == pytest.approx(1.0 / 3.0)
+
+
+def test_closure_metrics_open_end_uses_the_last_trip_by_trip_index_not_row_order():
+    # Person 3: trip 0 ends at home, trip 1 ends at shop. The rows are shuffled so the
+    # file-order last row is trip 0 (home); only a sort by trip_index finds the open end.
+    trips = _model_trips()
+    person3 = trips[trips["person_id"] == 3].copy()
+    person3.loc[person3["trip_index"] == 0, "following_purpose"] = "home"
+    person3.loc[person3["trip_index"] == 1, "following_purpose"] = "shop"
+    shuffled = pd.concat([trips[trips["person_id"] != 3], person3.iloc[::-1]])
+    metrics = P.closure_metrics(shuffled)
+
+    assert metrics["n_persons_open_end"] == 1
+
+
+def test_closure_metrics_open_end_requires_trip_index():
+    trips = _model_trips().drop(columns=["trip_index"])
+    with pytest.raises(KeyError, match="trip_index"):
+        P.closure_metrics(trips)
+
+
+def test_closure_metrics_open_end_raises_on_a_missing_last_following_purpose():
+    trips = _model_trips()
+    trips.loc[(trips["person_id"] == 3) & (trips["trip_index"] == 1),
+              "following_purpose"] = None
+    with pytest.raises(ValueError, match="1 person"):
+        P.closure_metrics(trips)
+
+
 # --------------------------------------------------------------------------- accepted deviations
+
 
 def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     comparison = pd.DataFrame({
@@ -282,7 +321,7 @@ def test_accepted_deviations_reports_the_three_closed_plan_consequences():
         "delta_pp": [2.24, 2.19, -0.58],
         "n_srv": [18223] * 3,
     })
-    deviations = P.accepted_deviations(comparison)
+    deviations = P.accepted_deviations(comparison, open_ends_kept=False)
 
     assert list(deviations.columns) == P.ACCEPTED_DEVIATION_COLUMNS
     assert set(deviations["deviation"]) == {"open_end_days", "open_start_days",
@@ -290,17 +329,19 @@ def test_accepted_deviations_reports_the_three_closed_plan_consequences():
     open_end = deviations[deviations["deviation"] == "open_end_days"].iloc[0]
     assert open_end["model"] == pytest.approx(0.0)
     assert open_end["srv"] == pytest.approx(1.0 - 0.9776)
-    assert open_end["note"] == P.ACCEPTED_DEVIATION_NOTE
+    assert open_end["note"] == P.ACCEPTED_DEVIATION_NOTE_CLOSED
 
 
-def test_accepted_deviation_note_names_the_issue_not_a_placeholder_adr_id():
-    """The ADR id lives ONLY in the stage record's ``decisions:`` list (one fact, one file).
-
-    An inlined placeholder such as "ADR E" would be a second, always-wrong home for it.
-    """
-    assert P.ACCEPTED_DEVIATION_NOTE == (
-        "closed plans by decision (issue #367; ADR in the stage record's decisions)")
-    assert "ADR E" not in P.ACCEPTED_DEVIATION_NOTE
+@pytest.mark.parametrize("open_ends_kept", [False, True])
+def test_accepted_deviation_note_names_the_issue_not_an_adr_id_and_follows_the_open_ends(open_ends_kept):
+    """The ADR id lives ONLY in the stage record's ``decisions:`` list (one fact, one file); an
+    inlined id (or a placeholder such as "ADR E") would be a second, always-wrong home for it.
+    The note claims open day ends only when the model view has them."""
+    note = P.accepted_deviation_note(open_ends_kept)
+    assert "ADR E" not in note and "ADR-0" not in note
+    assert "issue #367" in note
+    assert ("issue #694" in note) is open_ends_kept
+    assert ("overnight" in note) is open_ends_kept
 
 
 # --------------------------------------------------------------------------- stage

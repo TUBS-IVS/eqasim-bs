@@ -68,6 +68,9 @@ def test_implementation_exposes_the_expected_trip_building_keywords():
         # retaining an explicit OFF switch; the implementation and every adapter must
         # carry the keyword so trips_stage.execute can forward that choice unchanged.
         "vectorized_validation",
+        # Added 2026-11-27 (overnight open day end, issue #694, ADR-0214): whether overnight
+        # travellers keep their day open, and the MiD answers that decide it.
+        "keep_overnight_open_ends", "overnight_answers",
     }
 
 

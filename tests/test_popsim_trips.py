@@ -6,6 +6,8 @@ Codes grounded in the MiD 2023 codebook (Wege sheet): W_ZWECK (purpose), hvm_imp
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -833,3 +835,133 @@ def test_build_validated_trip_table_returns_a_consistent_purpose_chain_on_a_depa
     assert pv.count_inconsistent_purpose_links(table) == 0
     assert not table["is_synthetic_closure"].any()
     assert report.is_valid
+
+
+# ---------------------------------------------------------------------------
+# Issue #694: the overnight open-day-end decision follows the CHAIN SOURCE (the
+# MiD donor whose Wege build the chain) through every chain build of
+# build_validated_trip_table: the first build, the stage-A re-repair and the
+# stage-B replacement (attribute-matched and legacy same-cell).
+# ---------------------------------------------------------------------------
+
+def _open_end_fixture(*, with_sex: bool):
+    """pA: coded times, complete wegmin -> stage A; pB: valid, ends at shop;
+    pC: coded times, no usable wegmin -> stage B replacement (only pB qualifies)."""
+    persons = pd.DataFrame({
+        "person_id": ["pA", "pB", "pC"], "H_ID": [1, 2, 3], "P_ID": [1, 1, 1],
+        "ZENSUS100m": ["c2", "c1", "c1"],
+    })
+    if with_sex:
+        persons["sex"] = [2, 1, 1]
+    coded = 701
+    wege = pd.DataFrame({
+        "H_ID": [1, 1, 2, 2, 3, 3], "P_ID": [1] * 6, "W_ID": [1, 2] * 3,
+        "W_ZWECK": [1, 4, 1, 4, 1, 8], "hvm_imp": [4] * 6,
+        "W_SZS": [coded, coded, 8, 17, coded, coded], "W_SZM": [coded, coded, 0, 0, coded, coded],
+        "W_AZS": [coded, coded, 8, 17, coded, coded], "W_AZM": [coded, coded, 30, 20, coded, coded],
+        "wegkm_imp": [5.0] * 6,
+        "wegmin_imp1": [30.0, 20.0, 30.0, 20.0, np.nan, np.nan],
+    })
+    return persons, wege
+
+
+def _open_end_donors(decisions: dict) -> pd.Series:
+    index = pd.MultiIndex.from_tuples(list(decisions), names=["H_ID", "P_ID"])
+    return pd.Series(list(decisions.values()), index=index, dtype=bool, name="keeps_open_end")
+
+
+def test_kept_open_chain_survives_every_repair_pass():
+    """pA's NaN times keep it out of the first closure pass; its only closure decision is
+    the stage-A re-repair, which must honour the donor's open end (and close it when the
+    donor's decision is False, the positive control that the re-repair ran)."""
+    persons, wege = _open_end_fixture(with_sex=True)
+    built = {}
+    for keeps_open in (True, False):
+        donors = _open_end_donors({(1, 1): keeps_open, (2, 1): True, (3, 1): False})
+        table, report = trips.build_validated_trip_table(
+            persons, wege, resample=True, random_seed=0, open_end_donors=donors)
+        built[keeps_open] = table[table["person_id"] == "pA"].sort_values("trip_index")
+        assert table["keeps_open_end"].dtype == bool
+        assert table["departure_time"].notna().all() and report.is_valid
+    kept, closed = built[True], built[False]
+    assert kept["following_purpose"].tolist() == ["work", "shop"]
+    assert not kept["is_synthetic_closure"].any() and kept["keeps_open_end"].all()
+    assert closed["following_purpose"].iloc[-1] == "home" and closed["is_synthetic_closure"].iloc[-1]
+    assert not closed["keeps_open_end"].any()
+
+
+@pytest.mark.parametrize("with_sex", [True, False], ids=["matched", "legacy_same_cell"])
+def test_resampled_chain_carries_its_own_donor_decision(with_sex, caplog):
+    """pC (decision False) inherits pB's open chain (decision True): every replaced row
+    carries pB's True, so pC keeps pB's open end and never mixes two values; the switch
+    is logged with its direction."""
+    persons, wege = _open_end_fixture(with_sex=with_sex)
+    donors = _open_end_donors({(1, 1): True, (2, 1): True, (3, 1): False})
+    with caplog.at_level(logging.INFO, logger="braunschweig.popsim.trips"):
+        table, report = trips.build_validated_trip_table(
+            persons, wege, resample=True, resample_cell_col="ZENSUS100m", random_seed=0,
+            open_end_donors=donors)
+    assert "decision changed: 1/1 (100.0%), open->closed 0, closed->open 1" in caplog.text
+    replaced = table[table["person_id"] == "pC"].sort_values("trip_index")
+    assert replaced["following_purpose"].tolist() == ["work", "shop"]
+    assert replaced["keeps_open_end"].tolist() == [True, True]
+    assert not replaced["is_synthetic_closure"].any()
+    assert table["keeps_open_end"].dtype == bool and report.is_valid
+    if with_sex:
+        assert (replaced["chain_donor_id"] == "pB").all()
+
+
+@pytest.mark.parametrize("with_sex", [True, False], ids=["matched", "legacy_same_cell"])
+def test_open_end_donors_none_is_byte_identical(with_sex):
+    persons, wege = _open_end_fixture(with_sex=with_sex)
+    kwargs = dict(resample=True, resample_cell_col="ZENSUS100m", random_seed=0)
+    baseline, baseline_report = trips.build_validated_trip_table(persons, wege, **kwargs)
+    off, off_report = trips.build_validated_trip_table(persons, wege, open_end_donors=None, **kwargs)
+    assert "keeps_open_end" not in off.columns
+    pd.testing.assert_frame_equal(off, baseline)
+    assert off_report == baseline_report
+
+
+def test_donor_missing_from_open_end_donors_raises():
+    persons, wege = _open_end_fixture(with_sex=True)
+    donors = _open_end_donors({(1, 1): True, (2, 1): True})  # donor (3, 1) absent
+    with pytest.raises(ValueError, match=r"1 chain donor"):
+        trips.build_validated_trip_table(
+            persons, wege, resample=True, random_seed=0, open_end_donors=donors)
+
+
+def test_unmatched_legacy_person_is_dropped_and_the_decision_column_stays_bool():
+    """Legacy same-cell path: pC's cell has no donor, so resample_chains gives it a
+    home-only placeholder row without a decision; the placeholder is dropped and the
+    column must come back as a clean bool (not object), with a valid report."""
+    persons, wege = _open_end_fixture(with_sex=False)
+    persons.loc[persons["person_id"] == "pC", "ZENSUS100m"] = "c9"
+    donors = _open_end_donors({(1, 1): True, (2, 1): True, (3, 1): False})
+    table, report = trips.build_validated_trip_table(
+        persons, wege, resample=True, resample_cell_col="ZENSUS100m", random_seed=0,
+        open_end_donors=donors)
+    assert sorted(table["person_id"].unique()) == ["pA", "pB"]
+    assert table["keeps_open_end"].dtype == bool and report.is_valid
+
+
+@pytest.mark.parametrize("bad_donors, message", [
+    (pd.Series([True], index=pd.Index([1], name="H_ID")), "two-level MultiIndex"),
+    (pd.Series([1], index=pd.MultiIndex.from_tuples([(2, 1)], names=["H_ID", "P_ID"])), "dtype bool"),
+    (pd.Series([True, False], index=pd.MultiIndex.from_tuples([(2, 1), (2, 1)], names=["H_ID", "P_ID"])),
+     "1 duplicated donor keys"),
+], ids=["one_level_index", "not_bool", "duplicated_key"])
+def test_open_end_donors_with_an_unusable_shape_raises(bad_donors, message):
+    persons, wege = _open_end_fixture(with_sex=False)
+    with pytest.raises(ValueError, match=message):
+        trips.build_trip_table(persons[persons["person_id"] == "pB"], wege, open_end_donors=bad_donors)
+
+
+def test_member_completion_filler_takes_its_mirror_donors_decision():
+    """A filler's own (H_ID, P_ID) is synthetic; its chain comes from the mirror donor
+    (source_H_ID, source_P_ID), so the decision must too, not the one keyed by its own ids."""
+    _, wege = _open_end_fixture(with_sex=False)
+    filler = pd.DataFrame({"person_id": ["f1"], "H_ID": [9], "P_ID": [9],
+                           "source_H_ID": [2], "source_P_ID": [1]})
+    donors = _open_end_donors({(2, 1): True, (9, 9): False})
+    table = trips.build_trip_table(filler, wege, open_end_donors=donors)
+    assert len(table) == 2 and table["keeps_open_end"].tolist() == [True, True]

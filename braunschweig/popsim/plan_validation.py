@@ -21,6 +21,12 @@ from data.hts import hts  # noqa: E402
 from braunschweig.popsim.closure_dwell import CLOSURE_GLOBAL_FALLBACK_WARN_RATE
 from braunschweig.popsim.fallback_rates import log_fallback_rate
 
+#: Column carrying the per-donor overnight open-day-end decision (issue #694). Defined HERE, the
+#: low-level module every trip stage already hashes, and imported by
+#: ``braunschweig.popsim.overnight_open_end``, so no stage reaches that module just by importing
+#: this one.
+KEEPS_OPEN_END_COLUMN = "keeps_open_end"
+
 logger = logging.getLogger(__name__)
 
 # How long (seconds) after the last arrival the synthetic return-home trip departs.
@@ -149,11 +155,14 @@ def _eqasim_fix_trip_times(df_trips: pd.DataFrame) -> pd.DataFrame:
 def _append_return_home(
     df_trips: pd.DataFrame, dwell_s: float, *, dwell_model=None,
     max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS,
+    keep_open_end_column: str | None = None,
 ) -> pd.DataFrame:
     """Append a synthetic return-home trip for each person whose day does not end at home.
 
     For each person whose last trip (by departure_time order) has
-    ``following_purpose != "home"``, one row is appended with:
+    ``following_purpose != "home"`` -- and, when ``keep_open_end_column`` is given,
+    whose last trip does NOT carry ``True`` in that column (an overnight open day end
+    that is kept, issue #694) -- one row is appended with:
 
     - ``departure_time = last.arrival_time + dwell``, where ``dwell`` is
       ``dwell_model.draw(last.following_purpose, last.arrival_time)`` when a
@@ -202,6 +211,9 @@ def _append_return_home(
       inspecting timing heuristics.
     - ``trip_key = f"{person_id}_closure"`` when the ``trip_key`` column exists
       on the input frame.
+    - ``keep_open_end_column = False`` when that column is given (the person's
+      decision, so a later repair pass finds no null in it). Without it the
+      column, if present, gets ``NaN`` like every other column (pre-#694 behaviour).
 
     All other columns are set to ``NaN`` / their dtype default. The caller must
     re-run ``hts.compute_activity_duration`` to keep ``activity_duration``
@@ -216,6 +228,9 @@ def _append_return_home(
         max_plan_time_seconds: Plan-time bound (seconds) the appended arrival
             should not exceed on the EMPIRICAL path (see the capping rule above);
             normally the caller's ``PlanValidator.max_plan_time_seconds``.
+        keep_open_end_column: Name of a boolean per-row column whose ``True`` on a
+            person's last trip exempts the person from the closure; ``None`` (the
+            default) closes every open day end. The caller validates the column.
     """
     # sort_values returns a new frame (the caller's table is never modified), and
     # ignore_index gives the fresh RangeIndex that .reset_index(drop=True) did,
@@ -251,6 +266,8 @@ def _append_return_home(
     # Int64 trip_id with a person whose trip_ids are all <NA> yields an object column
     # holding Python int instead of np.int64 (equal values); no stage builds one.
     needs_closure = (last_rows["following_purpose"] != "home").to_numpy()
+    if keep_open_end_column is not None:
+        needs_closure &= ~last_rows[keep_open_end_column].to_numpy(dtype=bool)
     closure_rows = last_rows.loc[needs_closure]
     closure_idx = closure_rows.index.to_numpy()
     # The appended rows take the ids as stored, so an integer person_id keeps its
@@ -343,6 +360,8 @@ def _append_return_home(
         })
         if has_trip_key:
             new_row["trip_key"] = f"{person_id}_closure"
+        if keep_open_end_column is not None:
+            new_row[keep_open_end_column] = False
         # Carry over trip_id as a placeholder so sort remains stable; will be
         # re-derived by compute_first_last after appending.
         if has_trip_id:
@@ -439,18 +458,80 @@ class PlanValidator:
       ``max_plan_time_seconds`` (post-midnight-shift chains beyond the
       simulated day, 30 h by default, are routed to the resample);
     - (optional) ``home_closure``: the day starts and ends at home (Task 4).
+
+    With ``keep_open_ends=True`` (issue #694) a person whose LAST trip carries
+    ``True`` in :data:`KEEPS_OPEN_END_COLUMN`
+    keeps an open day end: ``no_home_end`` is not raised for that person and
+    ``repair_trips`` appends no return-home trip. Every other check, ``no_home_start``
+    included, is unchanged. The column must then exist, hold only booleans without
+    nulls, and carry one value per person (ValueError otherwise, never a silent
+    default). These column checks run whenever ``keep_open_ends=True``, also with
+    ``require_home_closure=False``, where the exemption itself has no effect
+    because no home-end check or closure runs. With ``keep_open_ends=False`` (default) the
+    column is ignored and the behaviour is exactly the pre-#694 one.
     """
 
     def __init__(self, *, require_home_closure: bool = True,
                  max_plan_time_seconds: float = MAX_PLAN_TIME_SECONDS,
-                 vectorized: bool = True):
+                 vectorized: bool = True,
+                 keep_open_ends: bool = False):
         self.require_home_closure = require_home_closure
         self.max_plan_time_seconds = max_plan_time_seconds
         self.vectorized = vectorized
+        self.keep_open_ends = keep_open_ends
+
+    def _require_open_end_column(self, df_trips: pd.DataFrame) -> None:
+        """Fail fast when ``keep_open_ends`` is on but the decision column is unusable."""
+        if KEEPS_OPEN_END_COLUMN not in df_trips.columns:
+            raise ValueError(
+                f"[popsim.plan_validation] keep_open_ends=True but the trip table has no "
+                f"'{KEEPS_OPEN_END_COLUMN}' column ({len(df_trips)} rows); join the "
+                f"overnight open-end decision onto every chain first")
+        n_null = int(df_trips[KEEPS_OPEN_END_COLUMN].isna().sum())
+        if n_null:
+            raise ValueError(
+                f"[popsim.plan_validation] keep_open_ends=True but '{KEEPS_OPEN_END_COLUMN}' "
+                f"is null on {n_null} of {len(df_trips)} trip rows; every chain needs an "
+                f"explicit True/False decision")
+        n_not_boolean = int((~df_trips[KEEPS_OPEN_END_COLUMN].isin([True, False])).sum())
+        if n_not_boolean:
+            raise ValueError(
+                f"[popsim.plan_validation] keep_open_ends=True but '{KEEPS_OPEN_END_COLUMN}' "
+                f"holds a non-boolean value on {n_not_boolean} of {len(df_trips)} trip rows")
+
+    @staticmethod
+    def _require_consistent_open_end(sorted_trips: pd.DataFrame) -> None:
+        """Fail fast when the decision differs between rows of one person.
+
+        The decision is per chain; both validation paths and the closure append read it
+        from the person's last row, so a chain whose rows disagree would be decided by
+        whichever row sorts last. One vectorised pass over adjacent rows of the
+        ``(person_id, departure_time)``-sorted frame finds every such person.
+        """
+        flags = sorted_trips[KEEPS_OPEN_END_COLUMN].to_numpy(dtype=bool)
+        person_ids = sorted_trips["person_id"].to_numpy()
+        if len(flags) < 2:
+            return
+        changes_within_person = (person_ids[1:] == person_ids[:-1]) & (flags[1:] != flags[:-1])
+        if changes_within_person.any():
+            n_persons = len(pd.unique(person_ids[1:][changes_within_person]))
+            raise ValueError(
+                f"[popsim.plan_validation] keep_open_ends=True but '{KEEPS_OPEN_END_COLUMN}' "
+                f"differs between the trip rows of {n_persons} persons; the decision must be "
+                f"one value per chain")
+
+    def _keeps_open_end(self) -> bool:
+        """Whether the open-end exemption applies (it only matters with home closure)."""
+        return self.keep_open_ends and self.require_home_closure
 
     def validate_trips(self, df_trips: pd.DataFrame) -> ValidationReport:
+        if self.keep_open_ends:
+            self._require_open_end_column(df_trips)
         persons = df_trips["person_id"].nunique()
         sorted_trips = df_trips.sort_values(["person_id", "departure_time"])
+        if self.keep_open_ends:
+            # Shared by both paths below, so they cannot disagree on a mixed chain.
+            self._require_consistent_open_end(sorted_trips)
         if self.vectorized:
             issues = self._check_person_arrays(sorted_trips)
         else:
@@ -517,6 +598,8 @@ class PlanValidator:
         if self.require_home_closure:
             preceding = sorted_trips["preceding_purpose"].to_numpy()[grouped_rows]
             following = sorted_trips["following_purpose"].to_numpy()[grouped_rows]
+            if self._keeps_open_end():
+                keeps_open_end = sorted_trips[KEEPS_OPEN_END_COLUMN].to_numpy(dtype=bool)[grouped_rows]
 
         nan_times = self._group_any(np.isnan(dep), group_sizes) | self._group_any(
             np.isnan(arr), group_sizes)
@@ -573,7 +656,9 @@ class PlanValidator:
                     raise IndexError("single positional indexer is out-of-bounds")
                 if preceding[first_positions[group_index]] != "home":
                     issues.append(self._issue(person_id, "no_home_start"))
-                if following[last_positions[group_index]] != "home":
+                last_position = last_positions[group_index]
+                if following[last_position] != "home" and not (
+                        self._keeps_open_end() and keeps_open_end[last_position]):
                     issues.append(self._issue(person_id, "no_home_end"))
         return issues
 
@@ -610,7 +695,8 @@ class PlanValidator:
             last_dest = group.iloc[-1]["following_purpose"]
             if first_origin != "home":
                 out.append(self._issue(person_id, "no_home_start"))
-            if last_dest != "home":
+            keeps_open_end = self._keeps_open_end() and bool(group.iloc[-1][KEEPS_OPEN_END_COLUMN])
+            if last_dest != "home" and not keeps_open_end:
                 out.append(self._issue(person_id, "no_home_end"))
         return out
 
@@ -624,7 +710,10 @@ class PlanValidator:
         1. Validate before repair to identify which persons have issues.
         2. Delegate time repair to ``hts.fix_trip_times`` (eqasim helper).
         3. If ``require_home_closure``, append a synthetic return-home trip for
-           every person whose day does not end at home.
+           every person whose day does not end at home, except (with
+           ``keep_open_ends``) a person whose last trip carries ``True`` in
+           ``KEEPS_OPEN_END_COLUMN``; that person keeps the open day end on every
+           pass, and the appended closure rows carry ``False`` in the column.
         4. Re-run ``hts.compute_activity_duration`` so the appended trip is
            consistent with the rest of the chain.
         5. Validate after repair.
@@ -693,6 +782,7 @@ class PlanValidator:
 
         # --- Step 3: home-end closure (NaN-time / out-of-bound persons excluded)
         n_closure_appended = 0
+        n_kept_open = 0
         if self.require_home_closure:
             excluded_rows = fixed["person_id"].isin(closure_excluded_persons)
             closable = fixed[~excluded_rows]
@@ -704,12 +794,20 @@ class PlanValidator:
             # Count persons that need closure before appending.
             df_sorted = closable.sort_values(["person_id", "departure_time"])
             last_rows = df_sorted.groupby("person_id", sort=False).last()
-            needs_closure = (last_rows["following_purpose"] != "home").sum()
-            n_closure_appended = int(needs_closure)
-            del df_sorted, last_rows
+            open_end = (last_rows["following_purpose"] != "home").to_numpy()
+            if self._keeps_open_end():
+                # Kept-open persons (issue #694) are exempt; validate_trips above has
+                # already rejected a missing or null decision column.
+                kept_open = open_end & last_rows[KEEPS_OPEN_END_COLUMN].to_numpy(dtype=bool)
+            else:
+                kept_open = np.zeros(len(open_end), dtype=bool)
+            n_closure_appended = int((open_end & ~kept_open).sum())
+            n_kept_open = int(kept_open.sum())
+            del df_sorted, last_rows, open_end, kept_open
             closable = _append_return_home(
                 closable, dwell_s, dwell_model=dwell_model,
                 max_plan_time_seconds=self.max_plan_time_seconds,
+                keep_open_end_column=KEEPS_OPEN_END_COLUMN if self._keeps_open_end() else None,
             )
             # The excluded (NaN-time / out-of-bound) rows never go through
             # _append_return_home this round, so the column may be absent (a
@@ -778,13 +876,17 @@ class PlanValidator:
         logger.info(
             "[popsim.plan_validation] repair: %d valid, %d repaired, %d unfixable "
             "(of %d total); home-end closure appended to %d persons "
-            "(%.1f%% of pool); %d persons (%.1f%%) have NaN trip times "
+            "(%.1f%% of pool); %d persons (%.1f%%) keep their open day end "
+            "(overnight trip, keep_open_ends=%s); %d persons (%.1f%%) have NaN trip times "
             "(MiD coded times 99/701) and %d persons (%.1f%%) exceed the "
             "%.0fh plan-time bound after the midnight-shift repair; both groups "
             "were excluded from closure repair and routed to the resample",
             n_valid, n_repaired, n_unfixable, n_persons,
             n_closure_appended,
             100.0 * n_closure_appended / n_persons if n_persons > 0 else 0.0,
+            n_kept_open,
+            100.0 * n_kept_open / n_persons if n_persons > 0 else 0.0,
+            self.keep_open_ends,
             len(nan_time_persons),
             100.0 * len(nan_time_persons) / n_persons if n_persons > 0 else 0.0,
             len(bound_persons),

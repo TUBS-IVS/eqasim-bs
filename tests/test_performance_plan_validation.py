@@ -470,6 +470,8 @@ def test_mid_source_and_trips_execute_forward_off_switch(monkeypatch):
                 "departure_time_mapping_min_reference_n": 200,
                 "departure_time_mapping_min_model_n": 50,
                 "departure_time_mapping_max_median_shift_hours": 2.0,
+                "braunschweig.population.popsim.keep_overnight_open_ends": False,
+                "braunschweig.population.popsim.overnight_open_end_max_no_answer_share": 0.20,
             }
             return values[key] if key in values else defaults[key]
 

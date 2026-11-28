@@ -403,9 +403,9 @@ def summary_markdown(comparison, by_kreis, closure, deviations, provenance) -> s
         if any(len(frame) for frame in ordered) else headline.iloc[0:0]
     lines += _metric_table(ordered)
 
-    lines += ["", "## Accepted deviations (closed plans by decision)", "",
-              "Every synthetic day is a closed home-based chain by construction (issue "
-              "#367), so the model cannot reproduce the SrV shares below. They are accepted "
+    lines += ["", "## Accepted deviations (closed plans and open day ends)", "",
+              "Most synthetic days are closed home-based chains, so the model cannot reproduce "
+              "the SrV shares below; the reason is in the note column. They are accepted "
               "deviations, not defects.", "",
               "| deviation | model | srv | delta_pp | note |",
               "| --- | ---: | ---: | ---: | --- |"]
@@ -580,7 +580,8 @@ def execute(context):
 
     closure = P.closure_metrics(df_trips)
     closure_table = P.closure_frame(closure)
-    deviations = P.accepted_deviations(comparison)
+    deviations = P.accepted_deviations(
+        comparison, open_ends_kept=closure["n_persons_open_end"] > 0)
 
     provenance = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),

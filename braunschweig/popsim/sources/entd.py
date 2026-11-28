@@ -424,6 +424,8 @@ class EntdSource:
         departure_time_min_model_n: int = 50,
         departure_time_max_median_shift_hours: float = 2.0,
         vectorized_validation: bool = True,
+        keep_overnight_open_ends: bool = False,
+        overnight_answers: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame from ENTD trips.
 
@@ -475,7 +477,13 @@ class EntdSource:
         model rejection already guarantees never runs, and the model key's own
         message names the feature, so nothing tuned can pass unnoticed.
 
-        The eight checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
+        ``keep_overnight_open_ends`` (issue #694) is rejected on a non-default (True) value:
+        it needs the MiD overnight answer ``P_STREISE`` and the MiD diary facts, neither of
+        which the ENTD frames carry, so a popsim_open run would otherwise believe overnight
+        days stayed open while every day was closed. ``overnight_answers`` is accepted and
+        ignored, like ``departure_time_reference``.
+
+        The nine checks below compare against ``config_keys.ENTD_REJECTED_KEYS`` (a
         deferred import, like every other ``config_keys`` reference from this
         package -- see that module's own docstring for why it cannot be imported at
         THIS module's level) rather than a second hand-typed literal, so this
@@ -486,8 +494,8 @@ class EntdSource:
         from braunschweig.popsim.stage.config_keys import (
             ENTD_REJECTED_KEYS, KEY_CLOSURE_DWELL_MODEL, KEY_DEPARTURE_TIME_MODEL,
             KEY_DROP_LEADING_ARRIVE_HOME_LEG, KEY_ESCORT_PASSIVE_FROM_ADULT,
-            KEY_EXCLUDE_RBW_LEGS, KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
-            KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
+            KEY_EXCLUDE_RBW_LEGS, KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+            KEY_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS, KEY_PASSIVE_PAIR_MAX_GAP_MINUTES,
             KEY_W_ZWECK_10_AS_LEISURE,
         )
         if departure_time_model != ENTD_REJECTED_KEYS[KEY_DEPARTURE_TIME_MODEL]:
@@ -549,6 +557,13 @@ class EntdSource:
                 "supported for the ENTD donor (the empirical dwell pools are built from a "
                 "MiD Wege table); set braunschweig.population.popsim.closure_dwell_model to "
                 "'fixed_1h' for popsim_open runs."
+            )
+        if keep_overnight_open_ends != ENTD_REJECTED_KEYS[KEY_KEEP_OVERNIGHT_OPEN_ENDS]:
+            raise NotImplementedError(
+                "[popsim.sources.entd] keep_overnight_open_ends=True is not supported for the "
+                "ENTD donor (no MiD P_STREISE overnight answer and no MiD diary facts); set "
+                "braunschweig.population.popsim.keep_overnight_open_ends to False for "
+                "popsim_open runs."
             )
         return _build_trips(
             persons,

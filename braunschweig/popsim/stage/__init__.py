@@ -156,6 +156,7 @@ from braunschweig.popsim import income_spatial_tilt as _ist
 from braunschweig.popsim import plausibility as _plausibility
 from braunschweig.popsim import passenger_availability as _passenger_availability
 from braunschweig.popsim import mid
+from braunschweig.popsim import overnight_open_end
 from braunschweig.popsim import prepared_cells
 from braunschweig.popsim import seed_contract as _seed_contract
 from braunschweig.popsim import tool_version
@@ -293,6 +294,10 @@ from .config_keys import (  # noqa: F401  (re-exports)
     KEY_DIARY_MATCH_HARD_EMPLOYMENT,
     KEY_DIARY_PLAN_MATCH,
     KEY_DROP_LEADING_ARRIVE_HOME_LEG,
+    KEY_KEEP_OVERNIGHT_OPEN_ENDS,
+    DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS,
+    KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+    DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
     KEY_EBIKE_KREIS_CONTROL,
     KEY_EBIKE_SEED_COLUMN,
     KEY_EDUCATION_BY_AGE_CONTROL,
@@ -443,6 +448,9 @@ _HELPER_MODULES = (
     solver_path_gate,
     source_resolution,
     tilt_columns,
+    # the overnight open day-end decision the trip_class seed reads (imported by this
+    # stage and by mid.seed_loading)
+    overnight_open_end,
     # the braunschweig.popsim.mid helper package: __init__ + its submodules
     mid,
     _mid_batch_folders,
@@ -1182,6 +1190,13 @@ def configure(context):
     context.config(KEY_DIARY_PLAN_MATCH, True)
     context.config(KEY_TRIP_CLASS_SEED_COUNTS_CLOSURE, True)
     context.config(KEY_DROP_LEADING_ARRIVE_HOME_LEG, True)
+    # Overnight open day end (decision: braunschweig.popsim.overnight_open_end): the
+    # trip_class seed counts +0 for a kept-open donor. Must equal the value
+    # trips_stage and home_office_donors_stage read (see the key's comment).
+    context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS, DEFAULT_KEEP_OVERNIGHT_OPEN_ENDS)
+    # Warn threshold of the same decision (no-usable-answer share of open-end diaries).
+    context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
+                   DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE)
     # Passive-escort-as-education (issue #256), a TRIP-BUILD flag also declared by
     # braunschweig.popsim.trips_stage with the same default: the education_flag
     # KREIS-control seed must count the same W_ZWECK codes as education that the trip
@@ -2840,7 +2855,8 @@ def _inject_ownership_grid_columns(context, cells: pd.DataFrame, ownership_grid_
 def _build_populationsim_seed(context, source, source_name: str, mid_dir, complete_members: bool,
         seed_day_filter, active_entries, kreis_seed_rng, ebike_seed_column_cfg,
         trip_class_counts_closure: bool = False, forbid_no_diary_sources: bool = False,
-        drop_leading_arrive_home_leg: bool = False,
+        drop_leading_arrive_home_leg: bool = False, keep_overnight_open_ends: bool = False,
+        overnight_max_no_answer_share: float = DEFAULT_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE,
         escort_passive_education: bool = False, exclude_rbw_legs: bool = True,
         w_zweck_10_as_leisure: bool = False, escort_passive_from_adult: bool = False,
         passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
@@ -2918,6 +2934,16 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
     Also reports the seed completeness rate plus the member-completion counts via
     ``context.set_info``.
     """
+    if keep_overnight_open_ends and not (
+            complete_members and source_name != "entd" and trip_class_counts_closure):
+        # No silent no-op: the flag only acts on the closure-counting completed-donor seed.
+        logger.warning(
+            "[popsim.stage] keep_overnight_open_ends is ON but the trip_class seed ignores it "
+            "(source=%s, complete_members=%s, trip_class_seed_counts_closure=%s): only the "
+            "mid completed-donor seed that counts the closed day carries the src_* diary "
+            "facts, so on this path the seed adds no closing trip (+1) to any day and the "
+            "flag changes nothing in the seed; the plan still keeps the flagged days open.",
+            source_name, complete_members, trip_class_counts_closure)
     completed_donor_households = None
     completed_donor_persons = None
     if source_name == "entd":
@@ -2984,6 +3010,13 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
         # already carries (mid.MID_HOUSEHOLD_ATTR_COLS). has_ebike is fully wired
         # (server-verified 2026-07-08, issue #116 resolved); project_completed_seed
         # only raises if has_ebike is active AND ebike_seed_column_cfg is unset.
+        # Kept-open overnight days count +0 in the trip_class seed. The answers are read only
+        # when the feature is ON and the seed counts the closed day at all (OFF stays
+        # byte-identical); only this path carries the src_* diary facts.
+        overnight_flags = (
+            overnight_open_end.overnight_trip_flags(overnight_open_end.load_overnight_answers(
+                mid_dir, max_no_answer_share=overnight_max_no_answer_share))
+            if keep_overnight_open_ends and trip_class_counts_closure else None)
         seed_households, seed_persons = mid.project_completed_seed(
             completed_donor_households, completed_donor_persons, seed_columns,
             kreis_control_entries=active_entries,
@@ -3000,6 +3033,7 @@ def _build_populationsim_seed(context, source, source_name: str, mid_dir, comple
             passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
             passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
             education_flag_drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            overnight_flags=overnight_flags,
         )
         # Surface the build reports on THIS run too (so they are present even when
         # the completed_donor stage was served from cache and its execute did not run).
@@ -4180,6 +4214,10 @@ def execute(context) -> pd.DataFrame:
     # build maps to education (Plan B, issue #368); read from the SAME key trips_stage
     # reads, so seed and plan can never disagree.
     escort_passive_education_on = bool(context.config(KEY_ESCORT_PASSIVE_EDUCATION))
+    # The seed counts +0 for kept-open overnight days; the SAME key trips_stage reads.
+    keep_overnight_open_ends_on = bool(context.config(KEY_KEEP_OVERNIGHT_OPEN_ENDS))
+    overnight_max_no_answer_share_cfg = float(
+        context.config(KEY_OVERNIGHT_OPEN_END_MAX_NO_ANSWER_SHARE))
     # The participation-universe seeds must count exactly the legs the trip build keeps
     # (controller ruling R8); read from the SAME key trips_stage / completed_donor read.
     exclude_rbw_legs_on = bool(context.config(KEY_EXCLUDE_RBW_LEGS))
@@ -4204,6 +4242,8 @@ def execute(context) -> pd.DataFrame:
         trip_class_counts_closure=trip_class_counts_closure_on,
         forbid_no_diary_sources=diary_plan_match_on,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg_on,
+        keep_overnight_open_ends=keep_overnight_open_ends_on,
+        overnight_max_no_answer_share=overnight_max_no_answer_share_cfg,
         escort_passive_education=escort_passive_education_on,
         exclude_rbw_legs=exclude_rbw_legs_on,
         w_zweck_10_as_leisure=w_zweck_10_as_leisure_on,

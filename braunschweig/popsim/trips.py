@@ -925,6 +925,60 @@ EQASIM_TRIP_COLUMNS = (
 )
 
 
+def _attach_open_end_decision(
+    trip_rows: pd.DataFrame,
+    open_end_donors: pd.Series,
+    *,
+    household_col: str,
+    person_col: str,
+) -> pd.DataFrame:
+    """Write each row's chain-donor decision into ``KEEPS_OPEN_END_COLUMN`` (issue #694).
+
+    One vectorised index lookup on the donor keys ``(household_col, person_col)`` of
+    the trip rows. Never defaults: a decision Series that is not a unique two-level
+    bool index, or a chain donor missing from it, raises, because a defaulted value
+    would silently close (or open) a day against the donor's own MiD answer.
+    """
+    # Local import, like the other plan_validation imports in this module. The column name lives
+    # in plan_validation so this module never reaches overnight_open_end.
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
+
+    if not isinstance(open_end_donors.index, pd.MultiIndex) or open_end_donors.index.nlevels != 2:
+        raise ValueError(
+            "[popsim.trips] open_end_donors must be indexed by the donor "
+            f"({household_col}, {person_col}) keys (a two-level MultiIndex); got "
+            f"{type(open_end_donors.index).__name__} with {open_end_donors.index.nlevels} level(s)")
+    if not pd.api.types.is_bool_dtype(open_end_donors.dtype):
+        raise ValueError(
+            f"[popsim.trips] open_end_donors must have dtype bool, got {open_end_donors.dtype}")
+    if not open_end_donors.index.is_unique:
+        n_duplicated = int(open_end_donors.index.duplicated().sum())
+        raise ValueError(
+            f"[popsim.trips] open_end_donors has {n_duplicated} duplicated donor keys; "
+            "the decision must be one value per MiD donor")
+    donor_keys = pd.MultiIndex.from_arrays(
+        [trip_rows[household_col].to_numpy(), trip_rows[person_col].to_numpy()])
+    positions = open_end_donors.index.get_indexer(donor_keys)
+    missing = positions < 0
+    if missing.any():
+        missing_donors = donor_keys[missing].unique()
+        raise ValueError(
+            f"[popsim.trips] {len(missing_donors)} chain donor(s) ({int(missing.sum())} trip rows) "
+            f"have no open-day-end decision in open_end_donors, e.g. {list(missing_donors[:5])}; "
+            "the decision must cover every donor whose Wege build a chain")
+    trip_rows[KEEPS_OPEN_END_COLUMN] = open_end_donors.to_numpy()[positions]
+    flags_per_person = trip_rows.groupby("person_id", sort=False)[KEEPS_OPEN_END_COLUMN].first()
+    n_persons = len(flags_per_person)
+    n_flagged = int(flags_per_person.sum())
+    logger.info(
+        "[popsim.trips] open-day-end decision attached: %d/%d persons (%.2f%%) have a chain "
+        "donor that keeps the open day end (kept-open count after repair is logged by the "
+        "PlanValidator).",
+        n_flagged, n_persons, 100.0 * n_flagged / max(n_persons, 1),
+    )
+    return trip_rows
+
+
 def build_trip_table(
     persons: pd.DataFrame,
     mid_wege: pd.DataFrame,
@@ -941,6 +995,7 @@ def build_trip_table(
     escort_passive_from_adult: bool = False,
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
+    open_end_donors: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Map MiD Wege onto synthetic persons into the eqasim trip schema (+ extras).
 
@@ -1047,6 +1102,14 @@ def build_trip_table(
         candidate escorting adult in that pairing (forwarded to ``map_purpose``
         via ``expand_persons_to_trips``). Unit: years; valid range > 0. Inert
         unless ``escort_passive_from_adult`` is True.
+    open_end_donors:
+        Optional overnight open-day-end decision per MiD donor (issue #694): a bool
+        Series indexed by the donor ``(household_col, person_col)`` keys, as
+        produced by ``braunschweig.popsim.overnight_open_end.keeps_open_end``.
+        When given, every trip row gets the decision of the donor whose Wege
+        built its chain (the effective join keys, i.e. the mirror donor for
+        member-completion fillers) in ``KEEPS_OPEN_END_COLUMN``; a donor absent
+        from the Series raises. ``None`` (default) adds no column.
 
     Returns
     -------
@@ -1054,7 +1117,8 @@ def build_trip_table(
         One row per (synthetic person, MiD trip) sorted by ``(person_id, trip_col)``,
         containing the full eqasim trip schema (see ``EQASIM_TRIP_COLUMNS``) plus
         ``trip_key`` (string traceability id), ``trip_index`` (per-person 0-based
-        integer for activities.py), and all original MiD Wege columns.
+        integer for activities.py), and all original MiD Wege columns (plus
+        ``KEEPS_OPEN_END_COLUMN`` when ``open_end_donors`` is given).
     """
     # One trip chain per unique synthetic person; avoids a person x wege cross-join
     # that would produce duplicate trip_key values when the caller passes a persons
@@ -1092,6 +1156,11 @@ def build_trip_table(
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
         passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
     )
+    if open_end_donors is not None:
+        # Joined on the same effective donor keys as the Wege above, so the
+        # decision always belongs to the donor whose diary built the chain.
+        df = _attach_open_end_decision(
+            df, open_end_donors, household_col=household_col, person_col=person_col)
 
     # Step 2: sort by (person_id, trip_col); assign integer trip_id (0..n-1).
     df = df.sort_values(["person_id", trip_col]).reset_index(drop=True)
@@ -1355,6 +1424,7 @@ def build_validated_trip_table(
     passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     dwell_model=None,
     vectorized_validation: bool = True,
+    open_end_donors: pd.Series | None = None,
     **kwargs,
 ):
     """Build the trip table, optionally repair + resample, return (table, ValidationReport).
@@ -1464,6 +1534,16 @@ def build_validated_trip_table(
     vectorized_validation:
         Use array-based per-person validation. ``False`` keeps the reference
         group-by implementation executable for exact output comparisons.
+    open_end_donors:
+        Optional overnight open-day-end decision per MiD donor (issue #694), see
+        ``build_trip_table``. When given, every chain carries its CHAIN SOURCE's
+        decision in ``KEEPS_OPEN_END_COLUMN`` (joined at the first build; the
+        stage-A re-repair keeps each person's own rows, and a stage-B replacement
+        copies the replacing chain's rows with that chain's value) and every
+        ``PlanValidator`` here runs with ``keep_open_ends=True``. The column is an
+        internal trip-table column; the trips output file selects its own columns
+        (``synthesis.output.prepare_trip_output_frame``). ``None`` (default) adds
+        no column and leaves the validator as before.
     **kwargs:
         Passed to build_trip_table (e.g., household_col, person_col, trip_col).
 
@@ -1502,11 +1582,15 @@ def build_validated_trip_table(
         w_zweck_10_as_leisure=w_zweck_10_as_leisure,
         escort_passive_from_adult=escort_passive_from_adult,
         passive_pair_max_gap_minutes=passive_pair_max_gap_minutes,
-        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years, **kwargs,
+        passive_pair_adult_min_age_years=passive_pair_adult_min_age_years,
+        open_end_donors=open_end_donors, **kwargs,
     )
+    # One validator for the first repair, the stage-A re-repair and the final
+    # validation, so every pass applies the same open-end rule.
     validator = PlanValidator(
         require_home_closure=require_home_closure,
         vectorized=vectorized_validation,
+        keep_open_ends=open_end_donors is not None,
     )
     repair_report = None
     if repair:
@@ -1656,6 +1740,51 @@ MATCHED_REPLACEMENT_SEED_OFFSET = 7211
 MIN_EXPECTED_TRIP_MATCH_RATE = 0.5
 
 
+def _own_open_end_decisions(table: pd.DataFrame, unfixable_persons) -> pd.Series | None:
+    """Each unfixable person's own open-day-end decision, read before their rows are replaced.
+
+    ``None`` when the trip table carries no decision column (feature off). The
+    decision is one value per chain (the PlanValidator enforces it), so the first
+    row per person is the person's decision.
+    """
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
+
+    if KEEPS_OPEN_END_COLUMN not in table.columns:
+        return None
+    rows = table.loc[table["person_id"].isin(set(unfixable_persons)), ["person_id", KEEPS_OPEN_END_COLUMN]]
+    return rows.drop_duplicates(subset="person_id").set_index("person_id")[KEEPS_OPEN_END_COLUMN]
+
+
+def _log_open_end_decision_changes(own_decisions: pd.Series | None, table: pd.DataFrame) -> None:
+    """Log how many replaced persons got a chain whose open-day-end decision differs from their own.
+
+    The decision follows the chain source (issue #694), so a replaced person takes the
+    replacing chain's decision; this makes the size and direction of that switch
+    observable. Persons without a replacement chain (home-only) are not counted.
+    """
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
+
+    if own_decisions is None:
+        return
+    replaced = (
+        table.loc[table["person_id"].isin(own_decisions.index), ["person_id", KEEPS_OPEN_END_COLUMN]]
+        .drop_duplicates(subset="person_id").set_index("person_id")[KEEPS_OPEN_END_COLUMN]
+    )
+    own = own_decisions.reindex(replaced.index)
+    # Compared with == so a (defective) null counts as neither direction instead of
+    # being cast to True; the PlanValidator rejects nulls afterwards.
+    n_open_to_closed = int(((own == True) & (replaced == False)).sum())  # noqa: E712
+    n_closed_to_open = int(((own == False) & (replaced == True)).sum())  # noqa: E712
+    n_changed = n_open_to_closed + n_closed_to_open
+    n_replaced = len(replaced)
+    logger.info(
+        "[popsim.trips] stage B: replaced persons whose open-end decision changed: %d/%d (%.1f%%), "
+        "open->closed %d, closed->open %d",
+        n_changed, n_replaced, 100.0 * n_changed / max(n_replaced, 1),
+        n_open_to_closed, n_closed_to_open,
+    )
+
+
 def _recompute_chain_ids(table: pd.DataFrame) -> pd.DataFrame:
     """Re-derive trip_id / first-last / durations / trip_index on the final frame.
 
@@ -1739,6 +1868,10 @@ def _match_unfixable(
             random_seed=random_seed,
             resample_chains=resample_chains,
         )
+
+    # Read before the unfixable rows are dropped (after the legacy delegation above,
+    # which logs the same rate itself).
+    own_open_end_decisions = _own_open_end_decisions(table, unfixable)
 
     # Matching keys actually available on the persons frame; missing keys are
     # dropped with a logged warning (never silently).
@@ -1854,6 +1987,7 @@ def _match_unfixable(
         # persons are trip-less by the eqasim stay-home convention).
         table = valid_table
 
+    _log_open_end_decision_changes(own_open_end_decisions, table)
     return _recompute_chain_ids(table)
 
 
@@ -1910,6 +2044,7 @@ def _resample_unfixable(
         if cell in donor_chains:
             donor_chains[cell].append(chain.drop(columns=["person_id"]))
 
+    own_open_end_decisions = _own_open_end_decisions(table, unfixable_persons)
     table = resample_chains(
         table,
         unfixable_persons,
@@ -1931,6 +2066,15 @@ def _resample_unfixable(
             dropped_persons, int(nan_rows.sum()),
         )
         table = table[~nan_rows]
+
+    # The home-only placeholder rows carry no open-day-end decision, so the concat
+    # inside resample_chains turned the bool column into object; with them dropped,
+    # restore bool. Only when no null is left: astype(bool) would turn a null into
+    # True, and a null is a defect the PlanValidator must still see and reject.
+    from braunschweig.popsim.plan_validation import KEEPS_OPEN_END_COLUMN
+    if KEEPS_OPEN_END_COLUMN in table.columns and table[KEEPS_OPEN_END_COLUMN].notna().all():
+        table = table.assign(**{KEEPS_OPEN_END_COLUMN: table[KEEPS_OPEN_END_COLUMN].astype(bool)})
+    _log_open_end_decision_changes(own_open_end_decisions, table)
 
     # Re-derive ids and derived columns on the final frame: donor chains carry
     # the donor's trip_id / trip_index, which are stale for the recipient.

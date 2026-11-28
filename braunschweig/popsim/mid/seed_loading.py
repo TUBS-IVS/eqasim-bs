@@ -37,6 +37,7 @@ import pandas as pd
 
 from braunschweig.popsim import attributes
 from braunschweig.popsim import member_completion as completion
+from braunschweig.popsim import overnight_open_end
 from braunschweig.popsim import seed as seedmod
 # The passive-escort pairing window default lives with the trip build (the seed must use
 # the same window the plan is built with); imported, never re-typed.
@@ -456,6 +457,7 @@ def _derive_trip_class_seed_column(
     trip_class_counts_closure: bool = False,
     forbid_no_diary_sources: bool = False,
     drop_leading_arrive_home_leg: bool = False,
+    overnight_flags: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     """Derive the person-level ``trip_class`` KREIS control seed column.
 
@@ -484,16 +486,27 @@ def _derive_trip_class_seed_column(
     Task 7 and controller ruling R20) -- see ``derive_trip_class_seed`` for the
     full semantics.
 
+    ``overnight_flags`` (``overnight_open_end.overnight_trip_flags`` output, or None): when
+    given, ``src_keeps_open_end`` is attached to a copy of the persons frame and the seed
+    counts +0 for kept-open sources (``keep_overnight_open_ends``). The attached column is
+    dropped again, so the returned frame differs from the input only by ``trip_class``.
+
     Returns: the persons frame with the derived column (MUST be reassigned).
     Mutates: nothing in place.
     """
     if "trip_class" in active_kreis_entry_names:
-        persons = derive_trip_class_seed(
-            persons, rng=kreis_seed_rng,
+        keep_open = overnight_flags is not None
+        seed_input = (
+            overnight_open_end.attach_src_keeps_open_end(persons, overnight_flags)
+            if keep_open else persons)
+        derived = derive_trip_class_seed(
+            seed_input, rng=kreis_seed_rng,
             household_id=columns.person_household_id, person_id=columns.person_id,
             counts_closure=trip_class_counts_closure,
             forbid_no_diary_sources=forbid_no_diary_sources,
-            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg)
+            drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+            keep_overnight_open_ends=keep_open)
+        persons = derived.drop(columns=["src_keeps_open_end"]) if keep_open else derived
     return persons
 
 
@@ -1108,6 +1121,7 @@ def project_completed_seed(
     passive_pair_max_gap_minutes: float = DEFAULT_PASSIVE_PAIR_MAX_GAP_MINUTES,
     passive_pair_adult_min_age_years: int = DEFAULT_PASSIVE_PAIR_ADULT_MIN_AGE_YEARS,
     education_flag_drop_leading_arrive_home_leg: bool = False,
+    overnight_flags: Optional[pd.Series] = None,
 ):
     """Project completed-donor frames onto the PopulationSim seed, deriving the
     Tier-1 household_type column ``hh_type5`` exactly like :func:`load_mid_seed`.
@@ -1208,6 +1222,10 @@ def project_completed_seed(
             as leisure too, or seed and realised plan describe different days. Default
             False here for the same reason as above -- it is the default
             ``braunschweig.popsim.trips_stage`` declares.
+        overnight_flags: ``overnight_open_end.overnight_trip_flags`` output when the
+            ``keep_overnight_open_ends`` feature is ON (threaded from ``popsim.stage``),
+            else None. Only the trip_class seed reads it: kept-open plan sources count +0
+            instead of +1 for the closing trip. None keeps the seed byte-identical.
     """
     effective_kreis_entries, active_kreis_entry_names = _resolve_effective_kreis_entries(
         kreis_control_entries, include_status_seed_col,
@@ -1240,6 +1258,7 @@ def project_completed_seed(
         trip_class_counts_closure=trip_class_counts_closure,
         forbid_no_diary_sources=forbid_no_diary_sources,
         drop_leading_arrive_home_leg=drop_leading_arrive_home_leg,
+        overnight_flags=overnight_flags,
     )
     persons = _derive_pt_ticket_group_seed_column(
         persons,

@@ -55,7 +55,8 @@ build_trips(persons, donor_trips, *, random_seed, escort_purpose=False,
             departure_time_min_reference_n=200,
             departure_time_min_model_n=50,
             departure_time_max_median_shift_hours=2.0,
-            vectorized_validation=True) -> trips:
+            vectorized_validation=True, keep_overnight_open_ends=False,
+            overnight_answers=None) -> trips:
     Build the 11-column synthesis.population.trips contract DataFrame from the
     per-synthetic-person donor trip chains.  ``persons`` carries
     ``person_id``, ``H_ID``, ``P_ID``; ``donor_trips`` is the table returned
@@ -227,6 +228,8 @@ class PopsimSource(Protocol):
         departure_time_min_model_n: int = 50,
         departure_time_max_median_shift_hours: float = 2.0,
         vectorized_validation: bool = True,
+        keep_overnight_open_ends: bool = False,
+        overnight_answers: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """Build the synthesis.population.trips contract DataFrame.
 
@@ -315,6 +318,14 @@ class PopsimSource(Protocol):
             cell-level observability guard of the ``srv_mapped`` mapping, in
             HOURS; a cell whose median |shift| exceeds it is warned about. Inert
             for the same reason.
+        keep_overnight_open_ends:
+            keep the day open (no invented return-home trip) for donors who
+            report an overnight trip on the reporting day (issue #694). Needs the
+            survey's overnight answer and diary facts; an adapter without them must
+            REJECT a True value rather than ignore it.
+        overnight_answers:
+            the MiD overnight answers frame the decision reads; required when the
+            flag is True, ignored otherwise.
 
         Returns
         -------

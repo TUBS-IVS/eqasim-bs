@@ -985,3 +985,25 @@ def test_inconsistent_closure_flags_fail_fast(case, match):
         fixture["trips"] = pd.concat([trips, extra], ignore_index=True)
     with pytest.raises(ValueError, match=match):
         stage.build_portal_trips(**fixture)
+
+
+def test_kept_open_far_stay_ends_outside_without_return():
+    """A far stay whose day was kept open (no return trip at all, is_synthetic_closure False on every row)
+    takes the existing stay-without-return path: the day ends outside, nothing raises."""
+    fixture = _fixture()
+    fixture["persons"] = fixture["persons"].iloc[[0]].assign(
+        car_availability="none", has_license=False, car_passenger_availability="none")
+    fixture["df_work"] = gpd.GeoDataFrame({"person_id": [], "location_id": []}, geometry=[], crs=CRS)
+    fixture["trips"] = pd.DataFrame([dict(
+        person_id=1, trip_index=0, preceding_purpose="home", following_purpose="leisure", mode="car",
+        euclidean_distance=120000.0, departure_time=9 * 3600.0, arrival_time=11 * 3600.0,
+        is_synthetic_closure=False)])
+
+    out = stage.build_portal_trips(**fixture)
+    own = out["trips"][out["trips"]["person_id"] == 1]
+
+    assert len(own) == 1
+    assert own["following_purpose"].tolist() == ["outside"]
+    assert own["is_last_trip"].tolist() == [True] and own[PORTAL_LEG_COLUMN].tolist() == [True]
+    assert out["report"]["n_stays_without_return"] == 1
+    assert out["report"]["n_stays_closure_return_dropped"] == 0

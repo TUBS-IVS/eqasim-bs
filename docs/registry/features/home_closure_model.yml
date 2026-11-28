@@ -26,6 +26,8 @@ description: >-
   persons). The consequences of the closed-plan decision -- 0% open-end days against SrV 2.24%,
   0% open-start days against 2.19%, 0% single-trip days against 0.69% -- are ACCEPTED deviations,
   reported as such by the analysis stage.
+  Since ADR-0214 (issue #694) a person who was on an overnight trip on the reporting day keeps the open end
+  instead of the closure; feature record overnight_open_day_end amends this closed-plan decision for them.
 stages:
 - synthesis.population.trips
 - data.census.filtered

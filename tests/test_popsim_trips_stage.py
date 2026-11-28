@@ -958,7 +958,9 @@ def test_execute_hands_the_mid_trip_build_the_wege_without_the_unused_columns(tm
     trips_stage.configure(configure_context)
     values = dict(configure_context.calls)
     values.update({"random_seed": 1, "data_path": str(tmp_path),
-                   "braunschweig.population.popsim.mid_dir": str(tmp_path)})
+                   "braunschweig.population.popsim.mid_dir": str(tmp_path),
+                   # The column drop is independent of the overnight open-day-end flag.
+                   "braunschweig.population.popsim.keep_overnight_open_ends": False})
 
     class _ExecuteContext:
         def config(self, key):
@@ -1108,3 +1110,200 @@ def test_trips_stage_configure_refuses_the_incomplete_round_trip_off_arm():
     ctx = _RecordingConfigureContext(values={"explicit_round_trip_purposes": False})
     with pytest.raises(ValueError, match="explicit_round_trip_purposes"):
         trips_stage.configure(ctx)
+
+
+# ---------------------------------------------------------------------------
+# Overnight open day end (issue #694): keep_overnight_open_ends / overnight_answers.
+# ---------------------------------------------------------------------------
+
+def _overnight_fixture(p_streise):
+    """One donor whose diary ends at leisure (a closure is needed when the day is closed),
+    with the diary columns the open-end decision reads, plus its MiD overnight answer."""
+    persons, wege = _persons_and_wege_not_ending_home()
+    wege = wege.assign(W_RBW=[0, 0], W_SO1=[1, 1])
+    answers = pd.DataFrame({"H_ID": [10], "P_ID": [1], "P_STREISE": [p_streise]})
+    # What load_overnight_answers does in production: the frame carries the warn threshold.
+    answers.attrs["overnight_max_no_answer_share"] = 0.20
+    return persons, wege, answers
+
+
+def test_keep_overnight_open_ends_off_is_byte_identical():
+    """OFF ignores the answers entirely: the donor reports an overnight trip (code 2) and its
+    diary ends away, so a closure is appended exactly as under the previous signature."""
+    persons, wege, answers = _overnight_fixture(2)
+    before = trips_stage.run(persons, wege, random_seed=1)
+    off = trips_stage.run(persons, wege, random_seed=1,
+                          keep_overnight_open_ends=False, overnight_answers=answers)
+    assert before["is_synthetic_closure"].any(), "fixture must need a closure, else OFF is vacuous"
+    pd.testing.assert_frame_equal(before, off)
+
+
+def test_on_leaves_the_overnight_day_open(caplog):
+    persons, wege, answers = _overnight_fixture(2)
+    with caplog.at_level(logging.INFO):
+        on = trips_stage.run(persons, wege, random_seed=1,
+                             keep_overnight_open_ends=True, overnight_answers=answers)
+    assert not on["is_synthetic_closure"].any()
+    assert len(on) == 2 and on["following_purpose"].iloc[-1] != "home"
+    assert "keeps_open_end" not in on.columns  # a build-time helper, not part of the stage output
+    assert any("kept open" in r.getMessage() and "1/1" in r.getMessage() for r in caplog.records)
+    # The same donor without an overnight trip is closed as before.
+    persons, wege, answers = _overnight_fixture(1)
+    closed = trips_stage.run(persons, wege, random_seed=1,
+                             keep_overnight_open_ends=True, overnight_answers=answers)
+    assert closed["is_synthetic_closure"].any()
+
+
+def test_on_with_only_unusable_answers_closes_every_day_and_warns(caplog):
+    """Fallback transparency: every donor has P_STREISE 610 ("no usable answer"), so nothing can
+    be kept open. The day is closed as before AND the stage says so loudly, instead of the
+    feature silently doing nothing."""
+    persons, wege, answers = _overnight_fixture(610)
+    with caplog.at_level(logging.INFO):
+        out = trips_stage.run(persons, wege, random_seed=1,
+                              keep_overnight_open_ends=True, overnight_answers=answers)
+    assert out["is_synthetic_closure"].any()
+    assert any(r.levelno >= logging.WARNING and "overnight_open_end" in r.getMessage()
+               for r in caplog.records)
+
+
+def test_on_without_answers_raises():
+    persons, wege, _ = _overnight_fixture(2)
+    with pytest.raises(ValueError, match="overnight_answers"):
+        trips_stage.run(persons, wege, random_seed=1, keep_overnight_open_ends=True)
+
+
+def test_seed_trip_class_equals_the_realised_trip_count_for_every_kind_of_overnight_donor():
+    """Spec section 7 gate: the trip_class seed and the trip build take ONE decision per donor.
+
+    Four MiD donors, each the plan source of one synthetic person, go through the seed path
+    (compute_diary_facts -> attach_plan_source_facts -> attach_src_keeps_open_end ->
+    derive_trip_class_seed) and through trips_stage.run. The seed class must be the class of the
+    realised trip count. Hand-computed: A leaves on a trip and ends away (kept open, 2 trips, class
+    1-2); B ends away without an overnight trip (closed, 2 + 1 = 3 trips, class 3-4); C is a middle
+    day of a trip (stays closed, 3 trips); D starts by arriving home, then ends away (kept open, the
+    leading leg is dropped, 2 trips). A one-sided +1 or a missed leading-leg drop changes a class.
+    Also stands in for the registration check of the overnight keys: the execute() test below reads
+    every key from the keys configure() declared.
+    """
+    from braunschweig.popsim import diary_facts, overnight_open_end
+    from braunschweig.popsim.mid import participation
+
+    def legs(h, zwecke, so1):
+        n = len(zwecke)
+        return pd.DataFrame({
+            "H_ID": h, "P_ID": 1, "W_ID": range(1, n + 1), "W_ZWECK": zwecke, "W_RBW": 0,
+            "W_SO1": so1, "hvm_imp": 4, "W_SZS": [8 + 2 * i for i in range(n)], "W_SZM": 0,
+            "W_AZS": [8 + 2 * i for i in range(n)], "W_AZM": 30, "wegkm_imp": 5.0,
+            "wegmin_imp1": 20.0, "W_GEW": 1.0})
+    wege = pd.concat([
+        legs(1, [1, 7], 1),        # A: work, leisure; day starts at home
+        legs(2, [1, 7], 1),        # B: same diary, no overnight trip
+        legs(3, [1, 7], 2),        # C: day starts away from home, first leg goes to work
+        legs(4, [8, 1, 7], 2),     # D: day starts by arriving home, then work, leisure
+    ], ignore_index=True)
+    streise = {1: 2, 2: 1, 3: 2, 4: 2}  # P_STREISE per donor household
+    answers = pd.DataFrame({"H_ID": list(streise), "P_ID": 1, "P_STREISE": list(streise.values())})
+    answers.attrs[overnight_open_end.MAX_NO_ANSWER_SHARE_ATTR] = 0.20
+    donors = pd.DataFrame({
+        "H_ID": [1, 2, 3, 4], "P_ID": 1, "member_imputed": False,
+        "source_H_ID": [1, 2, 3, 4], "source_P_ID": 1, "anzwege1": [2, 2, 2, 3],
+        "alter_gr1": 3, "mobil": 1})
+
+    flags = overnight_open_end.overnight_trip_flags(answers)
+    facts = diary_facts.compute_diary_facts(wege)
+    seed_input = overnight_open_end.attach_src_keeps_open_end(
+        diary_facts.attach_plan_source_facts(donors, facts), flags)
+    seeded = participation.derive_trip_class_seed(
+        seed_input, rng=np.random.RandomState(0), counts_closure=True,
+        drop_leading_arrive_home_leg=True, keep_overnight_open_ends=True)
+
+    persons = pd.DataFrame({"person_id": [1, 2, 3, 4], "H_ID": [1, 2, 3, 4], "P_ID": 1})
+    table = trips_stage.run(persons, wege, random_seed=1, drop_leading_arrive_home_leg=True,
+                            keep_overnight_open_ends=True, overnight_answers=answers)
+    realised = table.groupby("person_id").size().reindex([1, 2, 3, 4])
+
+    def trip_class(n_trips):  # the documented classes: 0 / 1-2 / 3-4 / 5+
+        return 0 if n_trips == 0 else 1 if n_trips <= 2 else 2 if n_trips <= 4 else 3
+    assert realised.tolist() == [2, 3, 3, 2]
+    assert seeded["trip_class"].tolist() == [trip_class(n) for n in realised]
+
+
+def test_entd_source_rejects_keep_overnight_open_ends():
+    from braunschweig.popsim.sources.entd import EntdSource
+    with pytest.raises(NotImplementedError, match="keep_overnight_open_ends"):
+        EntdSource().build_trips(
+            pd.DataFrame({"person_id": []}), pd.DataFrame(), random_seed=1,
+            keep_overnight_open_ends=True,
+        )
+
+
+def test_execute_reads_the_answers_only_when_the_flag_is_on(tmp_path, monkeypatch):
+    """ON: execute() loads the MiD overnight answers and hands them to the build; OFF reads nothing."""
+    from braunschweig.popsim import overnight_open_end
+    from braunschweig.popsim.sources.mid import MidSource
+    from braunschweig.popsim.stage.config_keys import KEY_KEEP_OVERNIGHT_OPEN_ENDS
+    persons, wege, answers = _overnight_fixture(2)
+    loaded = []
+    handed = {}
+
+    def load_answers(mid_dir, *, max_no_answer_share):
+        loaded.append((mid_dir, max_no_answer_share))
+        return answers
+
+    def build_trips(self, persons_frame, donor_trips, **kwargs):
+        handed.update(kwargs)
+        return "built"
+
+    monkeypatch.setattr(overnight_open_end, "load_overnight_answers", load_answers)
+    monkeypatch.setattr(MidSource, "load_donor",
+                        lambda self, d, **k: (pd.DataFrame(), pd.DataFrame(), wege))
+    monkeypatch.setattr(MidSource, "build_trips", build_trips)
+    configure_context = _RecordingConfigureContext()
+    trips_stage.configure(configure_context)
+
+    def execute_with(flag):
+        values = dict(configure_context.calls)
+        values.update({"random_seed": 1, "data_path": str(tmp_path),
+                       "braunschweig.population.popsim.mid_dir": str(tmp_path),
+                       KEY_KEEP_OVERNIGHT_OPEN_ENDS: flag})
+
+        class _Ctx:
+            def config(self, key):
+                return values[key]
+
+            def stage(self, name):
+                return persons
+        return trips_stage.execute(_Ctx())
+
+    loaded.clear()
+    assert execute_with(False) == "built"
+    assert loaded == [] and handed["keep_overnight_open_ends"] is False
+    assert handed["overnight_answers"] is None
+    assert execute_with(True) == "built"
+    # the warn threshold reaches the loader from the declared (default) config value
+    assert loaded == [(str(tmp_path), 0.20)] and handed["keep_overnight_open_ends"] is True
+    assert handed["overnight_answers"] is answers
+
+
+def test_open_end_decision_does_not_depend_on_the_dropped_wege_columns():
+    """Pins the column contract: execute() drops the unused MiD Wege columns before the trip build,
+    the commute-day stage keeps the full frame; both must reach the SAME per-donor decision.
+    load_mid_wege itself adds no filter or normalisation (it reads every column as delivered)."""
+    from braunschweig.popsim.unused_mid_wege_columns import (
+        UNUSED_MID_WEGE_COLUMNS, drop_unused_mid_wege_columns)
+    wege = pd.DataFrame({
+        "H_ID": [10, 10, 20, 20, 30], "P_ID": [1, 1, 1, 1, 1], "W_ID": [1, 2, 1, 2, 1],
+        "W_ZWECK": [1, 7, 1, 8, 7], "W_RBW": [0, 0, 0, 0, 0], "W_SO1": [1, 1, 1, 1, 1],
+        "wegkm_imp": [5.0] * 5,
+    })
+    wege = pd.concat([wege, pd.DataFrame(
+        {column: range(5) for column in UNUSED_MID_WEGE_COLUMNS[:5]})], axis=1)
+    answers = pd.DataFrame({"H_ID": [10, 20, 30], "P_ID": [1, 1, 1], "P_STREISE": [2, 2, 1]})
+    answers.attrs["overnight_max_no_answer_share"] = 0.20
+    narrowed = drop_unused_mid_wege_columns(wege, log_tag="[test]")
+    assert set(UNUSED_MID_WEGE_COLUMNS[:5]).isdisjoint(narrowed.columns)
+    from_raw = trips_stage.build_open_end_donors(wege, answers)
+    from_narrowed = trips_stage.build_open_end_donors(narrowed, answers)
+    assert from_raw.tolist() == [True, False, False]  # only the overnight donor ending away
+    pd.testing.assert_series_equal(from_raw, from_narrowed)

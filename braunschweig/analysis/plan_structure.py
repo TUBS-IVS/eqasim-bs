@@ -94,8 +94,21 @@ ACCEPTED_DEVIATION_COLUMNS = ["deviation", "metric", "model", "srv", "delta_pp",
 #: it is allocated with the ADRs themselves and lives in ONE place, the ``decisions:`` list of
 #: the stage record ``docs/registry/stages/
 #: braunschweig.analysis.synthesis.plan_structure_vs_srv.yml`` (one fact, one file).
-ACCEPTED_DEVIATION_NOTE = ("closed plans by decision (issue #367; ADR in the stage record's "
-                           "decisions)")
+ACCEPTED_DEVIATION_NOTE_CLOSED = ("closed plans by decision (issue #367; ADR in the stage "
+                                  "record's decisions)")
+#: Same note for a model trip table that contains open day ends (issue #694); it names the issues
+#: and, like the closed-plan note, points at the stage record instead of inlining an ADR id.
+ACCEPTED_DEVIATION_NOTE_OPEN = ("closed plans by decision (issue #367) except that open day ends "
+                                "are kept for overnight travellers (issue #694); far stays that "
+                                "end outside the study area are not visible in this pre-portal "
+                                "view; ADR in the stage record's decisions")
+
+
+def accepted_deviation_note(open_ends_kept: bool) -> str:
+    """The note of the accepted-deviation rows: open day ends are claimed only when present."""
+    return ACCEPTED_DEVIATION_NOTE_OPEN if open_ends_kept else ACCEPTED_DEVIATION_NOTE_CLOSED
+
+
 #: The three consequences of the "every plan starts and ends at home" decision, each derived
 #: from one comparison metric. ``complement`` says whether the reported value is
 #: ``1 - metric`` (an OPEN day is the complement of a closed one).
@@ -371,14 +384,19 @@ def compare(model_long: pd.DataFrame, reference_long: pd.DataFrame) -> pd.DataFr
     return merged[COMPARISON_COLUMNS]
 
 
-def accepted_deviations(comparison: pd.DataFrame,
-                        segment: str = "all") -> pd.DataFrame:
+def accepted_deviations(comparison: pd.DataFrame, segment: str = "all", *,
+                        open_ends_kept: bool) -> pd.DataFrame:
     """The three deviations that follow from the "plans start and end at home" decision.
 
-    Every synthetic day is a closed home-based chain by construction (issue #367), so the
-    model cannot reproduce the SrV shares of days that end away from home, start away from
-    home, or consist of a single trip. These are ACCEPTED deviations, not defects, and this
-    table states them explicitly with both sides' values so a reader of the comparison does
+    Most synthetic days are closed home-based chains (issue #367). Where the model trip table
+    contains open day ends (``open_ends_kept``, the observed ``n_persons_open_end`` > 0 of
+    :func:`closure_metrics`; overnight travellers keep their day open, issue #694), the note
+    says so; otherwise it claims only closed plans. Either way the model cannot reproduce the
+    SrV shares of days that end away from home, start away from home, or consist of a single
+    trip. The flag is taken from the data, not from the config key, so a model view built by
+    a source or with the switch off can never be described as keeping days open. These are
+    ACCEPTED deviations, not defects, and this table states them explicitly with both
+    sides' values so a reader of the comparison does
     not read them as a model failure.
 
     ``open_end_days`` and ``open_start_days`` are complements (``1 - metric``) of the
@@ -399,11 +417,31 @@ def accepted_deviations(comparison: pd.DataFrame,
             model, srv = 1.0 - model, 1.0 - srv
         rows.append({"deviation": name, "metric": metric, "model": model, "srv": srv,
                      "delta_pp": (model - srv) * 100.0, "n_srv": row["n_srv"],
-                     "note": ACCEPTED_DEVIATION_NOTE})
+                     "note": accepted_deviation_note(open_ends_kept)})
     return pd.DataFrame(rows, columns=ACCEPTED_DEVIATION_COLUMNS)
 
 
 # --------------------------------------------------------------------------- closure
+
+def _count_open_end_persons(trips: pd.DataFrame) -> int:
+    """Persons whose chronologically last trip does not end at home (issue #694).
+
+    The last trip is taken after a stable sort by ``person_id`` and ``trip_index``, so the
+    row order of the input does not matter. A missing ``following_purpose`` on a last trip is
+    a data error and raises instead of being counted as an open end.
+    """
+    if "trip_index" not in trips.columns:
+        raise KeyError("trips frame has no 'trip_index' column; the open-end count needs the "
+                       "trip order")
+    _require_columns(trips, ("person_id", "following_purpose"), "trips")
+    ordered = trips.sort_values(["person_id", "trip_index"], kind="mergesort")
+    last_trips = ordered.drop_duplicates(subset="person_id", keep="last")
+    n_missing = int(last_trips["following_purpose"].isna().sum())
+    if n_missing:
+        raise ValueError("%d person(s) have a missing following_purpose on their last trip; "
+                         "the open-end count cannot classify them" % n_missing)
+    return int((last_trips["following_purpose"].astype(str) != HOME_PURPOSE).sum())
+
 
 def closure_metrics(trips: pd.DataFrame) -> dict:
     """Rates of the SYNTHESISED home-closure legs in the model trip table.
@@ -419,6 +457,9 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
     * ``share_persons_closed`` -- persons with a synthesised leg / persons WITH a trip
       (an immobile person has no chain that could be closed)
     * ``share_home_trips_synthetic`` -- synthesised legs / all trips to home
+    * ``share_persons_open_end`` -- mobile persons whose last trip does not end at home
+      (an overnight open day end, issue #694) / mobile persons (persons WITH a trip). It is
+      computed from the trips alone and does NOT depend on the ``is_synthetic_closure`` column.
 
     When the column is absent the three shares are 0.0 and ``closure_column_present`` is
     False, with a warning: ``PlanValidator.repair_trips`` always adds the column, so a
@@ -444,7 +485,10 @@ def closure_metrics(trips: pd.DataFrame) -> dict:
     n_closure = int(closure.sum())
     n_persons_closed = int(trips.loc[closure, "person_id"].nunique())
     n_home_closure = int((closure & is_home).sum())
+    n_persons_open_end = _count_open_end_persons(trips)
     metrics = {
+        "n_persons_open_end": n_persons_open_end,
+        "share_persons_open_end": (n_persons_open_end / n_persons) if n_persons else 0.0,
         "closure_column_present": present,
         "n_trips": n_trips,
         "n_trips_synthetic_closure": n_closure,

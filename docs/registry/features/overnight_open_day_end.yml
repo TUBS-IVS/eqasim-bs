@@ -1,0 +1,92 @@
+feature: overnight_open_day_end
+title: Overnight travellers keep their day open instead of an invented return home (#694)
+area: behavior
+description: >-
+  With the switch on, a synthetic person whose MiD diary ends away from home and who answered that the reporting day
+  was a trip with an overnight stay (MiD P_STREISE 2 or 3; children under 14 inherit the answer from their MiD
+  household) keeps the open end: no return-home trip is appended and the plan validator does not treat the missing
+  home end as an error. Middle days of a trip (diary starts away, first leg not home) and codes without a usable
+  answer stay closed (counted and logged). The decision is made once per MiD diary owner in
+  braunschweig.popsim.overnight_open_end, carried as the per-row column keeps_open_end of every trip chain (so a
+  resampled or commute-day donor chain carries its own donor's decision) and read by the trip_class seed, which
+  counts the closure (+1) only for the days that are closed. The last activity of an open day has no end time. Far
+  stays keep ending outside by ADR-0183. Meaning, rejected options (B: SrV-fitted draw, C: late arrival) and
+  consequences: ADR-0214, which amends ADR-0108 for these persons. The ENTD source rejects the switch ON.
+stages:
+- synthesis.population.trips
+- braunschweig.popsim.completed_donor
+- braunschweig.synthesis.commute_day.home_office_donors_stage
+- braunschweig.analysis.synthesis.plan_structure_vs_srv
+pipelines:
+  popsim_mid: active
+  popsim_open: not_used
+  simple_ipf_open: not_used
+lifecycle: active
+production:
+  enabled: true
+  flags:
+  - braunschweig.population.popsim.keep_overnight_open_ends
+introduced:
+  issue: '#694'
+  pr: null
+  adr: ADR-0214
+detail_doc: null
+code_paths:
+- braunschweig/popsim/overnight_open_end.py
+- braunschweig/popsim/plan_validation.py
+- braunschweig/popsim/trips.py
+- braunschweig/popsim/trips_stage.py
+- braunschweig/popsim/mid/participation.py
+- braunschweig/popsim/mid/seed_loading.py
+- braunschweig/popsim/stage/__init__.py
+- braunschweig/popsim/stage/config_keys.py
+- braunschweig/synthesis/commute_day/donor_pool.py
+- braunschweig/synthesis/commute_day/home_office_donors_stage.py
+- braunschweig/analysis/plan_structure.py
+evidence:
+  tests:
+  - tests/test_overnight_open_end.py
+  - tests/test_popsim_trips.py
+  - tests/test_popsim_trips_stage.py
+  - tests/test_popsim_plan_validation.py
+  - tests/test_trip_class_seed_closure.py
+  - tests/test_commute_day_donor_pool.py
+  - tests/test_plan_structure_vs_srv.py
+  off_path_byte_identical:
+    claimed: 'true'
+    test: tests/test_popsim_trips_stage.py::test_keep_overnight_open_ends_off_is_byte_identical
+    note: >-
+      A frame-level check on a hand-made fixture; the seed half is pinned by the neighbouring tests of
+      tests/test_trip_class_seed_closure.py. Not a comparison of two runs: no switch-off run exists (see the manifest).
+  fallback_rate:
+    instrumented: true
+    log_marker: '[popsim.overnight_open_end]'
+    note: >-
+      The decision logs its rates over the open-end MiD diaries (kept open by own flag and by inheritance, closed, of
+      which middle days, of which no usable answer, of which children without a flagged household member), and
+      trips_stage logs the share of persons kept open next to the closure share. A missing or unusable answer closes
+      the day and is counted, never silent. Open ends in the study area are located by the existing chain-solver
+      fallback, which reports its own rates.
+  reference:
+    kind: committed
+    path: eqasim-data/data/braunschweig/srv/srv2023_plan_structure_reference.csv
+    note: share_mobile_last_to_home (SrV open-end share); the bound of SrV +/- 1 pp is an ASSUMPTION registered before the run.
+validation:
+  state: measured_vs_reference
+  runs:
+  - i694-overnight-open-end-smoke-1pct-2026-11-27
+  metric: share_mobile_last_to_home
+  note: >-
+    A 1 % smoke measurement, not a validation: the registered metric is inside the registered bound (numbers and every
+    caveat in the run manifest). No switch-off arm, no 100 % replay, one seed.
+assessment:
+  status: pending
+  by: null
+  date: null
+  pending_reason: >-
+    The effect against today's closure share and the chain-solver tail count are unmeasured (no switch-off arm); the
+    next production run measures them. The owner has not assessed the 1 % evidence.
+  source: ADR-0214
+notes: >-
+  Toggling the key changes the trip stage and everything downstream; the stage cache recomputes once. The consistency
+  rule of drop_leading_arrive_home_leg (ADR-0108) applies: every reader of the key must agree.

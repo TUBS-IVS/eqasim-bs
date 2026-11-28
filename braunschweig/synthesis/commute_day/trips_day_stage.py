@@ -44,8 +44,10 @@ from braunschweig.calibration import reported_time_precision as _reported_time_p
 from braunschweig.calibration import srv_departure_times as _srv_departure_times
 from braunschweig.calibration import srv_plan_structure as _srv_plan_structure
 from braunschweig.popsim import departure_time_model as _departure_time_model
+from braunschweig.popsim import overnight_open_end as _overnight_open_end
 from braunschweig.popsim import plan_validation as _plan_validation
 from braunschweig.popsim import trips_stage as _trips_stage
+from braunschweig.popsim.mid import csv_format as _mid_csv_format
 from braunschweig.synthesis import escort_duty as _escort_duty
 from braunschweig.popsim.trips_stage import CONTRACT
 from braunschweig.synthesis.commute_day import plan_replacement as _plan_replacement
@@ -80,7 +82,7 @@ _LOG_TAG = "[commute day trips]"
 # (``CONTRACT``): the DAG edge covers its output, not this code (ADR-0194).
 _HELPER_MODULES = (_plan_replacement, _departure_time_model, _reported_time_precision,
                    _srv_departure_times, _srv_plan_structure, _plan_validation, _escort_duty,
-                   _trips_stage)
+                   _trips_stage, _overnight_open_end, _mid_csv_format)
 
 #: Helper modules this stage reaches only through FUNCTION-LEVEL imports, hashed by dotted
 #: NAME because there is no module object at this file's top level to list above.
